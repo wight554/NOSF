@@ -1,0 +1,17 @@
+
+# build outputs
+build/
+**/build/
+*.elf
+*.uf2
+*.hex
+*.bin
+*.map
+*.dis
+
+# ninja/cmake junk
+.ninja_deps
+.ninja_log
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
