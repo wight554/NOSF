@@ -1,122 +1,223 @@
 
 # NightOwl Standalone Controller
 
-Standalone filament controller for dual-lane automatic filament switching.
+Standalone dual-lane filament controller for automatic filament switching.
 
-This firmware runs on an **RP2040 (Raspberry Pi Pico)** based controller and manages:
+This firmware runs on the **ERB v2.0 controller (RP2040 based)** and manages:
 
 - Dual filament drive motors
 - Automatic lane switching
-- Buffer control
-- Filament motion monitoring
+- Buffer monitoring
+- Filament motion detection
 - Runout signalling
 - OLED status display
-- Rotary encoder UI
+- Rotary encoder user interface
 - Manual feed / reverse control
 
-The system is designed to keep printing when a filament spool runs out by automatically switching to the second lane.
+The system allows a printer to **continue printing when a filament spool runs out** by automatically switching to a second filament lane.
 
 ---
 
-# Features
+# Hardware Platform
 
-- Automatic filament lane switching
-- Swap only when Y-splitter is empty
-- Live feed speed adjustment
-- Motion sensor based jam detection
-- Runout output signal
-- Manual control menu
-- OLED status interface
-- Encoder navigation
+Controller board:
 
----
+**ERB v2.0 (RP2040 based)**
 
-# Hardware
+The ERB v2.0 provides:
 
-Main components:
+- RP2040 microcontroller
+- motor driver interface
+- digital sensor inputs
+- I2C interface for display
+- runout output signal
+- GPIO expansion
 
-- RP2040 controller
-- 2x stepper drivers
-- SH1106 OLED display (I2C)
-- Rotary encoder with push buttons
-- Filament sensors
-- Motion sensor
-- Buffer sensors
-- Y splitter sensor
-
-Full pinout available in:
-
-**HARDWARE.md**
+The firmware is written specifically for this board.
 
 ---
 
-# Firmware Architecture
+# System Overview
 
-Core subsystems:
+The controller manages two filament lanes and feeds filament into a single output path.
 
-- Lane state machine
-- Buffer latch logic
-- Swap controller
-- Motion monitoring
-- Motor ramp controller
-- UI menu system
+Lane 1 ----\
+            >---- Y splitter ----> Printer
+Lane 2 ----/
 
-Key behaviour:
+Each lane contains:
 
-1. Buffer LOW triggers feeding
-2. Active lane feeds filament
-3. If active lane becomes empty → swap is armed
-4. Swap happens only when Y splitter becomes empty
-5. Second lane continues feeding
+Filament spool
+     │
+IN sensor
+     │
+Drive motor
+     │
+OUT sensor
 
-This prevents filament collision inside the Y splitter.
+The system also monitors:
+
+Buffer LOW sensor  
+Buffer HIGH sensor  
+Y splitter sensor  
+Filament motion sensor
+
+---
+
+# Main Features
+
+### Automatic filament switching
+
+When the active lane runs out:
+
+1. The system detects empty filament input
+2. Swap is armed
+3. Controller waits until the **Y splitter becomes empty**
+4. The second lane starts feeding
+
+This prevents filament collisions inside the Y splitter.
+
+---
+
+### Buffer controlled feeding
+
+Buffer LOW  → start feeding  
+Buffer HIGH → stop feeding  
+
+This keeps filament tension stable.
+
+---
+
+### Motion monitoring
+
+If motors run but filament does not move:
+
+- motion fault triggers
+- runout output activates
+
+A startup delay prevents false alarms during loading.
+
+---
+
+### Live feed speed adjustment
+
+Feed speed can be adjusted directly from the home screen using the encoder.
+
+---
+
+### Manual control mode
+
+Manual mode allows direct motor control.
+
+Manual menu:
+
+- Lane select (L1 / L2)
+- Feed or reverse
+- Run / Stop
+
+While running:
+
+Encoder rotate → change speed  
+Back button → stop motor
+
+---
+
+# Display Interface
+
+Example screen:
+
+A:L1  L1:Y/Y L2:Y/-
+Buf L:Y H:-  Y:Y
+State:AUTO  Feed:5000
+Mot:OK
+
+Meaning:
+
+A:L1      Active lane  
+L1:Y/Y    Lane 1 IN and OUT sensors active  
+L2:Y/-    Lane 2 IN active, OUT empty  
+Buf L:Y   Buffer low triggered  
+Buf H:-   Buffer high not triggered  
+Y:Y       Filament present at Y splitter  
+
+---
+
+# Safety Logic
+
+The controller stops feeding when:
+
+- no filament detected on both lanes
+- filament motion stops while motors run
+
+Runout signal is provided on **GPIO18**.
+
+---
+
+# Pinout (ERB v2)
+
+Lane sensors
+
+Lane 1 IN   GPIO24  
+Lane 1 OUT  GPIO25  
+
+Lane 2 IN   GPIO22  
+Lane 2 OUT  GPIO12  
+
+Buffer
+
+Buffer LOW   GPIO6  
+Buffer HIGH  GPIO7  
+
+Y splitter
+
+Y sensor GPIO2
+
+Motion sensor
+
+Motion GPIO5
+
+Runout output
+
+Runout GPIO18
+
+---
+
+# Motor Drivers
+
+Motor 1
+
+EN   GPIO8  
+DIR  GPIO9  
+STEP GPIO10  
+
+Motor 2
+
+EN   GPIO14  
+DIR  GPIO15  
+STEP GPIO16  
 
 ---
 
 # Display
 
-The OLED shows:
+OLED controller: **SH1106**
 
-- Active lane
-- Lane sensor states
-- Buffer status
-- Y splitter state
-- Feed speed
-- Motion detection status
+I2C Address: **0x3C**
+
+SDA GPIO26  
+SCL GPIO27  
 
 ---
 
-# Manual Mode
+# Encoder
 
-Manual mode allows testing motors.
+A GPIO28  
+B GPIO4  
 
-Menu:
+Buttons
 
-Manual →
-
-Options:
-
-- Lane select (L1 / L2)
-- Feed or reverse
-- Start / stop
-
-While running:
-
-Rotate encoder → change speed  
-Back button → stop motor
-
----
-
-# Motion Detection
-
-The motion sensor monitors filament movement.
-
-If no movement is detected while motors are running:
-
-- Motion fault triggers
-- Runout output activates
-
-Startup delay prevents false alarms during loading.
+Back    GPIO3  
+Confirm GPIO29  
 
 ---
 
@@ -132,7 +233,6 @@ Requirements:
 
 Build:
 
-```
 cd ~/dev/nightowl-standalone-controller
 rm -rf build
 mkdir build
@@ -142,40 +242,35 @@ export PICO_SDK_PATH=~/dev/pico-sdk
 
 cmake -G Ninja ../firmware
 ninja
-```
 
 ---
 
 # Flash
 
-```
 sudo ~/dev/picotool/build/picotool load build/nightowl_controller.elf -f
 sudo ~/dev/picotool/build/picotool reboot
-```
 
 ---
 
 # Documentation
 
-Additional documentation:
-
-- **MANUAL.md** – operation manual
-- **HARDWARE.md** – wiring and pinout
-- **BUILD_FLASH.md** – build instructions
-- **WORKFLOW.md** – development workflow
+MANUAL.md  
+HARDWARE.md  
+BUILD_FLASH.md  
+WORKFLOW.md  
 
 ---
 
-# Repository Structure
+# Development
 
-```
-firmware/
-    src/
-        main.c
+Branches:
 
-build/
-docs/
-```
+main      stable firmware  
+dev       integration branch  
+feature/* development branches  
+fix/*     bug fixes  
+
+Never develop directly on **main**.
 
 ---
 
@@ -184,11 +279,3 @@ docs/
 Always test firmware changes at low speed.
 
 Verify sensor polarity before enabling automatic swap.
-
-Never run motors if the filament path is blocked.
-
----
-
-# License
-
-Open hardware / open firmware project.
