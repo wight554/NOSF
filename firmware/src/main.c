@@ -59,8 +59,8 @@ static int AUTO_SPS = 6000;
 
 // Motion logic
 static bool MOTION_FAULT_ENABLED = true;
-static int  MOTION_TIMEOUT_MS    = 800;
-static int  MOTION_STARTUP_MS    = 5000;   // grace timer / bowden delay
+static int  MOTION_TIMEOUT_MS    = 8000;
+static int  MOTION_STARTUP_MS    = 10000;   // grace timer / bowden delay
 
 // Runout cooldown
 static int  RUNOUT_COOLDOWN_MS   = 12000;
@@ -485,10 +485,11 @@ static evt_t input_poll(uint32_t now_ms){
 typedef enum {
     SCR_HOME=0,
     SCR_MENU=1,
-    SCR_SETTINGS=2,      // categories
-    SCR_SETTINGS_EDIT=3, // items / edit mode
+    SCR_SETTINGS=2,
+    SCR_SETTINGS_EDIT=3,
     SCR_MANUAL=4,
-    SCR_ERROR=5
+    SCR_ERROR=5,
+    SCR_DEBUG=6
 } screen_t;
 
 static screen_t screen = SCR_HOME;
@@ -637,91 +638,6 @@ static const char* action_str(man_action_t a){
     return (a == MAN_FEED) ? "FEED" : "REV";
 }
 
-static void draw_error(void){
-    u8g2_ClearBuffer(&g_u8g2);
-    u8g2_SetFont(&g_u8g2, u8g2_font_6x10_tf);
-    u8g2_DrawStr(&g_u8g2, 0, 10, "ERROR");
-    u8g2_DrawHLine(&g_u8g2, 0, 12, 128);
-    u8g2_DrawStr(&g_u8g2, 0, 30, error_msg);
-    u8g2_DrawStr(&g_u8g2, 0, 50, "RUNOUT -> pause");
-    u8g2_DrawStr(&g_u8g2, 0, 62, "BACK clears");
-    u8g2_SendBuffer(&g_u8g2);
-}
-
-static void draw_list(const char *title, int count, int sel, const char* (*label)(int), const char *right){
-    u8g2_ClearBuffer(&g_u8g2);
-    u8g2_SetFont(&g_u8g2, u8g2_font_6x10_tf);
-    u8g2_DrawStr(&g_u8g2, 0, 10, title);
-    u8g2_DrawHLine(&g_u8g2, 0, 12, 128);
-    if(right) u8g2_DrawStr(&g_u8g2, 82, 10, right);
-
-    for(int i=0;i<count;i++){
-        int y = 24 + i * 10;
-        if(i == sel){
-            u8g2_DrawBox(&g_u8g2, 0, y - 9, 128, 10);
-            u8g2_SetDrawColor(&g_u8g2, 0);
-            u8g2_DrawStr(&g_u8g2, 2, y, label(i));
-            u8g2_SetDrawColor(&g_u8g2, 1);
-        } else {
-            u8g2_DrawStr(&g_u8g2, 2, y, label(i));
-        }
-    }
-    u8g2_SendBuffer(&g_u8g2);
-}
-
-static void draw_settings_items(void){
-    char right[24];
-    if(settings_value_edit){
-        snprintf(right, sizeof(right), "EDIT");
-    } else {
-        settings_item_value_str(settings_cat_idx, settings_item_idx, right, sizeof(right));
-    }
-    draw_list(settings_cat_label(settings_cat_idx),
-              settings_item_count(settings_cat_idx),
-              settings_item_idx,
-              current_settings_item_label,
-              right);
-}
-
-static void draw_manual(void){
-    u8g2_ClearBuffer(&g_u8g2);
-    u8g2_SetFont(&g_u8g2, u8g2_font_6x10_tf);
-    u8g2_DrawStr(&g_u8g2, 0, 10, "Manual");
-    u8g2_DrawHLine(&g_u8g2, 0, 12, 128);
-
-    for(int i=0;i<3;i++){
-        int y = 26 + i * 12;
-        if(i == manual_idx){
-            u8g2_DrawBox(&g_u8g2, 0, y - 9, 128, 12);
-            u8g2_SetDrawColor(&g_u8g2, 0);
-            u8g2_DrawStr(&g_u8g2, 2, y, manual_label(i));
-            u8g2_SetDrawColor(&g_u8g2, 1);
-        } else {
-            u8g2_DrawStr(&g_u8g2, 2, y, manual_label(i));
-        }
-    }
-
-    char r0[16], r1[16], r2[16];
-    snprintf(r0, sizeof(r0), "L%d", manual_lane);
-    snprintf(r1, sizeof(r1), "%s", action_str(manual_action));
-    snprintf(r2, sizeof(r2), "%s", manual_running ? "RUN" : "STOP");
-
-    u8g2_DrawStr(&g_u8g2, 92, 26, r0);
-    u8g2_DrawStr(&g_u8g2, 92, 38, r1);
-    u8g2_DrawStr(&g_u8g2, 92, 50, r2);
-
-    if(manual_running){
-        char sp[24];
-        snprintf(sp, sizeof(sp), "SPS:%d", manual_sps);
-        u8g2_DrawStr(&g_u8g2, 0, 62, sp);
-        u8g2_DrawStr(&g_u8g2, 72, 62, "BACK=STOP");
-    } else {
-        u8g2_DrawStr(&g_u8g2, 0, 62, "CONF toggles / BACK exit");
-    }
-
-    u8g2_SendBuffer(&g_u8g2);
-}
-
 // ===================== NightOwl lane core =====================
 typedef enum {
     TASK_IDLE=0,
@@ -813,6 +729,196 @@ static void stop_all(lane_t *L1, lane_t *L2){
     motion_started_ms = 0;
 }
 
+// ===================== UI draw helpers =====================
+static void draw_dot(int x, int y, bool on){
+    if(on) u8g2_DrawDisc(&g_u8g2, x, y, 2, U8G2_DRAW_ALL);
+    else   u8g2_DrawCircle(&g_u8g2, x, y, 2, U8G2_DRAW_ALL);
+}
+
+static const char* home_state_str(void){
+    if(error_active) return "ERROR";
+    if(manual_running) return "MANUAL";
+    if(feeding_latched) return "AUTO FEED";
+    return "IDLE";
+}
+
+static void draw_error(void){
+    u8g2_ClearBuffer(&g_u8g2);
+    u8g2_SetFont(&g_u8g2, u8g2_font_6x10_tf);
+    u8g2_DrawStr(&g_u8g2, 0, 10, "ERROR");
+    u8g2_DrawHLine(&g_u8g2, 0, 12, 128);
+    u8g2_DrawStr(&g_u8g2, 0, 30, error_msg);
+    u8g2_DrawStr(&g_u8g2, 0, 50, "RUNOUT -> pause");
+    u8g2_DrawStr(&g_u8g2, 0, 62, "BACK clears");
+    u8g2_SendBuffer(&g_u8g2);
+}
+
+static void draw_list(const char *title, int count, int sel, const char* (*label)(int), const char *right){
+    u8g2_ClearBuffer(&g_u8g2);
+    u8g2_SetFont(&g_u8g2, u8g2_font_6x10_tf);
+    u8g2_DrawStr(&g_u8g2, 0, 10, title);
+    u8g2_DrawHLine(&g_u8g2, 0, 12, 128);
+    if(right) u8g2_DrawStr(&g_u8g2, 82, 10, right);
+
+    for(int i=0;i<count;i++){
+        int y = 24 + i * 10;
+        if(i == sel){
+            u8g2_DrawBox(&g_u8g2, 0, y - 9, 128, 10);
+            u8g2_SetDrawColor(&g_u8g2, 0);
+            u8g2_DrawStr(&g_u8g2, 2, y, label(i));
+            u8g2_SetDrawColor(&g_u8g2, 1);
+        } else {
+            u8g2_DrawStr(&g_u8g2, 2, y, label(i));
+        }
+    }
+    u8g2_SendBuffer(&g_u8g2);
+}
+
+static void draw_settings_items(void){
+    char right[24];
+    if(settings_value_edit) snprintf(right, sizeof(right), "EDIT");
+    else settings_item_value_str(settings_cat_idx, settings_item_idx, right, sizeof(right));
+
+    draw_list(settings_cat_label(settings_cat_idx),
+              settings_item_count(settings_cat_idx),
+              settings_item_idx,
+              current_settings_item_label,
+              right);
+}
+
+static void draw_manual(void){
+    u8g2_ClearBuffer(&g_u8g2);
+    u8g2_SetFont(&g_u8g2, u8g2_font_6x10_tf);
+    u8g2_DrawStr(&g_u8g2, 0, 10, "Manual");
+    u8g2_DrawHLine(&g_u8g2, 0, 12, 128);
+
+    for(int i=0;i<3;i++){
+        int y = 26 + i * 12;
+        if(i == manual_idx){
+            u8g2_DrawBox(&g_u8g2, 0, y - 9, 128, 12);
+            u8g2_SetDrawColor(&g_u8g2, 0);
+            u8g2_DrawStr(&g_u8g2, 2, y, manual_label(i));
+            u8g2_SetDrawColor(&g_u8g2, 1);
+        } else {
+            u8g2_DrawStr(&g_u8g2, 2, y, manual_label(i));
+        }
+    }
+
+    char r0[16], r1[16], r2[16];
+    snprintf(r0, sizeof(r0), "L%d", manual_lane);
+    snprintf(r1, sizeof(r1), "%s", action_str(manual_action));
+    snprintf(r2, sizeof(r2), "%s", manual_running ? "RUN" : "STOP");
+
+    u8g2_DrawStr(&g_u8g2, 92, 26, r0);
+    u8g2_DrawStr(&g_u8g2, 92, 38, r1);
+    u8g2_DrawStr(&g_u8g2, 92, 50, r2);
+
+    if(manual_running){
+        char sp[24];
+        snprintf(sp, sizeof(sp), "SPS:%d", manual_sps);
+        u8g2_DrawStr(&g_u8g2, 0, 62, sp);
+        u8g2_DrawStr(&g_u8g2, 72, 62, "BACK=STOP");
+    } else {
+        u8g2_DrawStr(&g_u8g2, 0, 62, "CONF toggles / BACK exit");
+    }
+
+    u8g2_SendBuffer(&g_u8g2);
+}
+
+static void draw_home(bool buffer_low,
+                      bool buffer_high,
+                      bool y_present,
+                      bool motion_ok,
+                      lane_t *L1,
+                      lane_t *L2)
+{
+    u8g2_ClearBuffer(&g_u8g2);
+
+    u8g2_SetFont(&g_u8g2, u8g2_font_6x10_tf);
+    u8g2_DrawStr(&g_u8g2, 0, 10, "NightOwl");
+
+    char hdr[12];
+    snprintf(hdr, sizeof(hdr), "L%d", active_lane);
+    u8g2_DrawStr(&g_u8g2, 104, 10, hdr);
+    u8g2_DrawHLine(&g_u8g2, 0, 12, 128);
+
+    u8g2_SetFont(&g_u8g2, u8g2_font_7x13B_tf);
+    u8g2_DrawStr(&g_u8g2, 0, 28, home_state_str());
+
+    u8g2_SetFont(&g_u8g2, u8g2_font_6x10_tf);
+    char sp[20];
+    snprintf(sp, sizeof(sp), "%d sps", FEED_SPS);
+    u8g2_DrawStr(&g_u8g2, 0, 40, sp);
+
+    u8g2_DrawStr(&g_u8g2, 0, 52, "L1");
+    draw_dot(18, 49, lane_in_present(L1));
+    draw_dot(26, 49, lane_out_present(L1));
+
+    if(active_lane == 1) u8g2_DrawStr(&g_u8g2, 34, 52, "<");
+
+    u8g2_DrawStr(&g_u8g2, 52, 52, "L2");
+    draw_dot(70, 49, lane_in_present(L2));
+    draw_dot(78, 49, lane_out_present(L2));
+
+    if(active_lane == 2) u8g2_DrawStr(&g_u8g2, 86, 52, "<");
+
+    u8g2_DrawStr(&g_u8g2, 0, 63, "BUF");
+    draw_dot(24, 60, buffer_low);
+    draw_dot(32, 60, buffer_high);
+
+    u8g2_DrawStr(&g_u8g2, 52, 63, "Y");
+    draw_dot(64, 60, y_present);
+
+    if(motion_ok) u8g2_DrawStr(&g_u8g2, 84, 63, "MOT OK");
+    else          u8g2_DrawStr(&g_u8g2, 84, 63, "MOT NO");
+
+    u8g2_SendBuffer(&g_u8g2);
+}
+
+static void draw_debug(bool buffer_low,
+                       bool buffer_high,
+                       bool y_present,
+                       bool motion_ok,
+                       bool raw_motion,
+                       bool l1_in,
+                       bool l2_in)
+{
+    u8g2_ClearBuffer(&g_u8g2);
+    u8g2_SetFont(&g_u8g2, u8g2_font_6x10_tf);
+
+    u8g2_DrawStr(&g_u8g2, 0, 10, "Debug");
+    u8g2_DrawHLine(&g_u8g2, 0, 12, 128);
+
+    char s[32];
+
+    snprintf(s, sizeof(s), "SWP:%d LAT:%d ACT:L%d",
+             swap_armed ? 1 : 0,
+             feeding_latched ? 1 : 0,
+             active_lane);
+    u8g2_DrawStr(&g_u8g2, 0, 24, s);
+
+    snprintf(s, sizeof(s), "L1:%d L2:%d Y:%d B:%d/%d",
+             l1_in ? 1 : 0,
+             l2_in ? 1 : 0,
+             y_present ? 1 : 0,
+             buffer_low ? 1 : 0,
+             buffer_high ? 1 : 0);
+    u8g2_DrawStr(&g_u8g2, 0, 36, s);
+
+    snprintf(s, sizeof(s), "M:%s R:%d I:%lu",
+             motion_ok ? "OK" : "NO",
+             raw_motion ? 1 : 0,
+             (unsigned long)g_motion_edges_irq);
+    u8g2_DrawStr(&g_u8g2, 0, 48, s);
+
+    snprintf(s, sizeof(s), "P:%lu OF:%lu",
+             (unsigned long)g_motion_edges_poll,
+             (unsigned long)oled_fault_count);
+    u8g2_DrawStr(&g_u8g2, 0, 60, s);
+
+    u8g2_SendBuffer(&g_u8g2);
+}
+
 // ===================== MAIN =====================
 int main(void){
     stdio_init_all();
@@ -823,18 +929,15 @@ int main(void){
     runout_init();
     motion_init();
 
-    // shared sensors
     din_t y_split, buf_low, buf_high;
     din_init(&y_split, PIN_Y_SPLIT);
     din_init(&buf_low, PIN_BUF_LOW);
     din_init(&buf_high, PIN_BUF_HIGH);
 
-    // motors
     motor_t m1, m2;
     motor_init(&m1, PIN_M1_EN, PIN_M1_DIR, PIN_M1_STEP, M1_DIR_INVERT);
     motor_init(&m2, PIN_M2_EN, PIN_M2_DIR, PIN_M2_STEP, M2_DIR_INVERT);
 
-    // lanes
     lane_t L1, L2;
     lane_setup(&L1, PIN_L1_IN, PIN_L1_OUT, m1);
     lane_setup(&L2, PIN_L2_IN, PIN_L2_OUT, m2);
@@ -849,20 +952,17 @@ int main(void){
         uint32_t now_ms = to_ms_since_boot(now);
         g_now_ms = now_ms;
 
-        // retry OLED occasionally if faulted
         if(oled_fault && (int32_t)(now_ms - oled_retry_ms) >= 0){
             oled_retry_ms = now_ms + 2000;
             oled_init();
         }
 
-        // update all debounced inputs
         din_update(&y_split);
         din_update(&buf_low);
         din_update(&buf_high);
         din_update(&L1.in_sw); din_update(&L1.out_sw);
         din_update(&L2.in_sw); din_update(&L2.out_sw);
 
-        // Y debounce / hysteresis
         bool y_raw = on_al(&y_split);
         if(y_raw != y_state){
             if((now_ms - y_change_ms) > 30){
@@ -879,7 +979,6 @@ int main(void){
         bool l1_in = lane_in_present(&L1);
         bool l2_in = lane_in_present(&L2);
 
-        // motion poll counter for debug
         if(absolute_time_diff_us(last_poll, now) > 1000){
             last_poll = now;
             bool raw = gpio_get(PIN_SFS_MOT);
@@ -891,7 +990,6 @@ int main(void){
 
         evt_t ev = input_poll(now_ms);
 
-        // ===================== Error screen =====================
         if(error_active){
             if(ev == EVT_BACK_DOWN){
                 error_active = false;
@@ -903,7 +1001,6 @@ int main(void){
             }
         } else {
 
-            // ===================== Manual running =====================
             if(screen == SCR_MANUAL && manual_running){
                 lane_t *LM = lane_ptr(manual_lane, &L1, &L2);
 
@@ -919,12 +1016,17 @@ int main(void){
                 }
             } else {
 
-                // ===================== UI navigation =====================
                 if(screen == SCR_HOME){
                     if(ev == EVT_CONFIRM) screen = SCR_MENU;
+                    if(ev == EVT_BACK_DOWN) screen = SCR_DEBUG;
 
                     if(ev == EVT_CW)  FEED_SPS = clamp_i(FEED_SPS + 200, 200, 30000);
                     if(ev == EVT_CCW) FEED_SPS = clamp_i(FEED_SPS - 200, 200, 30000);
+                }
+                else if(screen == SCR_DEBUG){
+                    if(ev == EVT_BACK_DOWN || ev == EVT_CONFIRM){
+                        screen = SCR_HOME;
+                    }
                 }
                 else if(screen == SCR_MENU){
                     if(ev == EVT_CW){ main_idx++; if(main_idx > 2) main_idx = 2; }
@@ -1023,10 +1125,8 @@ int main(void){
                 }
             }
 
-            // ===================== AUTO core =====================
             if(!manual_running){
 
-                // simple autoload if IN sees filament and OUT not yet
                 if(lane_in_present(&L1) && !lane_out_present(&L1) && L1.task == TASK_IDLE){
                     lane_start(&L1, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, 6000);
                     motion_started_ms = now_ms;
@@ -1038,7 +1138,6 @@ int main(void){
                     motion_reset();
                 }
 
-                // buffer latch logic
                 if(buffer_low){
                     if(low_since_ms == 0) low_since_ms = now_ms;
                 } else {
@@ -1067,12 +1166,10 @@ int main(void){
                 bool a_in = lane_in_present(A);
                 bool b_in = lane_in_present(B);
 
-                // active lane empty -> arm swap
                 if(feeding_latched && !a_in){
                     swap_armed = true;
                 }
 
-                // execute swap only when Y empty
                 bool cooldown_ok = (int32_t)(now_ms - swap_block_until_ms) >= 0;
                 bool y_ok = (!REQUIRE_Y_EMPTY_SWAP) || y_empty;
 
@@ -1088,8 +1185,6 @@ int main(void){
                     motion_reset();
                 }
 
-                // if feeding is latched, keep feeding active lane even if a_in already went false.
-                // only stop when buffer_high unlatches or swap happened.
                 A = lane_ptr(active_lane, &L1, &L2);
 
                 if(feeding_latched){
@@ -1116,7 +1211,6 @@ int main(void){
             }
         }
 
-        // ===================== Ramp =====================
         if((int32_t)(now_ms - ramp_last_ms) >= RAMP_TICK_MS){
             ramp_last_ms = now_ms;
 
@@ -1136,7 +1230,6 @@ int main(void){
             }
         }
 
-        // ===================== Fault logic =====================
         bool feeding_now = (L1.task == TASK_FEED) || (L2.task == TASK_FEED);
 
         bool moving_now = false;
@@ -1191,45 +1284,19 @@ int main(void){
             }
         }
 
-        // ===================== UI =====================
         if(!oled_fault && absolute_time_diff_us(last_ui, now) > 80000){
             last_ui = now;
+
+            bool raw_motion = gpio_get(PIN_SFS_MOT);
 
             if(error_active){
                 draw_error();
             }
             else if(screen == SCR_HOME){
-                u8g2_ClearBuffer(&g_u8g2);
-                u8g2_SetFont(&g_u8g2, u8g2_font_6x10_tf);
-
-                u8g2_DrawStr(&g_u8g2, 0, 10, "NightOwl");
-                u8g2_DrawHLine(&g_u8g2, 0, 12, 128);
-
-                char s[64];
-                snprintf(s, sizeof(s), "A:L%d  L1:%c/%c L2:%c/%c",
-                         active_lane,
-                         lane_in_present(&L1)?'Y':'-', lane_out_present(&L1)?'Y':'-',
-                         lane_in_present(&L2)?'Y':'-', lane_out_present(&L2)?'Y':'-');
-                u8g2_DrawStr(&g_u8g2, 0, 24, s);
-
-                snprintf(s, sizeof(s), "Buf L:%c H:%c  Y:%c",
-                         buffer_low?'Y':'-', buffer_high?'Y':'-',
-                         y_present?'Y':'-');
-                u8g2_DrawStr(&g_u8g2, 0, 36, s);
-
-                const char *st = manual_running ? "MAN" : feeding_latched ? "AUTO" : "IDLE";
-                snprintf(s, sizeof(s), "State:%s Feed:%d OF:%lu", st, FEED_SPS,
-                         (unsigned long)oled_fault_count);
-                u8g2_DrawStr(&g_u8g2, 0, 48, s);
-
-                bool raw = gpio_get(PIN_SFS_MOT);
-                snprintf(s, sizeof(s), "Mot:%s RAW:%d I:%lu P:%lu",
-                         motion_ok?"OK":"NO", raw?1:0,
-                         (unsigned long)g_motion_edges_irq,
-                         (unsigned long)g_motion_edges_poll);
-                u8g2_DrawStr(&g_u8g2, 0, 60, s);
-
-                u8g2_SendBuffer(&g_u8g2);
+                draw_home(buffer_low, buffer_high, y_present, motion_ok, &L1, &L2);
+            }
+            else if(screen == SCR_DEBUG){
+                draw_debug(buffer_low, buffer_high, y_present, motion_ok, raw_motion, l1_in, l2_in);
             }
             else if(screen == SCR_MENU){
                 draw_list("Menu", 3, main_idx, main_label, NULL);
