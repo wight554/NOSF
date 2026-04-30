@@ -122,19 +122,22 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
     line_idle(t->tx_pin);
     tmc_delay_ns(TMC_BIT_NS * 4); // TMC replies after 8 bit-times; poll before that window
 
-    if (!rx_wait_start(t->tx_pin, 2000)) {
+    if (!rx_wait_start(t->rx_pin, 2000)) {
+        gpio_pull_down(t->rx_pin);
         restore_interrupts(ints);
         return false;
     }
-    rep[0] = rx_byte_after_start(t->tx_pin);
+    rep[0] = rx_byte_after_start(t->rx_pin);
 
     for (int i = 1; i < 8; i++) {
-        if (!rx_wait_start(t->tx_pin, 200)) {
+        if (!rx_wait_start(t->rx_pin, 200)) {
+            gpio_pull_down(t->rx_pin);
             restore_interrupts(ints);
             return false;
         }
-        rep[i] = rx_byte_after_start(t->tx_pin);
+        rep[i] = rx_byte_after_start(t->rx_pin);
     }
+    gpio_pull_down(t->rx_pin); // restore DIAG pin state (active-high, normally pull-down)
     restore_interrupts(ints);
 
     if (rep[0] != 0x05 || rep[1] != 0xFF || (rep[2] & 0x7Fu) != reg) {
