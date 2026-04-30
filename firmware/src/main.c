@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "pico/bootrom.h"
 #include "pico/flash.h"
 #include "pico/stdlib.h"
 
@@ -417,7 +418,8 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
     }
 
     if ((L->task == TASK_FEED || L->task == TASK_AUTOLOAD) && !lane_in_present(L)) {
-        if ((int32_t)(now_ms - L->runout_block_until_ms) >= 0) {
+        if ((int32_t)(now_ms - L->motion_started_ms) >= MOTION_STARTUP_MS &&
+            (int32_t)(now_ms - L->runout_block_until_ms) >= 0) {
             char lane_s[2] = { (char)('0' + L->lane_id), 0 };
             cmd_event("RUNOUT", lane_s);
             L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
@@ -1337,14 +1339,18 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         }
     } else if (!strcmp(cmd, "SG")) {
         int ln = atoi(p);
-        uint16_t sg = 0;
-        tmc_t *t = (ln == 1) ? &g_tmc1 : &g_tmc2;
-        if ((ln == 1 || ln == 2) && tmc_read_sg_result(t, &sg)) {
-            char out[24];
-            snprintf(out, sizeof(out), "%d:%u", ln, sg);
-            cmd_reply("OK", out);
+        if (ln != 1 && ln != 2) {
+            cmd_reply("ER", "ARG");
         } else {
-            cmd_reply("ER", "SG");
+            uint16_t sg = 0;
+            tmc_t *t = (ln == 1) ? &g_tmc1 : &g_tmc2;
+            if (tmc_read_sg_result(t, &sg)) {
+                char out[24];
+                snprintf(out, sizeof(out), "%d:%u", ln, sg);
+                cmd_reply("OK", out);
+            } else {
+                cmd_reply("ER", "SG:NO_RESPONSE");
+            }
         }
     } else if (!strcmp(cmd, "CA")) {
         int ln = 0;
@@ -1355,7 +1361,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
                 TMC_RUN_CURRENT_MA = ma;
                 cmd_reply("OK", NULL);
             } else {
-                cmd_reply("ER", "TMC");
+                cmd_reply("ER", "CA:NO_RESPONSE");
             }
         } else {
             cmd_reply("ER", "ARG");
@@ -1374,6 +1380,75 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         cmd_reply("OK", "NIGHTOWL_ERB_0.1.0");
     } else if (!strcmp(cmd, "?")) {
         status_dump();
+    } else if (!strcmp(cmd, "SET")) {
+        char param[32];
+        char val_str[32];
+        if (sscanf(p, "%31[^:]:%31s", param, val_str) != 2) {
+            cmd_reply("ER", "SET:UNKNOWN_PARAM");
+        } else {
+            int iv = atoi(val_str);
+            float fv = (float)atof(val_str);
+            bool handled = true;
+            if      (!strcmp(param, "FEED_SPS"))     FEED_SPS = clamp_i(iv, 200, 30000);
+            else if (!strcmp(param, "REV_SPS"))      REV_SPS = clamp_i(iv, 200, 30000);
+            else if (!strcmp(param, "AUTO_SPS"))     AUTO_SPS = clamp_i(iv, 200, 30000);
+            else if (!strcmp(param, "SYNC_MAX"))     SYNC_MAX_SPS = clamp_i(iv, 200, 30000);
+            else if (!strcmp(param, "SYNC_MIN"))     SYNC_MIN_SPS = clamp_i(iv, 0, 30000);
+            else if (!strcmp(param, "SYNC_UP"))      SYNC_RAMP_UP_SPS = clamp_i(iv, 10, 2000);
+            else if (!strcmp(param, "SYNC_DN"))      SYNC_RAMP_DN_SPS = clamp_i(iv, 10, 2000);
+            else if (!strcmp(param, "SYNC_RATIO"))   { SYNC_RATIO = fv < 0.1f ? 0.1f : fv > 5.0f ? 5.0f : fv; }
+            else if (!strcmp(param, "PRE_RAMP"))     PRE_RAMP_SPS = clamp_i(iv, 0, 2000);
+            else if (!strcmp(param, "BUF_TRAVEL"))   { BUF_HALF_TRAVEL_MM = fv < 1.0f ? 1.0f : fv > 50.0f ? 50.0f : fv; }
+            else if (!strcmp(param, "BUF_HYST"))     BUF_HYST_MS = clamp_i(iv, 5, 500);
+            else if (!strcmp(param, "BASELINE"))     g_baseline_sps = clamp_i(iv, 200, 30000);
+            else if (!strcmp(param, "STARTUP_MS"))   MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
+            else if (!strcmp(param, "SERVO_OPEN"))   SERVO_OPEN_US = clamp_i(iv, 400, 2600);
+            else if (!strcmp(param, "SERVO_CLOSE"))  SERVO_CLOSE_US = clamp_i(iv, 400, 2600);
+            else if (!strcmp(param, "SERVO_SETTLE")) SERVO_SETTLE_MS = clamp_i(iv, 100, 2000);
+            else if (!strcmp(param, "CUT_FEED"))     CUT_FEED_MM = clamp_i(iv, 1, 200);
+            else if (!strcmp(param, "CUT_LEN"))      CUT_LENGTH_MM = clamp_i(iv, 1, 50);
+            else if (!strcmp(param, "CUT_AMT"))      CUT_AMOUNT = clamp_i(iv, 1, 5);
+            else if (!strcmp(param, "TC_CUT_MS"))    TC_TIMEOUT_CUT_MS = clamp_i(iv, 1000, 30000);
+            else if (!strcmp(param, "TC_UNLOAD_MS")) TC_TIMEOUT_UNLOAD_MS = clamp_i(iv, 1000, 30000);
+            else if (!strcmp(param, "TC_TH_MS"))     TC_TIMEOUT_TH_MS = clamp_i(iv, 0, 10000);
+            else if (!strcmp(param, "TC_LOAD_MS"))   TC_TIMEOUT_LOAD_MS = clamp_i(iv, 1000, 60000);
+            else handled = false;
+            if (handled) cmd_reply("OK", NULL);
+            else cmd_reply("ER", "SET:UNKNOWN_PARAM");
+        }
+    } else if (!strcmp(cmd, "GET")) {
+        char out[48];
+        bool handled = true;
+        if      (!strcmp(p, "FEED_SPS"))     snprintf(out, sizeof(out), "FEED_SPS:%d", FEED_SPS);
+        else if (!strcmp(p, "REV_SPS"))      snprintf(out, sizeof(out), "REV_SPS:%d", REV_SPS);
+        else if (!strcmp(p, "AUTO_SPS"))     snprintf(out, sizeof(out), "AUTO_SPS:%d", AUTO_SPS);
+        else if (!strcmp(p, "SYNC_MAX"))     snprintf(out, sizeof(out), "SYNC_MAX:%d", SYNC_MAX_SPS);
+        else if (!strcmp(p, "SYNC_MIN"))     snprintf(out, sizeof(out), "SYNC_MIN:%d", SYNC_MIN_SPS);
+        else if (!strcmp(p, "SYNC_UP"))      snprintf(out, sizeof(out), "SYNC_UP:%d", SYNC_RAMP_UP_SPS);
+        else if (!strcmp(p, "SYNC_DN"))      snprintf(out, sizeof(out), "SYNC_DN:%d", SYNC_RAMP_DN_SPS);
+        else if (!strcmp(p, "SYNC_RATIO"))   snprintf(out, sizeof(out), "SYNC_RATIO:%.3f", (double)SYNC_RATIO);
+        else if (!strcmp(p, "PRE_RAMP"))     snprintf(out, sizeof(out), "PRE_RAMP:%d", PRE_RAMP_SPS);
+        else if (!strcmp(p, "BUF_TRAVEL"))   snprintf(out, sizeof(out), "BUF_TRAVEL:%.3f", (double)BUF_HALF_TRAVEL_MM);
+        else if (!strcmp(p, "BUF_HYST"))     snprintf(out, sizeof(out), "BUF_HYST:%d", BUF_HYST_MS);
+        else if (!strcmp(p, "BASELINE"))     snprintf(out, sizeof(out), "BASELINE:%d", g_baseline_sps);
+        else if (!strcmp(p, "STARTUP_MS"))   snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
+        else if (!strcmp(p, "SERVO_OPEN"))   snprintf(out, sizeof(out), "SERVO_OPEN:%d", SERVO_OPEN_US);
+        else if (!strcmp(p, "SERVO_CLOSE"))  snprintf(out, sizeof(out), "SERVO_CLOSE:%d", SERVO_CLOSE_US);
+        else if (!strcmp(p, "SERVO_SETTLE")) snprintf(out, sizeof(out), "SERVO_SETTLE:%d", SERVO_SETTLE_MS);
+        else if (!strcmp(p, "CUT_FEED"))     snprintf(out, sizeof(out), "CUT_FEED:%d", CUT_FEED_MM);
+        else if (!strcmp(p, "CUT_LEN"))      snprintf(out, sizeof(out), "CUT_LEN:%d", CUT_LENGTH_MM);
+        else if (!strcmp(p, "CUT_AMT"))      snprintf(out, sizeof(out), "CUT_AMT:%d", CUT_AMOUNT);
+        else if (!strcmp(p, "TC_CUT_MS"))    snprintf(out, sizeof(out), "TC_CUT_MS:%d", TC_TIMEOUT_CUT_MS);
+        else if (!strcmp(p, "TC_UNLOAD_MS")) snprintf(out, sizeof(out), "TC_UNLOAD_MS:%d", TC_TIMEOUT_UNLOAD_MS);
+        else if (!strcmp(p, "TC_TH_MS"))     snprintf(out, sizeof(out), "TC_TH_MS:%d", TC_TIMEOUT_TH_MS);
+        else if (!strcmp(p, "TC_LOAD_MS"))   snprintf(out, sizeof(out), "TC_LOAD_MS:%d", TC_TIMEOUT_LOAD_MS);
+        else handled = false;
+        if (handled) cmd_reply("OK", out);
+        else cmd_reply("ER", "GET:UNKNOWN_PARAM");
+    } else if (!strcmp(cmd, "BOOT")) {
+        cmd_reply("OK", "REBOOTING_TO_BOOTSEL");
+        sleep_ms(100);
+        reset_usb_boot(0, 0);
     } else {
         cmd_reply("ER", "UNKNOWN");
     }
