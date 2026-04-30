@@ -1448,6 +1448,23 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else handled = false;
         if (handled) cmd_reply("OK", out);
         else cmd_reply("ER", "GET:UNKNOWN_PARAM");
+    } else if (!strcmp(cmd, "DR")) {
+        int ln = atoi(p);
+        if (ln != 1 && ln != 2) {
+            cmd_reply("ER", "ARG");
+        } else {
+            tmc_t *t = (ln == 1) ? &g_tmc1 : &g_tmc2;
+            uint32_t ifcnt = 0, gconf = 0, chopconf = 0;
+            bool r1 = tmc_read(t, TMC_REG_IFCNT,   &ifcnt);
+            bool r2 = tmc_read(t, TMC_REG_GCONF,   &gconf);
+            bool r3 = tmc_read(t, TMC_REG_CHOPCONF, &chopconf);
+            char out[80];
+            snprintf(out, sizeof(out),
+                "%d:IF=%u,GC=%08X,CH=%08X,OK=%d%d%d",
+                ln, (unsigned)ifcnt, (unsigned)gconf, (unsigned)chopconf,
+                r1 ? 1 : 0, r2 ? 1 : 0, r3 ? 1 : 0);
+            cmd_reply("OK", out);
+        }
     } else if (!strcmp(cmd, "BOOT")) {
         cmd_reply("OK", "REBOOTING_TO_BOOTSEL");
         sleep_ms(100);

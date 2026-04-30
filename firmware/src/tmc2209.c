@@ -120,7 +120,7 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
         tx_byte(t->tx_pin, req[i]);
     }
     line_idle(t->tx_pin);
-    tmc_delay_ns(TMC_BIT_NS * 50);
+    tmc_delay_ns(TMC_BIT_NS * 4); // TMC replies after 8 bit-times; poll before that window
 
     if (!rx_wait_start(t->tx_pin, 2000)) {
         restore_interrupts(ints);
