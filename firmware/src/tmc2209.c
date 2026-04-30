@@ -119,25 +119,25 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
     for (int i = 0; i < 4; i++) {
         tx_byte(t->tx_pin, req[i]);
     }
+    // ERB wires tx_pin to PDN_UART (single-wire half-duplex); after TX release the pin
+    // and listen on the same wire — the TMC drives it LOW for its response.
+    // rx_pin is DIAG only (normally LOW = no stall) and cannot be used for UART reads.
     line_idle(t->tx_pin);
     tmc_delay_ns(TMC_BIT_NS * 4); // TMC replies after 8 bit-times; poll before that window
 
-    if (!rx_wait_start(t->rx_pin, 2000, &edge_us)) {
-        gpio_pull_down(t->rx_pin);
+    if (!rx_wait_start(t->tx_pin, 2000, &edge_us)) {
         restore_interrupts(ints);
         return false;
     }
-    rep[0] = rx_byte_from_edge(t->rx_pin, edge_us);
+    rep[0] = rx_byte_from_edge(t->tx_pin, edge_us);
 
     for (int i = 1; i < 8; i++) {
-        if (!rx_wait_start(t->rx_pin, 200, &edge_us)) {
-            gpio_pull_down(t->rx_pin);
+        if (!rx_wait_start(t->tx_pin, 200, &edge_us)) {
             restore_interrupts(ints);
             return false;
         }
-        rep[i] = rx_byte_from_edge(t->rx_pin, edge_us);
+        rep[i] = rx_byte_from_edge(t->tx_pin, edge_us);
     }
-    gpio_pull_down(t->rx_pin); // restore DIAG pin state (active-high, normally pull-down)
     restore_interrupts(ints);
 
     if (rep[0] != 0x05 || rep[1] != 0xFF || (rep[2] & 0x7Fu) != reg) {
@@ -278,7 +278,10 @@ bool tmc_init(tmc_t *t, uint tx_pin, uint rx_pin, uint8_t addr) {
     t->addr = addr;
     gpio_init(tx_pin);
     line_idle(tx_pin);
+    // rx_pin is DIAG (active-high stall signal, normally LOW); pull down so the
+    // TMC's LOW output doesn't fight the GPIO and to detect rising-edge stalls.
     gpio_init(rx_pin);
-    line_idle(rx_pin);
+    gpio_set_dir(rx_pin, GPIO_IN);
+    gpio_pull_down(rx_pin);
     return true;
 }
