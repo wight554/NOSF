@@ -20,28 +20,28 @@
 #include "tmc2209.h"
 
 // ===================== PINOUT (ERB V2.0 draft, verify against schematic) =====================
-#define PIN_L1_IN        24
-#define PIN_L1_OUT       25
-#define PIN_L2_IN        22
-#define PIN_L2_OUT       12
-#define PIN_Y_SPLIT      2
+#define PIN_L1_IN        2
+#define PIN_L1_OUT       3
+#define PIN_L2_IN        4
+#define PIN_L2_OUT       5
+#define PIN_Y_SPLIT      6
 
-#define PIN_BUF_ADVANCE  6
-#define PIN_BUF_TRAILING 7
+#define PIN_BUF_ADVANCE  7
+#define PIN_BUF_TRAILING 12
 
 #define PIN_M1_EN        8
 #define PIN_M1_DIR       9
 #define PIN_M1_STEP      10
 #define PIN_M1_UART      11
-#define PIN_M1_DIAG      5
+#define PIN_M1_DIAG      13
 
 #define PIN_M2_EN        14
 #define PIN_M2_DIR       15
 #define PIN_M2_STEP      16
 #define PIN_M2_UART      17
-#define PIN_M2_DIAG      18
+#define PIN_M2_DIAG      19
 
-#define PIN_SERVO        19
+#define PIN_SERVO        23
 #define PIN_NEOPIXEL     21
 
 #define M1_DIR_INVERT    0
