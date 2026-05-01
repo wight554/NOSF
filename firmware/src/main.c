@@ -102,6 +102,7 @@ static float SYNC_RATIO = CONF_SYNC_RATIO;
 static bool BUF_INVERT = false;
 static bool AUTO_PRELOAD = true;
 static int AUTOLOAD_RETRACT_MM = 10;
+static bool ENABLE_CUTTER = false;
 
 static float MM_PER_STEP = CONF_MM_PER_STEP; // TUNE: gear + microstep derived.
 
@@ -731,7 +732,14 @@ static void tc_start(int target_lane, uint32_t now_ms) {
     g_tc_ctx.phase_start_ms = now_ms;
 
     sync_enabled = false;
-    g_tc_ctx.state = (target_lane == active_lane) ? TC_LOAD_START : TC_UNLOAD_CUT;
+    if (target_lane == active_lane) {
+        g_tc_ctx.state = TC_LOAD_START;
+    } else if (ENABLE_CUTTER) {
+        g_tc_ctx.state = TC_UNLOAD_CUT;
+    } else {
+        // Cutter disabled: skip cut, go straight to reverse unload.
+        g_tc_ctx.state = TC_UNLOAD_REVERSE;
+    }
 }
 
 static void tc_abort(void) {
@@ -1136,7 +1144,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NightOwl settings sentinel.
-#define SETTINGS_VERSION 4u
+#define SETTINGS_VERSION 5u
 
 typedef struct {
     uint32_t magic;
@@ -1153,6 +1161,7 @@ typedef struct {
     bool buf_invert;
     bool auto_preload;
     int autoload_retract_mm;
+    bool enable_cutter;
 
     int motion_startup_ms;
     int sgt_l1, sgt_l2;
@@ -1212,6 +1221,7 @@ static void settings_defaults(void) {
     BUF_INVERT = false;
     AUTO_PRELOAD = true;
     AUTOLOAD_RETRACT_MM = 10;
+    ENABLE_CUTTER = false;
 
     MOTION_STARTUP_MS = CONF_MOTION_STARTUP_MS;
     TMC_SGT_L1 = CONF_SGT_L1;
@@ -1272,6 +1282,7 @@ static void settings_save(void) {
     s.buf_invert = BUF_INVERT;
     s.auto_preload = AUTO_PRELOAD;
     s.autoload_retract_mm = AUTOLOAD_RETRACT_MM;
+    s.enable_cutter = ENABLE_CUTTER;
 
     s.motion_startup_ms = MOTION_STARTUP_MS;
     s.sgt_l1 = TMC_SGT_L1;
@@ -1378,6 +1389,7 @@ static void settings_load(void) {
     BUF_INVERT = s->buf_invert;
     AUTO_PRELOAD = s->auto_preload;
     AUTOLOAD_RETRACT_MM = s->autoload_retract_mm;
+    ENABLE_CUTTER = s->enable_cutter;
 
     MOTION_STARTUP_MS = s->motion_startup_ms;
     TMC_SGT_L1 = s->sgt_l1;
@@ -1453,7 +1465,7 @@ static void status_dump(void) {
     snprintf(b, sizeof(b),
         "LN:%d,TC:%s,L1T:%s,L2T:%s,"
         "I1:%d,O1:%d,I2:%d,O2:%d,"
-        "TH:%d,YS:%d,BUF:%s,SPS:%d,BL:%d,SM:%d,BI:%d,AP:%d,"
+        "TH:%d,YS:%d,BUF:%s,SPS:%d,BL:%d,SM:%d,BI:%d,AP:%d,CU:%d,"
         "SG1:%u,SG2:%u",
         active_lane, tc_state_name(g_tc_ctx.state),
         task_name(g_lane1.task), task_name(g_lane2.task),
@@ -1469,6 +1481,7 @@ static void status_dump(void) {
         sync_enabled ? 1 : 0,
         BUF_INVERT ? 1 : 0,
         AUTO_PRELOAD ? 1 : 0,
+        ENABLE_CUTTER ? 1 : 0,
         sg1,
         sg2);
 
@@ -1516,6 +1529,10 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         A->autoload_deadline_ms = now_ms + 30000u; // 30 s safety timeout
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "CU")) {
+        if (!ENABLE_CUTTER) {
+            cmd_reply("ER", "CUTTER_DISABLED");
+            return;
+        }
         lane_t *A = lane_ptr(active_lane);
         if (!A) {
             cmd_reply("ER", "NO_ACTIVE_LANE");
@@ -1650,6 +1667,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "BUF_HYST"))     BUF_HYST_MS = clamp_i(iv, 5, 500);
             else if (!strcmp(param, "AUTO_PRELOAD"))    AUTO_PRELOAD = (iv != 0);
             else if (!strcmp(param, "RETRACT_MM"))       AUTOLOAD_RETRACT_MM = clamp_i(iv, 0, 50);
+            else if (!strcmp(param, "CUTTER"))            ENABLE_CUTTER = (iv != 0);
             else if (!strcmp(param, "BASELINE"))         g_baseline_sps = clamp_i(iv, 200, 30000);
             else if (!strcmp(param, "STARTUP_MS"))   MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
             else if (!strcmp(param, "SERVO_OPEN"))   SERVO_OPEN_US = clamp_i(iv, 400, 2600);
@@ -1689,6 +1707,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "BUF_HYST"))     snprintf(out, sizeof(out), "BUF_HYST:%d", BUF_HYST_MS);
         else if (!strcmp(param, "AUTO_PRELOAD")) snprintf(out, sizeof(out), "AUTO_PRELOAD:%d", AUTO_PRELOAD ? 1 : 0);
         else if (!strcmp(param, "RETRACT_MM"))    snprintf(out, sizeof(out), "RETRACT_MM:%d", AUTOLOAD_RETRACT_MM);
+        else if (!strcmp(param, "CUTTER"))         snprintf(out, sizeof(out), "CUTTER:%d", ENABLE_CUTTER ? 1 : 0);
         else if (!strcmp(param, "BASELINE"))     snprintf(out, sizeof(out), "BASELINE:%d", g_baseline_sps);
         else if (!strcmp(param, "STARTUP_MS"))   snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
         else if (!strcmp(param, "SERVO_OPEN"))   snprintf(out, sizeof(out), "SERVO_OPEN:%d", SERVO_OPEN_US);
