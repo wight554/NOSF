@@ -1152,8 +1152,8 @@ static void settings_save(void) {
 static void tmc_apply_all(void) {
     tmc_set_spreadcycle(&g_tmc1, TMC_SPREADCYCLE);
     tmc_set_spreadcycle(&g_tmc2, TMC_SPREADCYCLE);
-    tmc_set_microsteps(&g_tmc1, TMC_MICROSTEPS);
-    tmc_set_microsteps(&g_tmc2, TMC_MICROSTEPS);
+    tmc_setup_chopconf(&g_tmc1, TMC_MICROSTEPS, CONF_TOFF, CONF_TBL, CONF_HSTRT, CONF_HEND);
+    tmc_setup_chopconf(&g_tmc2, TMC_MICROSTEPS, CONF_TOFF, CONF_TBL, CONF_HSTRT, CONF_HEND);
     tmc_set_run_current_ma(&g_tmc1, TMC_RUN_CURRENT_MA, TMC_HOLD_CURRENT_MA);
     tmc_set_run_current_ma(&g_tmc2, TMC_RUN_CURRENT_MA, TMC_HOLD_CURRENT_MA);
     tmc_set_tcoolthrs(&g_tmc1, (uint32_t)TMC_TCOOLTHRS);

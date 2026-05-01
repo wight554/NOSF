@@ -203,7 +203,7 @@ bool tmc_set_run_current_ma(tmc_t *t, int run_ma, int hold_ma) {
     return tmc_write(t, TMC_REG_IHOLD_IRUN, reg);
 }
 
-bool tmc_set_microsteps(tmc_t *t, int microsteps) {
+bool tmc_setup_chopconf(tmc_t *t, int microsteps, int toff, int tbl, int hstrt, int hend) {
     int mres;
     switch (microsteps) {
         case 256: mres = 0; break;
@@ -218,19 +218,25 @@ bool tmc_set_microsteps(tmc_t *t, int microsteps) {
         default:  return false;
     }
 
+    // Convert actual spreadsheet values to register values
+    uint32_t reg_toff = (uint32_t)(toff & 0x0F);
+    uint32_t reg_tbl = (uint32_t)(tbl & 0x03);
+    uint32_t reg_hstrt = (uint32_t)((hstrt - 1) & 0x07);
+    uint32_t reg_hend = (uint32_t)((hend + 3) & 0x0F);
+
     uint32_t chop = 0;
     // CHOPCONF register layout (TMC2209 datasheet):
-    // bits[3:0]   TOFF=3
-    // bits[6:4]   HSTRT=7  (register value direct from spreadsheet)
-    // bits[10:7]  HEND=10  (register value direct from spreadsheet)
-    // bits[16:15] TBL=1
+    // bits[3:0]   TOFF
+    // bits[6:4]   HSTRT
+    // bits[10:7]  HEND
+    // bits[16:15] TBL
     // bit[17]     VSENSE=1
     // bits[27:24] MRES
-    chop |= (3u  << 0);    // TOFF=3
-    chop |= (7u  << 4);    // HSTRT=7
-    chop |= (10u << 7);    // HEND=10
-    chop |= (1u  << 15);   // TBL=1
-    chop |= (1u  << 17);   // VSENSE=1
+    chop |= (reg_toff  << 0);
+    chop |= (reg_hstrt << 4);
+    chop |= (reg_hend  << 7);
+    chop |= (reg_tbl   << 15);
+    chop |= (1u        << 17);   // VSENSE=1
     chop |= ((uint32_t)mres << 24); // MRES
     return tmc_write(t, TMC_REG_CHOPCONF, chop);
 }
