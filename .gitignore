@@ -10,7 +10,7 @@ build_local/
 *.map
 *.dis
 
-.claude/settings.local
+.claude/settings.local.json
 
 # ninja/cmake junk
 .ninja_deps

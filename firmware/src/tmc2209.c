@@ -6,8 +6,12 @@
 #include "hardware/sync.h"
 #include "pico/stdlib.h"
 
-#define TMC_BAUD 115200u
-#define TMC_BIT_NS 8681u
+// 40 kHz matches Klipper's tmcuart.c bit-bang rate; more resilient on
+// a shared single-wire trace than 115200 (TMC2209 auto-detects baud rate).
+#define TMC_BAUD    40000u
+#define TMC_BIT_NS  25000u
+// Half-bit period in nanoseconds, used for absolute RX sample offsets.
+#define TMC_HALF_BIT_NS 12500u
 
 static inline void tmc_delay_ns(uint32_t ns) {
     busy_wait_us_32((ns + 999u) / 1000u);
@@ -63,13 +67,13 @@ static bool rx_wait_start(uint pin, uint32_t timeout_us, uint64_t *edge_us_out) 
 }
 
 // Sample 8 data bits at absolute offsets from the detected start-bit edge.
-// Center of data bit i = edge + (2i+3) * half_bit = edge + (2i+3) * 4340 ns.
+// Center of data bit i = edge + (2i+3) * half_bit = edge + (2i+3) * TMC_HALF_BIT_NS.
 // Using absolute timestamps keeps each sample within ~5% of center regardless
-// of loop overhead, unlike the relative-delay approach that drifted ~37% by bit 7.
+// of loop overhead.
 static uint8_t rx_byte_from_edge(uint pin, uint64_t edge_us) {
     uint8_t b = 0;
     for (int i = 0; i < 8; i++) {
-        uint64_t sample_us = edge_us + ((uint64_t)(2 * i + 3) * 4340u + 500u) / 1000u;
+        uint64_t sample_us = edge_us + ((uint64_t)(2 * i + 3) * TMC_HALF_BIT_NS + 500u) / 1000u;
         busy_wait_until(from_us_since_boot(sample_us));
         if (gpio_get(pin)) b |= (1u << i);
     }

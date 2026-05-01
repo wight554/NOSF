@@ -22,7 +22,7 @@ Schematic: ERB V2.0 Release SCH.pdf (in FYSETC-ERB/V2.0/hardware/)
 | 9    | X-DIR          | Motor 1 direction               |
 | 10   | X-STEP         | Motor 1 step (PWM)              |
 | 11   | X-UART         | Motor 1 PDN_UART (single-wire)  |
-| 12   | —              | No net in schematic (unrouted)  |
+| 12   | PRE_GATE_0     | Filament pre-gate sensor (gate 0), used by Klipper MMU |
 | 13   | X-DIAG         | Motor 1 TMC2209 DIAG output     |
 | 14   | Y-EN           | Motor 2 enable (active LOW)     |
 | 15   | Y-DIR          | Motor 2 direction               |
@@ -212,5 +212,6 @@ PIN_SERVO    = 23
 PIN_NEOPIXEL = 21
 ```
 
-Note: GPIO12 (PIN_BUF_TRAILING) has no assigned net in the ERB V2.0 schematic.
-It appears unrouted. Verify the actual PCB trace before relying on it.
+Note: GPIO12 is confirmed connected (PRE_GATE_0 in the Klipper MMU config, filament
+pre-gate sensor). The schematic page for GPIO12 may not show the net label clearly but
+the Klipper mmu.cfg and board layout confirm it is routed to a sensor header.
