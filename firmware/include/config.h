@@ -8,7 +8,7 @@
 
 // Motor parameters are generated from config.ini.
 // Run: python3 scripts/gen_motor_config.py
-#include "motor_config.h"
+#include "tune.h"
 
 // ----- Sense resistor -----
 // ERB V2.0 onboard Rsense (R46/R47, R48/R49) — hardware constant, not user-tunable

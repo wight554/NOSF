@@ -9,17 +9,17 @@ pico_sdk_init()
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-set(GEN_SCRIPT    ${CMAKE_CURRENT_LIST_DIR}/../scripts/gen_motor_config.py)
-set(MOTOR_INI     ${CMAKE_CURRENT_LIST_DIR}/../config.ini)
-set(MOTOR_CONFIG_H ${CMAKE_CURRENT_LIST_DIR}/include/motor_config.h)
+set(GEN_SCRIPT ${CMAKE_CURRENT_LIST_DIR}/../scripts/gen_motor_config.py)
+set(USER_CONFIG_INI ${CMAKE_CURRENT_LIST_DIR}/../config.ini)
+set(TUNE_H ${CMAKE_CURRENT_LIST_DIR}/include/tune.h)
 
 add_custom_command(
-    OUTPUT  ${MOTOR_CONFIG_H}
-    COMMAND ${Python3_EXECUTABLE} ${GEN_SCRIPT} ${MOTOR_INI} ${MOTOR_CONFIG_H}
-    DEPENDS ${MOTOR_INI} ${GEN_SCRIPT}
-    COMMENT "Generating motor_config.h from config.ini"
+    OUTPUT  ${TUNE_H}
+    COMMAND ${Python3_EXECUTABLE} ${GEN_SCRIPT} ${USER_CONFIG_INI} ${TUNE_H}
+    DEPENDS ${USER_CONFIG_INI} ${GEN_SCRIPT}
+    COMMENT "Generating tune.h from config.ini"
 )
-add_custom_target(motor_config DEPENDS ${MOTOR_CONFIG_H})
+add_custom_target(motor_config DEPENDS ${TUNE_H})
 
 add_executable(nightowl_controller
   src/main.c

@@ -247,9 +247,26 @@ bool tmc_setup_chopconf(tmc_t *t, int microsteps, int toff, int tbl, int hstrt, 
 
 bool tmc_set_spreadcycle(tmc_t *t, bool spreadcycle) {
     uint32_t gconf = 0;
-    if (spreadcycle) gconf |= (1u << 2);
-    gconf |= (1u << 6) | (1u << 7);
+    if (spreadcycle) gconf |= (1u << 2);  // en_SpreadCycle
+    gconf |= (1u << 6);  // pdn_disable
+    gconf |= (1u << 7);  // mstep_reg_select
+    gconf |= (1u << 8);  // multistep_filt (Klipper default: True)
     return tmc_write(t, TMC_REG_GCONF, gconf);
+}
+
+bool tmc_set_pwmconf(tmc_t *t) {
+    // Klipper defaults (= TMC2209 power-on reset values):
+    // PWM_OFS=36, PWM_GRAD=14, PWM_FREQ=1, PWM_AUTOSCALE=1,
+    // PWM_AUTOGRAD=1, FREEWHEEL=0, PWM_REG=8, PWM_LIM=12
+    uint32_t val = 0;
+    val |= (36u  & 0xFFu);        // [7:0]  PWM_OFS
+    val |= (14u  & 0xFFu) << 8;  // [15:8] PWM_GRAD
+    val |= (1u   & 0x03u) << 16; // [17:16] PWM_FREQ
+    val |= (1u << 18);            // [18] PWM_AUTOSCALE
+    val |= (1u << 19);            // [19] PWM_AUTOGRAD
+    val |= (8u   & 0x0Fu) << 24; // [27:24] PWM_REG
+    val |= (12u  & 0x0Fu) << 28; // [31:28] PWM_LIM
+    return tmc_write(t, TMC_REG_PWMCONF, val);
 }
 
 bool tmc_set_sgthrs(tmc_t *t, uint8_t sgt) {

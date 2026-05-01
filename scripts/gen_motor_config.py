@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Generate firmware/include/motor_config.h from config.ini.
+Generate firmware/include/tune.h from config.ini.
 
 Usage:
   python3 scripts/gen_motor_config.py [config_path [output_path]]
 
 Defaults:
   config_path  config.ini  (repo root)
-  output_path  firmware/include/motor_config.h
+  output_path  firmware/include/tune.h
 """
 
 import configparser
@@ -18,7 +18,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 
 DEFAULT_CONFIG = os.path.join(REPO_ROOT, "config.ini")
-DEFAULT_OUTPUT = os.path.join(REPO_ROOT, "firmware", "include", "motor_config.h")
+DEFAULT_OUTPUT = os.path.join(REPO_ROOT, "firmware", "include", "tune.h")
 
 MANDATORY = ("microsteps", "rotation_distance", "run_current")
 
@@ -41,7 +41,7 @@ def read_flat_ini(path):
         content = f.read()
     if not any(line.strip().startswith("[") for line in content.splitlines()):
         content = "[DEFAULT]\n" + content
-    cfg = configparser.ConfigParser()
+    cfg = configparser.ConfigParser(strict=False)  # tolerate duplicate keys (last wins)
     cfg.read_string(content)
     params = dict(cfg.defaults())
     for section in cfg.sections():
@@ -92,16 +92,19 @@ def main():
     toff = int(get("driver_toff") or "3")
     hstrt = int(get("driver_hstrt") or "5")
     hend = int(get("driver_hend") or "0")
+    stealthchop = int(get("stealthchop_threshold") or "0")
+    spreadcycle = (stealthchop == 0)
 
     mm_per_step = rotation_distance / (full_steps * microsteps * gear_ratio)
     run_ma = int(round(run_current * 1000))
     hold_ma = int(round(hold_current * 1000))
     intpol_str = "true" if interpolate else "false"
+    spreadcycle_str = "true" if spreadcycle else "false"
 
     rel_config = os.path.relpath(config_path, REPO_ROOT)
     lines = [
         "#pragma once",
-        f"// AUTO-GENERATED — do not edit. Re-run: python3 scripts/gen_motor_config.py",
+        "// AUTO-GENERATED — do not edit. Re-run: python3 scripts/gen_motor_config.py",
         f"// Source: {rel_config}",
         "",
         f"#define CONF_RUN_CURRENT_MA     {run_ma}",
@@ -113,6 +116,7 @@ def main():
         f"#define CONF_HSTRT              {hstrt}",
         f"#define CONF_HEND               {hend}",
         f"#define CONF_INTPOL             {intpol_str}",
+        f"#define CONF_SPREADCYCLE        {spreadcycle_str}",
         "",
     ]
 
@@ -126,6 +130,7 @@ def main():
     print(f"  mm_per_step={mm_per_step:.7f}")
     print(f"  run={run_current}A ({run_ma}mA), hold={hold_current:.3f}A ({hold_ma}mA)")
     print(f"  TOFF={toff}, TBL={tbl}, HSTRT={hstrt}, HEND={hend}, INTPOL={intpol_str}")
+    print(f"  spreadcycle={spreadcycle_str}")
 
 
 if __name__ == "__main__":

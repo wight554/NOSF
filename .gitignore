@@ -16,7 +16,7 @@ build_local/
 config.ini
 
 # generated from config.ini — run scripts/gen_motor_config.py to create
-firmware/include/motor_config.h
+firmware/include/tune.h
 
 # ninja/cmake junk
 .ninja_deps
