@@ -26,3 +26,4 @@ bool tmc_set_spreadcycle(tmc_t *t, bool spreadcycle);
 bool tmc_set_sgthrs(tmc_t *t, uint8_t sgt);
 bool tmc_set_tcoolthrs(tmc_t *t, uint32_t v);
 bool tmc_read_sg_result(tmc_t *t, uint16_t *out);
+int  tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t buf[8]);

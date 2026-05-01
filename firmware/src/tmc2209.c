@@ -127,23 +127,23 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
     for (int i = 0; i < 4; i++) {
         tx_byte(t->tx_pin, req[i]);
     }
-    // ERB is two-wire: tx_pin drives PDN_UART, rx_pin receives the TMC response.
-    // After TX, release tx_pin (idle-high) and listen on rx_pin.
+    // Single-wire: tx_pin IS the UART wire. After TX, release to INPUT and listen
+    // on the same pin for the TMC's reply (~8 bit-times after last TX bit).
     line_idle(t->tx_pin);
-    tmc_delay_ns(TMC_BIT_NS * 4); // TMC replies after 8 bit-times; poll before that window
+    tmc_delay_ns(TMC_BIT_NS * 4); // start polling before the 8-bit-time reply window
 
-    if (!rx_wait_start(t->rx_pin, 2000, &edge_us)) {
+    if (!rx_wait_start(t->tx_pin, 2000, &edge_us)) {
         restore_interrupts(ints);
         return false;
     }
-    rep[0] = rx_byte_from_edge(t->rx_pin, edge_us);
+    rep[0] = rx_byte_from_edge(t->tx_pin, edge_us);
 
     for (int i = 1; i < 8; i++) {
-        if (!rx_wait_start(t->rx_pin, 200, &edge_us)) {
+        if (!rx_wait_start(t->tx_pin, 200, &edge_us)) {
             restore_interrupts(ints);
             return false;
         }
-        rep[i] = rx_byte_from_edge(t->rx_pin, edge_us);
+        rep[i] = rx_byte_from_edge(t->tx_pin, edge_us);
     }
     restore_interrupts(ints);
 
@@ -248,6 +248,39 @@ bool tmc_read_sg_result(tmc_t *t, uint16_t *out) {
     return true;
 }
 
+
+// Sends a read request and captures raw bytes on tx_pin without validating.
+// Returns number of bytes received: 0=timeout (no response), 1-7=partial, 8=full frame.
+int tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t buf[8]) {
+    uint8_t req[4];
+    uint64_t edge_us;
+
+    req[0] = 0x05;
+    req[1] = t->addr;
+    req[2] = reg & 0x7Fu;
+    req[3] = tmc_crc8(req, 3);
+
+    uint32_t ints = save_and_disable_interrupts();
+    for (int i = 0; i < 4; i++) {
+        tx_byte(t->tx_pin, req[i]);
+    }
+    line_idle(t->tx_pin);
+    tmc_delay_ns(TMC_BIT_NS * 4);
+
+    if (!rx_wait_start(t->tx_pin, 2000, &edge_us)) {
+        restore_interrupts(ints);
+        return 0;
+    }
+    buf[0] = rx_byte_from_edge(t->tx_pin, edge_us);
+
+    int n = 1;
+    for (; n < 8; n++) {
+        if (!rx_wait_start(t->tx_pin, 200, &edge_us)) break;
+        buf[n] = rx_byte_from_edge(t->tx_pin, edge_us);
+    }
+    restore_interrupts(ints);
+    return n;
+}
 
 bool tmc_init(tmc_t *t, uint tx_pin, uint rx_pin, uint8_t addr) {
     t->tx_pin = tx_pin;

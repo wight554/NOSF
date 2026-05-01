@@ -1448,6 +1448,27 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else handled = false;
         if (handled) cmd_reply("OK", out);
         else cmd_reply("ER", "GET:UNKNOWN_PARAM");
+    } else if (!strcmp(cmd, "RR")) {
+        // Raw read on tx_pin: N=0→no response, N=8→full frame. Scans addr 0-3.
+        // Usage: RR:1 or RR:2
+        int ln = atoi(p);
+        if (ln != 1 && ln != 2) {
+            cmd_reply("ER", "ARG");
+        } else {
+            tmc_t probe = (ln == 1) ? g_tmc1 : g_tmc2;
+            char out[128];
+            int pos = snprintf(out, sizeof(out), "%d:", ln);
+            for (uint8_t a = 0; a < 4; a++) {
+                probe.addr = a;
+                uint8_t buf[8] = {0};
+                int n = tmc_read_raw(&probe, TMC_REG_GCONF, buf);
+                pos += snprintf(out + pos, sizeof(out) - pos,
+                    "A%u:N=%d:%02X%02X%02X%02X%02X%02X%02X%02X ",
+                    a, n, buf[0], buf[1], buf[2], buf[3],
+                    buf[4], buf[5], buf[6], buf[7]);
+            }
+            cmd_reply("OK", out);
+        }
     } else if (!strcmp(cmd, "BOOT")) {
         cmd_reply("OK", "REBOOTING_TO_BOOTSEL");
         sleep_ms(100);
