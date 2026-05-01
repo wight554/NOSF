@@ -34,6 +34,11 @@ find_pico_sdk_path() {
 }
 
 find_picotool() {
+    if [[ -n "${PICOTOOL:-}" && -x "${PICOTOOL:-}" ]]; then
+        echo "$PICOTOOL"
+        return 0
+    fi
+
     if command -v picotool >/dev/null 2>&1; then
         command -v picotool
         return 0
@@ -52,6 +57,76 @@ find_picotool() {
         fi
     done
     return 1
+}
+
+picotool_supports_load() {
+    local bin="$1"
+    "$bin" help 2>&1 | grep -qE '(^|[[:space:]])load([[:space:]]|$)'
+}
+
+find_rp2_mountpoint() {
+    local candidates=(
+        "/media/$USER/RPI-RP2"
+        "/media/pi/RPI-RP2"
+        "/run/media/$USER/RPI-RP2"
+        "/mnt/RPI-RP2"
+        "/Volumes/RPI-RP2"
+    )
+
+    local p
+    for p in "${candidates[@]}"; do
+        if [[ -d "$p" ]]; then
+            echo "$p"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+find_and_mount_rp2() {
+    # First check if already mounted.
+    local mounted="$(find_rp2_mountpoint || true)"
+    if [[ -n "$mounted" ]]; then
+        echo "$mounted"
+        return 0
+    fi
+
+    # Try to find and mount the RPI-RP2 block device.
+    local rp2_dev
+    if command -v lsblk >/dev/null 2>&1; then
+        rp2_dev="$(lsblk -n -d -o NAME,MODEL 2>/dev/null | grep -i 'rpi-rp2' | head -1 | awk '{print "/dev/" $1}')"
+    fi
+
+    if [[ -z "$rp2_dev" ]]; then
+        # Fallback: try common sd* names (usually /dev/sda1 on Raspberry Pi).
+        if [[ -b "/dev/sda1" ]]; then
+            rp2_dev="/dev/sda1"
+        fi
+    fi
+
+    if [[ -z "$rp2_dev" ]]; then
+        # Unable to find device.
+        return 1
+    fi
+
+    # Try to mount at a suitable location.
+    local mount_point="/media/$USER/RPI-RP2"
+    if [[ ! -d "$mount_point" ]]; then
+        if ! mkdir -p "$mount_point" 2>/dev/null; then
+            # Fallback to /tmp if user doesn't have permission.
+            mount_point="/tmp/RPI-RP2"
+            mkdir -p "$mount_point" 2>/dev/null || return 1
+        fi
+    fi
+
+    if ! mount "$rp2_dev" "$mount_point" 2>/dev/null; then
+        echo "Failed to mount $rp2_dev at $mount_point" >&2
+        return 1
+    fi
+
+    echo "$mount_point"
+    return 0
 }
 
 find_serial_port() {
@@ -151,8 +226,29 @@ if [[ ! -f "$IMAGE_PATH" ]]; then
     exit 1
 fi
 
-"$PICOTOOL_BIN" load "$IMAGE_PATH" -f
-"$PICOTOOL_BIN" reboot || true
+if picotool_supports_load "$PICOTOOL_BIN"; then
+    "$PICOTOOL_BIN" load "$IMAGE_PATH" -f
+    "$PICOTOOL_BIN" reboot || true
+else
+    echo "Warning: picotool has no USB load support; falling back to UF2 mass-storage copy."
+    if [[ ! -f "$UF2_PATH" ]]; then
+        echo "Error: UF2 image not found at $UF2_PATH (required for mass-storage flashing)."
+        exit 1
+    fi
+
+    echo "Attempting to locate and mount RPI-RP2 mass-storage device..."
+    RP2_MOUNT="$(find_and_mount_rp2 || true)"
+    if [[ -z "$RP2_MOUNT" ]]; then
+        echo "Error: Could not find or mount RPI-RP2 device."
+        echo "Ensure the board is in BOOT mode and connected, then rerun this script."
+        echo "Alternatively, manually mount it and rerun: sudo mount /dev/sda1 /mnt/RPI-RP2"
+        exit 1
+    fi
+
+    echo "Copying UF2 to $RP2_MOUNT..."
+    cp "$UF2_PATH" "$RP2_MOUNT/"
+    sync
+fi
 
 echo "=== Verify ==="
 SERIAL_PORT="$(find_serial_port || true)"
