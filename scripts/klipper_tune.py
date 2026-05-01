@@ -150,7 +150,10 @@ def main():
         resp = send_cmd(s, "GET:MM_PER_STEP")
         mm_per_step = 0.0
         if resp.startswith("OK:"):
-            mm_per_step = float(resp.split(":")[1])
+            try:
+                mm_per_step = float(resp.split(":")[2])
+            except (IndexError, ValueError):
+                print(f"Warning: Could not parse MM_PER_STEP from response: {resp}")
 
         print("\n[tmc2209 extruder]")
         print(f"run_current: {irun:.3f}")
