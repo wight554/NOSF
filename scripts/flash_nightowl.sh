@@ -244,19 +244,19 @@ else
     echo "=== Waiting for RPI-RP2 device ==="
     RP2_DEV=""
     for i in {1..20}; do
-        # Try to detect the block device by checking if it's accessible.
-        if [[ -b "/dev/sda1" ]]; then
-            RP2_DEV="/dev/sda1"
-            echo "Found device after ${i}s"
-            break
-        fi
-        
-        # Also check lsblk output for 'sda' as a backup detection method.
-        if lsblk 2>/dev/null | grep -q "^sda"; then
-            RP2_DEV="/dev/sda1"
-            echo "Found device (via lsblk) after ${i}s"
-            break
-        fi
+        # Look for a small USB block device (RP2040 boot is typically ~128M).
+        # Check for /dev/sdb1, /dev/sdc1, etc. (not sda, which is usually the main storage).
+        for dev in /dev/sd{b,c,d,e,f}1; do
+            if [[ -b "$dev" ]]; then
+                # Verify it's a small device (likely the RP2040).
+                size=$(lsblk -bn -o SIZE "$dev" 2>/dev/null || echo "0")
+                if [[ $size -gt 100000000 && $size -lt 600000000 ]]; then  # 100MB - 600MB
+                    RP2_DEV="$dev"
+                    echo "Found device $dev (${size} bytes) after ${i}s"
+                    break 2
+                fi
+            fi
+        done
         
         if [[ $i -lt 20 ]]; then
             echo "Waiting... ${i}s"
