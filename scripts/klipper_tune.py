@@ -168,32 +168,48 @@ def main():
 
     elif args.action == "apply":
         config = configparser.ConfigParser()
-        config.read(args.config)
+        # To allow files without any section headers at all, we can prepend a dummy section
+        with open(args.config, 'r') as f:
+            content = f.read()
         
-        # Parse TMC settings
-        try:
-            tmc = config['tmc2209 extruder']
-            ext = config['extruder']
-        except KeyError as e:
-            print(f"Missing section in config: {e}")
-            sys.exit(1)
+        if not any(line.strip().startswith('[') for line in content.splitlines()):
+            content = "[DEFAULT]\n" + content
+            
+        config.read_string(content)
+        
+        # Flatten all sections into a single dictionary so we don't care about section names
+        # (e.g. [tmc2209 extruder] vs [tmc2209 extruder1] vs [extruder])
+        params = {}
+        for section in config.sections() + (['DEFAULT'] if config.default_section else []):
+            for key, val in config.items(section):
+                params[key] = val
 
-        run_current = tmc.getfloat('run_current', 0.8)
-        hold_current = tmc.getfloat('hold_current', run_current / 2.0)
-        interpolate = tmc.getboolean('interpolate', True)
-        stealthchop = tmc.getint('stealthchop_threshold', 0)
-        rsense = tmc.getfloat('sense_resistor', 0.110)
+        def get_float(key, default_val):
+            return float(params.get(key, default_val))
+            
+        def get_int(key, default_val):
+            return int(params.get(key, default_val))
+            
+        def get_bool(key, default_val):
+            val = params.get(key, str(default_val)).lower()
+            return val in ('true', '1', 'yes', 'on')
+
+        run_current = get_float('run_current', 0.8)
+        hold_current = get_float('hold_current', run_current / 2.0)
+        interpolate = get_bool('interpolate', True)
+        stealthchop = get_int('stealthchop_threshold', 0)
+        rsense = get_float('sense_resistor', 0.110)
         
-        tbl = tmc.getint('driver_TBL', 1)
-        toff = tmc.getint('driver_TOFF', 3)
-        hstrt = tmc.getint('driver_HSTRT', 7)
-        hend = tmc.getint('driver_HEND', 10)
+        tbl = get_int('driver_tbl', 1)
+        toff = get_int('driver_toff', 3)
+        hstrt = get_int('driver_hstrt', 7)
+        hend = get_int('driver_hend', 10)
         
-        microsteps = ext.getint('microsteps', 16)
-        rotation_dist = ext.getfloat('rotation_distance', 0)
-        full_steps = ext.getint('full_steps_per_rotation', 200)
+        microsteps = get_int('microsteps', 16)
+        rotation_dist = get_float('rotation_distance', 0)
+        full_steps = get_int('full_steps_per_rotation', 200)
         
-        gear_ratio_str = ext.get('gear_ratio', '1:1')
+        gear_ratio_str = params.get('gear_ratio', '1:1')
         parts = gear_ratio_str.split(':')
         if len(parts) == 2:
             gear_ratio = float(parts[0]) / float(parts[1])
