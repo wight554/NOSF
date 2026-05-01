@@ -1369,7 +1369,7 @@ static void status_dump(void) {
     snprintf(b, sizeof(b),
         "LN:%d,TC:%s,L1T:%s,L2T:%s,"
         "I1:%d,O1:%d,I2:%d,O2:%d,"
-        "TH:%d,YS:%d,BUF:%s,SPS:%d,BL:%d,SM:%d,BI:%d,"
+        "TH:%d,YS:%d,BUF:%s,SPS:%d,BL:%d,SM:%d,BI:%d,AP:%d,"
         "SG1:%u,SG2:%u",
         active_lane, tc_state_name(g_tc_ctx.state),
         task_name(g_lane1.task), task_name(g_lane2.task),
@@ -1384,6 +1384,7 @@ static void status_dump(void) {
         g_baseline_sps,
         sync_enabled ? 1 : 0,
         BUF_INVERT ? 1 : 0,
+        AUTO_PRELOAD ? 1 : 0,
         sg1,
         sg2);
 

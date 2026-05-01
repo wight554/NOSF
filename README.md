@@ -67,7 +67,7 @@ Core control:
 - `UL:`: reverse/unload active lane
 - `TC:<lane>`: toolchange to target lane
 - `ST:`: stop motors and abort active operations
-- `?:` status snapshot (`I1/O1/I2/O2/YS`, tasks, sync state)
+- `?:` status snapshot (`I1/O1/I2/O2/YS`, tasks, sync state, `AP`)
 
 Runtime toggles (`SET:/GET:`):
 

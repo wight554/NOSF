@@ -171,6 +171,7 @@ The controller supports runtime toggles over USB serial (`SET:/GET:`):
 Related runtime boolean state:
 
 - `TS:<0|1>` - host-reported toolhead filament presence
+- `AP:<0|1>` - appears in `?:` status and shows AUTO_PRELOAD state
 
 Examples:
 
