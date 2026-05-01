@@ -92,18 +92,33 @@ find_and_mount_rp2() {
         return 0
     fi
 
-    # Try to find and mount the RPI-RP2 block device.
-    local rp2_dev
-    if command -v lsblk >/dev/null 2>&1; then
-        rp2_dev="$(lsblk -n -d -o NAME,MODEL 2>/dev/null | grep -i 'rpi-rp2' | head -1 | awk '{print "/dev/" $1}')"
-    fi
+    # Wait and retry loop: device may take a moment to appear after BOOT command.
+    local max_retries=10
+    local retry=0
+    local rp2_dev=""
 
-    if [[ -z "$rp2_dev" ]]; then
-        # Fallback: try common sd* names (usually /dev/sda1 on Raspberry Pi).
-        if [[ -b "/dev/sda1" ]]; then
-            rp2_dev="/dev/sda1"
+    while [[ $retry -lt $max_retries ]]; do
+        # Try to find the RPI-RP2 block device.
+        if command -v lsblk >/dev/null 2>&1; then
+            rp2_dev="$(lsblk -n -d -o NAME,MODEL 2>/dev/null | grep -i 'rpi-rp2' | head -1 | awk '{print "/dev/" $1}')"
         fi
-    fi
+
+        if [[ -z "$rp2_dev" ]]; then
+            # Fallback: try common sd* names (usually /dev/sda1 on Raspberry Pi).
+            if [[ -b "/dev/sda1" ]]; then
+                rp2_dev="/dev/sda1"
+            fi
+        fi
+
+        if [[ -n "$rp2_dev" ]]; then
+            break
+        fi
+
+        retry=$((retry + 1))
+        if [[ $retry -lt $max_retries ]]; then
+            sleep 0.5
+        fi
+    done
 
     if [[ -z "$rp2_dev" ]]; then
         # Unable to find device.
@@ -120,9 +135,12 @@ find_and_mount_rp2() {
         fi
     fi
 
+    # Try mount without sudo first, then with sudo if needed.
     if ! mount "$rp2_dev" "$mount_point" 2>/dev/null; then
-        echo "Failed to mount $rp2_dev at $mount_point" >&2
-        return 1
+        if ! sudo mount "$rp2_dev" "$mount_point" 2>/dev/null; then
+            echo "Failed to mount $rp2_dev at $mount_point (tried both with and without sudo)" >&2
+            return 1
+        fi
     fi
 
     echo "$mount_point"
