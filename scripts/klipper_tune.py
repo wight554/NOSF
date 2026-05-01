@@ -135,16 +135,47 @@ def main():
         chopconf_val = int(val_hex, 16)
         chop_dec = decode_chopconf(chopconf_val)
         
-        # Read IHOLD_IRUN
-        resp = send_cmd(s, f"TR:{args.lane}:16")   # 0x10 = 16
-        if not resp.startswith("OK:"):
-            print("Failed to read IHOLD_IRUN")
-            sys.exit(1)
-        val_hex = resp.split(":")[3]
-        ihold_val = int(val_hex, 16)
-        
-        # We need rsense to decode current. Default to 0.110.
-        irun, ihold = decode_ihold_irun(ihold_val, 0.110, chop_dec["VSENSE"])
+        # Prefer firmware-backed current values (works for write-only IHOLD_IRUN).
+        irun = None
+        ihold = None
+        resp_run = send_cmd(s, f"GET:RUN_CURRENT_MA:{args.lane}")
+        resp_hold = send_cmd(s, f"GET:HOLD_CURRENT_MA:{args.lane}")
+        if resp_run.startswith("OK:") and resp_hold.startswith("OK:"):
+            try:
+                run_parts = resp_run.split(":")
+                hold_parts = resp_hold.split(":")
+                run_ma = int(run_parts[3] if len(run_parts) >= 4 else run_parts[2])
+                hold_ma = int(hold_parts[3] if len(hold_parts) >= 4 else hold_parts[2])
+                irun = run_ma / 1000.0
+                ihold = hold_ma / 1000.0
+            except (IndexError, ValueError):
+                irun = None
+                ihold = None
+
+        # Backward-compatible fallback for firmware that only supports non-lane GET.
+        if irun is None or ihold is None:
+            resp_run = send_cmd(s, "GET:RUN_CURRENT_MA")
+            resp_hold = send_cmd(s, "GET:HOLD_CURRENT_MA")
+            if resp_run.startswith("OK:") and resp_hold.startswith("OK:"):
+                try:
+                    run_ma = int(resp_run.split(":")[2])
+                    hold_ma = int(resp_hold.split(":")[2])
+                    irun = run_ma / 1000.0
+                    ihold = hold_ma / 1000.0
+                except (IndexError, ValueError):
+                    irun = None
+                    ihold = None
+
+        # Backward-compatible fallback for older firmware.
+        if irun is None or ihold is None:
+            resp = send_cmd(s, f"TR:{args.lane}:16")   # 0x10 = 16
+            if not resp.startswith("OK:"):
+                print("Failed to read current settings (GET and TR fallback both failed)")
+                sys.exit(1)
+            val_hex = resp.split(":")[3]
+            ihold_val = int(val_hex, 16)
+            # We need rsense to decode current. Default to 0.110.
+            irun, ihold = decode_ihold_irun(ihold_val, 0.110, chop_dec["VSENSE"])
         
         # Read MM_PER_STEP from firmware
         resp = send_cmd(s, "GET:MM_PER_STEP")

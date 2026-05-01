@@ -66,8 +66,8 @@ static bool REQUIRE_Y_EMPTY_SWAP = true;
 static int RAMP_STEP_SPS = 200;
 static int RAMP_TICK_MS = 5;
 
-static int TMC_RUN_CURRENT_MA = 850;
-static int TMC_HOLD_CURRENT_MA = 300;
+static int TMC_RUN_CURRENT_MA[2] = {850, 850};
+static int TMC_HOLD_CURRENT_MA[2] = {300, 300};
 static int TMC_MICROSTEPS = CONF_MICROSTEPS;
 static bool TMC_SPREADCYCLE = true;
 static int TMC_SGT_L1 = 80;
@@ -103,11 +103,53 @@ static bool BUF_INVERT = false;
 
 static float MM_PER_STEP = CONF_MM_PER_STEP; // TUNE: gear + microstep derived.
 
+static uint32_t g_shadow_ihold_irun[2] = {0, 0};
+static bool g_shadow_ihold_irun_valid[2] = {false, false};
+static bool g_shadow_vsense[2] = {true, true};
+
 // ===================== Helpers =====================
 static inline int clamp_i(int v, int lo, int hi) {
     if (v < lo) return lo;
     if (v > hi) return hi;
     return v;
+}
+
+static int lane_to_idx(int ln) {
+    return (ln == 1) ? 0 : 1;
+}
+
+static int cs_to_ma(uint8_t cs, bool vsense) {
+    const float reff = 0.110f + 0.020f;
+    const float vref = vsense ? 0.18f : 0.32f;
+    const float sqrt2 = 1.41421356f;
+    float irms = ((float)cs + 1.0f) * vref / (32.0f * reff * sqrt2);
+    int ma = (int)(irms * 1000.0f + 0.5f);
+    return clamp_i(ma, 0, 2000);
+}
+
+static uint8_t ma_to_cs(int ma, bool vsense) {
+    if (ma <= 0) return 0;
+    const float reff = 0.110f + 0.020f;
+    const float vref = vsense ? 0.18f : 0.32f;
+    const float sqrt2 = 1.41421356f;
+    float irms = (float)ma / 1000.0f;
+    int cs = (int)(32.0f * irms * reff * sqrt2 / vref - 1.0f + 0.5f);
+    return (uint8_t)clamp_i(cs, 0, 31);
+}
+
+static uint32_t build_ihold_irun_reg(int run_ma, int hold_ma, bool vsense) {
+    uint8_t irun = ma_to_cs(run_ma, vsense);
+    uint8_t ihold = ma_to_cs(hold_ma, vsense);
+    return ((uint32_t)ihold) | ((uint32_t)irun << 8) | (8u << 16);
+}
+
+static void sync_currents_from_ihold_irun(int ln, uint32_t reg) {
+    int idx = lane_to_idx(ln);
+    uint8_t ihold = (uint8_t)(reg & 0x1Fu);
+    uint8_t irun = (uint8_t)((reg >> 8) & 0x1Fu);
+    bool vsense = g_shadow_vsense[idx];
+    TMC_RUN_CURRENT_MA[idx] = cs_to_ma(irun, vsense);
+    TMC_HOLD_CURRENT_MA[idx] = cs_to_ma(ihold, vsense);
 }
 
 // ===================== Debounced digital input =====================
@@ -980,7 +1022,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NightOwl settings sentinel.
-#define SETTINGS_VERSION 1u
+#define SETTINGS_VERSION 2u
 
 typedef struct {
     uint32_t magic;
@@ -1000,7 +1042,7 @@ typedef struct {
     int sgt_l1, sgt_l2;
     int tcoolthrs;
 
-    int run_current_ma, hold_current_ma;
+    int run_current_ma[2], hold_current_ma[2];
     int microsteps;
     bool spreadcycle;
 
@@ -1058,8 +1100,10 @@ static void settings_defaults(void) {
     TMC_SGT_L2 = 80;
     TMC_TCOOLTHRS = 400;
 
-    TMC_RUN_CURRENT_MA = 850;
-    TMC_HOLD_CURRENT_MA = 300;
+    TMC_RUN_CURRENT_MA[0] = 850;
+    TMC_RUN_CURRENT_MA[1] = 850;
+    TMC_HOLD_CURRENT_MA[0] = 300;
+    TMC_HOLD_CURRENT_MA[1] = 300;
     TMC_MICROSTEPS = CONF_MICROSTEPS;
     TMC_SPREADCYCLE = true;
 
@@ -1114,8 +1158,10 @@ static void settings_save(void) {
     s.sgt_l2 = TMC_SGT_L2;
     s.tcoolthrs = TMC_TCOOLTHRS;
 
-    s.run_current_ma = TMC_RUN_CURRENT_MA;
-    s.hold_current_ma = TMC_HOLD_CURRENT_MA;
+    s.run_current_ma[0] = TMC_RUN_CURRENT_MA[0];
+    s.run_current_ma[1] = TMC_RUN_CURRENT_MA[1];
+    s.hold_current_ma[0] = TMC_HOLD_CURRENT_MA[0];
+    s.hold_current_ma[1] = TMC_HOLD_CURRENT_MA[1];
     s.microsteps = TMC_MICROSTEPS;
     s.spreadcycle = TMC_SPREADCYCLE;
 
@@ -1160,12 +1206,20 @@ static void tmc_apply_all(void) {
     tmc_set_spreadcycle(&g_tmc2, TMC_SPREADCYCLE);
     tmc_setup_chopconf(&g_tmc1, TMC_MICROSTEPS, CONF_TOFF, CONF_TBL, CONF_HSTRT, CONF_HEND, CONF_INTPOL);
     tmc_setup_chopconf(&g_tmc2, TMC_MICROSTEPS, CONF_TOFF, CONF_TBL, CONF_HSTRT, CONF_HEND, CONF_INTPOL);
-    tmc_set_run_current_ma(&g_tmc1, TMC_RUN_CURRENT_MA, TMC_HOLD_CURRENT_MA);
-    tmc_set_run_current_ma(&g_tmc2, TMC_RUN_CURRENT_MA, TMC_HOLD_CURRENT_MA);
+    tmc_set_run_current_ma(&g_tmc1, TMC_RUN_CURRENT_MA[0], TMC_HOLD_CURRENT_MA[0]);
+    tmc_set_run_current_ma(&g_tmc2, TMC_RUN_CURRENT_MA[1], TMC_HOLD_CURRENT_MA[1]);
     tmc_set_tcoolthrs(&g_tmc1, (uint32_t)TMC_TCOOLTHRS);
     tmc_set_tcoolthrs(&g_tmc2, (uint32_t)TMC_TCOOLTHRS);
     tmc_set_sgthrs(&g_tmc1, (uint8_t)TMC_SGT_L1);
     tmc_set_sgthrs(&g_tmc2, (uint8_t)TMC_SGT_L2);
+
+    // Firmware defaults configure VSENSE=1 in CHOPCONF, so seed shadow accordingly.
+    g_shadow_vsense[0] = true;
+    g_shadow_vsense[1] = true;
+    g_shadow_ihold_irun[0] = build_ihold_irun_reg(TMC_RUN_CURRENT_MA[0], TMC_HOLD_CURRENT_MA[0], true);
+    g_shadow_ihold_irun[1] = build_ihold_irun_reg(TMC_RUN_CURRENT_MA[1], TMC_HOLD_CURRENT_MA[1], true);
+    g_shadow_ihold_irun_valid[0] = true;
+    g_shadow_ihold_irun_valid[1] = true;
 }
 
 static void settings_load(void) {
@@ -1206,8 +1260,10 @@ static void settings_load(void) {
     TMC_SGT_L2 = s->sgt_l2;
     TMC_TCOOLTHRS = s->tcoolthrs;
 
-    TMC_RUN_CURRENT_MA = s->run_current_ma;
-    TMC_HOLD_CURRENT_MA = s->hold_current_ma;
+    TMC_RUN_CURRENT_MA[0] = s->run_current_ma[0];
+    TMC_RUN_CURRENT_MA[1] = s->run_current_ma[1];
+    TMC_HOLD_CURRENT_MA[0] = s->hold_current_ma[0];
+    TMC_HOLD_CURRENT_MA[1] = s->hold_current_ma[1];
     TMC_MICROSTEPS = s->microsteps;
     TMC_SPREADCYCLE = s->spreadcycle;
 
@@ -1372,8 +1428,11 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         int ma = 0;
         if (sscanf(p, "%d:%d", &ln, &ma) == 2 && (ln == 1 || ln == 2) && ma >= 0 && ma <= 2000) {
             tmc_t *t = (ln == 1) ? &g_tmc1 : &g_tmc2;
-            if (tmc_set_run_current_ma(t, ma, TMC_HOLD_CURRENT_MA)) {
-                TMC_RUN_CURRENT_MA = ma;
+            int idx = lane_to_idx(ln);
+            if (tmc_set_run_current_ma(t, ma, TMC_HOLD_CURRENT_MA[idx])) {
+                TMC_RUN_CURRENT_MA[idx] = ma;
+                g_shadow_ihold_irun[idx] = build_ihold_irun_reg(TMC_RUN_CURRENT_MA[idx], TMC_HOLD_CURRENT_MA[idx], g_shadow_vsense[idx]);
+                g_shadow_ihold_irun_valid[idx] = true;
                 cmd_reply("OK", NULL);
             } else {
                 cmd_reply("ER", "CA:NO_RESPONSE");
@@ -1397,14 +1456,43 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         status_dump();
     } else if (!strcmp(cmd, "SET")) {
         char param[32];
+        char lane_str[8];
         char val_str[32];
-        if (sscanf(p, "%31[^:]:%31s", param, val_str) != 2) {
+        bool lane_param = (sscanf(p, "%31[^:]:%7[^:]:%31s", param, lane_str, val_str) == 3);
+        bool simple_param = !lane_param && (sscanf(p, "%31[^:]:%31s", param, val_str) == 2);
+        if (!lane_param && !simple_param) {
             cmd_reply("ER", "SET:UNKNOWN_PARAM");
         } else {
+            int lane = lane_param ? atoi(lane_str) : 0;
+            int idx = (lane == 1 || lane == 2) ? lane_to_idx(lane) : -1;
             int iv = atoi(val_str);
             float fv = (float)atof(val_str);
             bool handled = true;
-            if      (!strcmp(param, "FEED_SPS"))     FEED_SPS = clamp_i(iv, 200, 30000);
+            if (lane_param && !strcmp(param, "RUN_CURRENT_MA") && idx >= 0) {
+                tmc_t *t = (lane == 1) ? &g_tmc1 : &g_tmc2;
+                int run_ma = clamp_i(iv, 0, 2000);
+                if (tmc_set_run_current_ma(t, run_ma, TMC_HOLD_CURRENT_MA[idx])) {
+                    TMC_RUN_CURRENT_MA[idx] = run_ma;
+                    g_shadow_ihold_irun[idx] = build_ihold_irun_reg(TMC_RUN_CURRENT_MA[idx], TMC_HOLD_CURRENT_MA[idx], g_shadow_vsense[idx]);
+                    g_shadow_ihold_irun_valid[idx] = true;
+                } else {
+                    cmd_reply("ER", "SET:RUN_CURRENT_MA:NO_RESPONSE");
+                    return;
+                }
+            } else if (lane_param && !strcmp(param, "HOLD_CURRENT_MA") && idx >= 0) {
+                tmc_t *t = (lane == 1) ? &g_tmc1 : &g_tmc2;
+                int hold_ma = clamp_i(iv, 0, 2000);
+                if (tmc_set_run_current_ma(t, TMC_RUN_CURRENT_MA[idx], hold_ma)) {
+                    TMC_HOLD_CURRENT_MA[idx] = hold_ma;
+                    g_shadow_ihold_irun[idx] = build_ihold_irun_reg(TMC_RUN_CURRENT_MA[idx], TMC_HOLD_CURRENT_MA[idx], g_shadow_vsense[idx]);
+                    g_shadow_ihold_irun_valid[idx] = true;
+                } else {
+                    cmd_reply("ER", "SET:HOLD_CURRENT_MA:NO_RESPONSE");
+                    return;
+                }
+            } else if (lane_param) {
+                handled = false;
+            } else if (!strcmp(param, "FEED_SPS"))     FEED_SPS = clamp_i(iv, 200, 30000);
             else if (!strcmp(param, "REV_SPS"))      REV_SPS = clamp_i(iv, 200, 30000);
             else if (!strcmp(param, "AUTO_SPS"))     AUTO_SPS = clamp_i(iv, 200, 30000);
             else if (!strcmp(param, "SYNC_MAX"))     SYNC_MAX_SPS = clamp_i(iv, 200, 30000);
@@ -1433,32 +1521,42 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else cmd_reply("ER", "SET:UNKNOWN_PARAM");
         }
     } else if (!strcmp(cmd, "GET")) {
-        char out[48];
+        char out[64];
+        char key[32];
+        char lane_str[8];
+        bool lane_param = (sscanf(p, "%31[^:]:%7s", key, lane_str) == 2);
+        int lane = lane_param ? atoi(lane_str) : 0;
+        int idx = (lane == 1 || lane == 2) ? lane_to_idx(lane) : -1;
+        const char *param = lane_param ? key : p;
         bool handled = true;
-        if      (!strcmp(p, "FEED_SPS"))     snprintf(out, sizeof(out), "FEED_SPS:%d", FEED_SPS);
-        else if (!strcmp(p, "REV_SPS"))      snprintf(out, sizeof(out), "REV_SPS:%d", REV_SPS);
-        else if (!strcmp(p, "AUTO_SPS"))     snprintf(out, sizeof(out), "AUTO_SPS:%d", AUTO_SPS);
-        else if (!strcmp(p, "SYNC_MAX"))     snprintf(out, sizeof(out), "SYNC_MAX:%d", SYNC_MAX_SPS);
-        else if (!strcmp(p, "SYNC_MIN"))     snprintf(out, sizeof(out), "SYNC_MIN:%d", SYNC_MIN_SPS);
-        else if (!strcmp(p, "SYNC_UP"))      snprintf(out, sizeof(out), "SYNC_UP:%d", SYNC_RAMP_UP_SPS);
-        else if (!strcmp(p, "SYNC_DN"))      snprintf(out, sizeof(out), "SYNC_DN:%d", SYNC_RAMP_DN_SPS);
-        else if (!strcmp(p, "SYNC_RATIO"))   snprintf(out, sizeof(out), "SYNC_RATIO:%.3f", (double)SYNC_RATIO);
-        else if (!strcmp(p, "PRE_RAMP"))     snprintf(out, sizeof(out), "PRE_RAMP:%d", PRE_RAMP_SPS);
-        else if (!strcmp(p, "BUF_TRAVEL"))   snprintf(out, sizeof(out), "BUF_TRAVEL:%.3f", (double)BUF_HALF_TRAVEL_MM);
-        else if (!strcmp(p, "BUF_HYST"))     snprintf(out, sizeof(out), "BUF_HYST:%d", BUF_HYST_MS);
-        else if (!strcmp(p, "BASELINE"))     snprintf(out, sizeof(out), "BASELINE:%d", g_baseline_sps);
-        else if (!strcmp(p, "STARTUP_MS"))   snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
-        else if (!strcmp(p, "SERVO_OPEN"))   snprintf(out, sizeof(out), "SERVO_OPEN:%d", SERVO_OPEN_US);
-        else if (!strcmp(p, "SERVO_CLOSE"))  snprintf(out, sizeof(out), "SERVO_CLOSE:%d", SERVO_CLOSE_US);
-        else if (!strcmp(p, "SERVO_SETTLE")) snprintf(out, sizeof(out), "SERVO_SETTLE:%d", SERVO_SETTLE_MS);
-        else if (!strcmp(p, "CUT_FEED"))     snprintf(out, sizeof(out), "CUT_FEED:%d", CUT_FEED_MM);
-        else if (!strcmp(p, "CUT_LEN"))      snprintf(out, sizeof(out), "CUT_LEN:%d", CUT_LENGTH_MM);
-        else if (!strcmp(p, "CUT_AMT"))      snprintf(out, sizeof(out), "CUT_AMT:%d", CUT_AMOUNT);
-        else if (!strcmp(p, "TC_CUT_MS"))    snprintf(out, sizeof(out), "TC_CUT_MS:%d", TC_TIMEOUT_CUT_MS);
-        else if (!strcmp(p, "TC_UNLOAD_MS")) snprintf(out, sizeof(out), "TC_UNLOAD_MS:%d", TC_TIMEOUT_UNLOAD_MS);
-        else if (!strcmp(p, "TC_TH_MS"))     snprintf(out, sizeof(out), "TC_TH_MS:%d", TC_TIMEOUT_TH_MS);
-        else if (!strcmp(p, "TC_LOAD_MS"))   snprintf(out, sizeof(out), "TC_LOAD_MS:%d", TC_TIMEOUT_LOAD_MS);
-        else if (!strcmp(p, "MM_PER_STEP"))  snprintf(out, sizeof(out), "MM_PER_STEP:%.5f", (double)MM_PER_STEP);
+        if      (!strcmp(param, "FEED_SPS"))     snprintf(out, sizeof(out), "FEED_SPS:%d", FEED_SPS);
+        else if (!strcmp(param, "REV_SPS"))      snprintf(out, sizeof(out), "REV_SPS:%d", REV_SPS);
+        else if (!strcmp(param, "AUTO_SPS"))     snprintf(out, sizeof(out), "AUTO_SPS:%d", AUTO_SPS);
+        else if (!strcmp(param, "SYNC_MAX"))     snprintf(out, sizeof(out), "SYNC_MAX:%d", SYNC_MAX_SPS);
+        else if (!strcmp(param, "SYNC_MIN"))     snprintf(out, sizeof(out), "SYNC_MIN:%d", SYNC_MIN_SPS);
+        else if (!strcmp(param, "SYNC_UP"))      snprintf(out, sizeof(out), "SYNC_UP:%d", SYNC_RAMP_UP_SPS);
+        else if (!strcmp(param, "SYNC_DN"))      snprintf(out, sizeof(out), "SYNC_DN:%d", SYNC_RAMP_DN_SPS);
+        else if (!strcmp(param, "SYNC_RATIO"))   snprintf(out, sizeof(out), "SYNC_RATIO:%.3f", (double)SYNC_RATIO);
+        else if (!strcmp(param, "PRE_RAMP"))     snprintf(out, sizeof(out), "PRE_RAMP:%d", PRE_RAMP_SPS);
+        else if (!strcmp(param, "BUF_TRAVEL"))   snprintf(out, sizeof(out), "BUF_TRAVEL:%.3f", (double)BUF_HALF_TRAVEL_MM);
+        else if (!strcmp(param, "BUF_HYST"))     snprintf(out, sizeof(out), "BUF_HYST:%d", BUF_HYST_MS);
+        else if (!strcmp(param, "BASELINE"))     snprintf(out, sizeof(out), "BASELINE:%d", g_baseline_sps);
+        else if (!strcmp(param, "STARTUP_MS"))   snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
+        else if (!strcmp(param, "SERVO_OPEN"))   snprintf(out, sizeof(out), "SERVO_OPEN:%d", SERVO_OPEN_US);
+        else if (!strcmp(param, "SERVO_CLOSE"))  snprintf(out, sizeof(out), "SERVO_CLOSE:%d", SERVO_CLOSE_US);
+        else if (!strcmp(param, "SERVO_SETTLE")) snprintf(out, sizeof(out), "SERVO_SETTLE:%d", SERVO_SETTLE_MS);
+        else if (!strcmp(param, "CUT_FEED"))     snprintf(out, sizeof(out), "CUT_FEED:%d", CUT_FEED_MM);
+        else if (!strcmp(param, "CUT_LEN"))      snprintf(out, sizeof(out), "CUT_LEN:%d", CUT_LENGTH_MM);
+        else if (!strcmp(param, "CUT_AMT"))      snprintf(out, sizeof(out), "CUT_AMT:%d", CUT_AMOUNT);
+        else if (!strcmp(param, "TC_CUT_MS"))    snprintf(out, sizeof(out), "TC_CUT_MS:%d", TC_TIMEOUT_CUT_MS);
+        else if (!strcmp(param, "TC_UNLOAD_MS")) snprintf(out, sizeof(out), "TC_UNLOAD_MS:%d", TC_TIMEOUT_UNLOAD_MS);
+        else if (!strcmp(param, "TC_TH_MS"))     snprintf(out, sizeof(out), "TC_TH_MS:%d", TC_TIMEOUT_TH_MS);
+        else if (!strcmp(param, "TC_LOAD_MS"))   snprintf(out, sizeof(out), "TC_LOAD_MS:%d", TC_TIMEOUT_LOAD_MS);
+        else if (!strcmp(param, "MM_PER_STEP"))  snprintf(out, sizeof(out), "MM_PER_STEP:%.5f", (double)MM_PER_STEP);
+        else if (!strcmp(param, "RUN_CURRENT_MA") && idx >= 0)  snprintf(out, sizeof(out), "RUN_CURRENT_MA:%d:%d", lane, TMC_RUN_CURRENT_MA[idx]);
+        else if (!strcmp(param, "HOLD_CURRENT_MA") && idx >= 0) snprintf(out, sizeof(out), "HOLD_CURRENT_MA:%d:%d", lane, TMC_HOLD_CURRENT_MA[idx]);
+        else if (!strcmp(param, "RUN_CURRENT_MA") && !lane_param)  snprintf(out, sizeof(out), "RUN_CURRENT_MA:%d", TMC_RUN_CURRENT_MA[lane_to_idx(active_lane)]);
+        else if (!strcmp(param, "HOLD_CURRENT_MA") && !lane_param) snprintf(out, sizeof(out), "HOLD_CURRENT_MA:%d", TMC_HOLD_CURRENT_MA[lane_to_idx(active_lane)]);
         else handled = false;
         if (handled) cmd_reply("OK", out);
         else cmd_reply("ER", "GET:UNKNOWN_PARAM");
@@ -1469,6 +1567,17 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         if (sscanf(p, "%d:%d:%i", &ln, &reg, &val) == 3 && (ln == 1 || ln == 2) && reg >= 0 && reg <= 127) {
             tmc_t *t = (ln == 1) ? &g_tmc1 : &g_tmc2;
             if (tmc_write(t, (uint8_t)reg, val)) {
+                int idx = lane_to_idx(ln);
+                if (reg == TMC_REG_IHOLD_IRUN) {
+                    g_shadow_ihold_irun[idx] = val;
+                    g_shadow_ihold_irun_valid[idx] = true;
+                    sync_currents_from_ihold_irun(ln, val);
+                } else if (reg == TMC_REG_CHOPCONF) {
+                    g_shadow_vsense[idx] = ((val >> 17) & 0x1u) != 0u;
+                    if (g_shadow_ihold_irun_valid[idx]) {
+                        sync_currents_from_ihold_irun(ln, g_shadow_ihold_irun[idx]);
+                    }
+                }
                 cmd_reply("OK", NULL);
             } else {
                 cmd_reply("ER", "TW:FAILED");
@@ -1480,6 +1589,13 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         // Usage: TR:<lane>:<reg>
         int ln, reg;
         if (sscanf(p, "%d:%d", &ln, &reg) == 2 && (ln == 1 || ln == 2) && reg >= 0 && reg <= 127) {
+            int idx = lane_to_idx(ln);
+            if (reg == TMC_REG_IHOLD_IRUN && g_shadow_ihold_irun_valid[idx]) {
+                char out[32];
+                snprintf(out, sizeof(out), "%d:%d:0x%08lX", ln, reg, g_shadow_ihold_irun[idx]);
+                cmd_reply("OK", out);
+                return;
+            }
             tmc_t *t = (ln == 1) ? &g_tmc1 : &g_tmc2;
             uint32_t val = 0;
             if (tmc_read(t, (uint8_t)reg, &val)) {
