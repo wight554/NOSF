@@ -40,7 +40,24 @@ Outputs:
 
 ## 3) Flash (Recommended)
 
-Use the repo helper script:
+For the very first flash, put the board into BOOTSEL mode manually (from ERB README):
+
+Step 1: Connect 24V (Power on the board)
+Step 2: Connect USB-C cable to your Klipper device (usually Raspberry Pi)
+Step 3: Push and hold the BOOT button
+Step 4: Push the RST button and hold 0.5 seconds
+Step 5: Release the RST button, after 3 seconds, release the BOOT button
+
+Verify that the device is in boot mode by running:
+
+```bash
+lsusb
+```
+
+The output should contain an entry similar to `2e8a:0003 Raspberry Pi RP2 Boot`.
+
+After first-time bring-up, the recommended flashing path is the repo script below.
+It performs the flashing flow automatically (build, optional reboot to boot mode, flash, verify):
 
 ```bash
 bash scripts/flash_nightowl.sh

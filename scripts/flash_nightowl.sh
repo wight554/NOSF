@@ -6,6 +6,33 @@ BUILD_DIR="${BUILD_DIR:-$REPO/build_local}"
 UF2_PATH="$BUILD_DIR/nightowl_controller.uf2"
 ELF_PATH="$BUILD_DIR/nightowl_controller.elf"
 
+find_pico_sdk_path() {
+    local candidates=()
+
+    # Respect explicit user-provided path first.
+    if [[ -n "${PICO_SDK_PATH:-}" ]]; then
+        candidates+=("$PICO_SDK_PATH")
+    fi
+
+    # Common local layouts.
+    candidates+=(
+        "$REPO/pico-sdk"
+        "$HOME/pico-sdk"
+        "/opt/pico-sdk"
+        "/usr/local/pico-sdk"
+    )
+
+    local path
+    for path in "${candidates[@]}"; do
+        if [[ -f "$path/pico_sdk_init.cmake" ]]; then
+            echo "$path"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 find_picotool() {
     if command -v picotool >/dev/null 2>&1; then
         command -v picotool
@@ -82,10 +109,20 @@ echo "=== Build ==="
 mkdir -p "$BUILD_DIR"
 if [[ ! -f "$BUILD_DIR/build.ninja" ]]; then
     echo "Configuring CMake in $BUILD_DIR"
-    cmake_args=( -S "$REPO/firmware" -B "$BUILD_DIR" -G Ninja )
-    if [[ -n "${PICO_SDK_PATH:-}" ]]; then
-        cmake_args+=( "-DPICO_SDK_PATH=$PICO_SDK_PATH" )
+    SDK_PATH="$(find_pico_sdk_path || true)"
+    if [[ -z "$SDK_PATH" ]]; then
+        echo "Error: Pico SDK not found."
+        echo "Set PICO_SDK_PATH and rerun, for example:"
+        echo "  PICO_SDK_PATH=\$HOME/pico-sdk bash scripts/flash_nightowl.sh"
+        echo "or clone pico-sdk into one of:"
+        echo "  $REPO/pico-sdk"
+        echo "  $HOME/pico-sdk"
+        exit 1
     fi
+
+    cmake_args=( -S "$REPO/firmware" -B "$BUILD_DIR" -G Ninja )
+    cmake_args+=( "-DPICO_SDK_PATH=$SDK_PATH" )
+    echo "Using PICO_SDK_PATH=$SDK_PATH"
     cmake "${cmake_args[@]}"
 fi
 cmake --build "$BUILD_DIR"
