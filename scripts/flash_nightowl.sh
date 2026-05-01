@@ -276,7 +276,18 @@ else
 fi
 
 echo "=== Verify ==="
-SERIAL_PORT="$(find_serial_port || true)"
+echo "Waiting for device to re-enumerate..."
+SERIAL_PORT=""
+for attempt in {1..15}; do
+    SERIAL_PORT="$(find_serial_port || true)"
+    if [[ -n "$SERIAL_PORT" ]]; then
+        break
+    fi
+    if [[ $attempt -lt 15 ]]; then
+        sleep 0.5
+    fi
+done
+
 if [[ -n "$SERIAL_PORT" ]]; then
     verify_fw_version "$SERIAL_PORT"
 else
