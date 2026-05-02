@@ -101,6 +101,7 @@ GET:<param>
 | `CUT_AMT` | Number of cut repetitions | 1 |
 | `TC_CUT_MS` | Toolchange cut timeout (ms) | 5000 |
 | `TC_UNLOAD_MS` | Toolchange unload timeout (ms) | 8000 |
+| `TC_Y_MS` | Wait for Y-splitter to clear after unload (ms, 0 = skip) | 5000 |
 | `TC_TH_MS` | Wait for `TS:` from host (ms, 0 = skip) | 3000 |
 | `TC_LOAD_MS` | Toolchange load timeout (ms) | 15000 |
 | `SYNC_MAX` | Max sync speed (steps/s) | 8000 |

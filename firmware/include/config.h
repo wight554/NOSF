@@ -54,6 +54,7 @@
 #define CONF_TC_TIMEOUT_UNLOAD_MS   8000
 #define CONF_TC_TIMEOUT_TH_MS       3000  // 0 = don't wait for TS: from host
 #define CONF_TC_TIMEOUT_LOAD_MS     15000
+#define CONF_TC_TIMEOUT_Y_MS        5000  // 0 = skip Y-splitter wait on unload
 
 // ----- Safety / swap -----
 #define CONF_LOW_DELAY_MS           400

@@ -88,6 +88,7 @@ static int TC_TIMEOUT_CUT_MS = CONF_TC_TIMEOUT_CUT_MS;
 static int TC_TIMEOUT_UNLOAD_MS = CONF_TC_TIMEOUT_UNLOAD_MS;
 static int TC_TIMEOUT_TH_MS = CONF_TC_TIMEOUT_TH_MS;
 static int TC_TIMEOUT_LOAD_MS = CONF_TC_TIMEOUT_LOAD_MS;
+static int TC_TIMEOUT_Y_MS = CONF_TC_TIMEOUT_Y_MS;
 
 static int SYNC_MAX_SPS = CONF_SYNC_MAX_SPS;
 static int SYNC_MIN_SPS = CONF_SYNC_MIN_SPS;
@@ -333,6 +334,7 @@ typedef enum {
     TC_UNLOAD_WAIT_CUT,
     TC_UNLOAD_REVERSE,
     TC_UNLOAD_WAIT_OUT,
+    TC_UNLOAD_WAIT_Y,
     TC_UNLOAD_WAIT_TH,
     TC_UNLOAD_DONE,
     TC_SWAP,
@@ -775,6 +777,7 @@ static const char *tc_state_name(tc_state_t s) {
         case TC_UNLOAD_WAIT_CUT: return "UNLOAD_WAIT_CUT";
         case TC_UNLOAD_REVERSE: return "UNLOAD_REVERSE";
         case TC_UNLOAD_WAIT_OUT: return "UNLOAD_WAIT_OUT";
+        case TC_UNLOAD_WAIT_Y:  return "UNLOAD_WAIT_Y";
         case TC_UNLOAD_WAIT_TH: return "UNLOAD_WAIT_TH";
         case TC_UNLOAD_DONE: return "UNLOAD_DONE";
         case TC_SWAP: return "SWAP";
@@ -835,9 +838,19 @@ static void tc_tick(uint32_t now_ms) {
             if (!lane_out_present(A)) {
                 lane_stop(A);
                 g_tc_ctx.phase_start_ms = now_ms;
-                g_tc_ctx.state = (TC_TIMEOUT_TH_MS > 0) ? TC_UNLOAD_WAIT_TH : TC_UNLOAD_DONE;
+                g_tc_ctx.state = (TC_TIMEOUT_Y_MS > 0) ? TC_UNLOAD_WAIT_Y :
+                                 (TC_TIMEOUT_TH_MS > 0) ? TC_UNLOAD_WAIT_TH : TC_UNLOAD_DONE;
             } else if (age > (uint32_t)TC_TIMEOUT_UNLOAD_MS) {
                 tc_enter_error("UNLOAD_TIMEOUT");
+            }
+            break;
+
+        case TC_UNLOAD_WAIT_Y:
+            if (!on_al(&g_y_split)) {
+                g_tc_ctx.phase_start_ms = now_ms;
+                g_tc_ctx.state = (TC_TIMEOUT_TH_MS > 0) ? TC_UNLOAD_WAIT_TH : TC_UNLOAD_DONE;
+            } else if (age > (uint32_t)TC_TIMEOUT_Y_MS) {
+                tc_enter_error("Y_TIMEOUT");
             }
             break;
 
@@ -862,7 +875,10 @@ static void tc_tick(uint32_t now_ms) {
         }
 
         case TC_LOAD_START: {
-            // A speed-ramp phase can be inserted here if needed.
+            if (TC_TIMEOUT_Y_MS > 0 && on_al(&g_y_split)) {
+                tc_enter_error("HUB_NOT_CLEAR");
+                break;
+            }
             char lane_s[2] = { (char)('0' + active_lane), 0 };
             cmd_event("TC:LOADING", lane_s);
             lane_start(A, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, TC_TIMEOUT_LOAD_MS);
@@ -1162,7 +1178,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NightOwl settings sentinel.
-#define SETTINGS_VERSION 5u
+#define SETTINGS_VERSION 6u
 
 typedef struct {
     uint32_t magic;
@@ -1195,6 +1211,7 @@ typedef struct {
 
     int tc_timeout_cut_ms, tc_timeout_unload_ms;
     int tc_timeout_th_ms, tc_timeout_load_ms;
+    int tc_timeout_y_ms;
 
     int low_delay_ms, swap_cooldown_ms, runout_cooldown_ms;
     bool require_y_empty_swap;
@@ -1265,6 +1282,7 @@ static void settings_defaults(void) {
     TC_TIMEOUT_UNLOAD_MS = CONF_TC_TIMEOUT_UNLOAD_MS;
     TC_TIMEOUT_TH_MS = CONF_TC_TIMEOUT_TH_MS;
     TC_TIMEOUT_LOAD_MS = CONF_TC_TIMEOUT_LOAD_MS;
+    TC_TIMEOUT_Y_MS = CONF_TC_TIMEOUT_Y_MS;
 
     LOW_DELAY_MS = CONF_LOW_DELAY_MS;
     SWAP_COOLDOWN_MS = CONF_SWAP_COOLDOWN_MS;
@@ -1326,6 +1344,7 @@ static void settings_save(void) {
     s.tc_timeout_unload_ms = TC_TIMEOUT_UNLOAD_MS;
     s.tc_timeout_th_ms = TC_TIMEOUT_TH_MS;
     s.tc_timeout_load_ms = TC_TIMEOUT_LOAD_MS;
+    s.tc_timeout_y_ms = TC_TIMEOUT_Y_MS;
 
     s.low_delay_ms = LOW_DELAY_MS;
     s.swap_cooldown_ms = SWAP_COOLDOWN_MS;
@@ -1433,6 +1452,7 @@ static void settings_load(void) {
     TC_TIMEOUT_UNLOAD_MS = s->tc_timeout_unload_ms;
     TC_TIMEOUT_TH_MS = s->tc_timeout_th_ms;
     TC_TIMEOUT_LOAD_MS = s->tc_timeout_load_ms;
+    TC_TIMEOUT_Y_MS = s->tc_timeout_y_ms;
 
     LOW_DELAY_MS = s->low_delay_ms;
     SWAP_COOLDOWN_MS = s->swap_cooldown_ms;
@@ -1708,6 +1728,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "TC_UNLOAD_MS")) TC_TIMEOUT_UNLOAD_MS = clamp_i(iv, 1000, 30000);
             else if (!strcmp(param, "TC_TH_MS"))     TC_TIMEOUT_TH_MS = clamp_i(iv, 0, 10000);
             else if (!strcmp(param, "TC_LOAD_MS"))   TC_TIMEOUT_LOAD_MS = clamp_i(iv, 1000, 60000);
+            else if (!strcmp(param, "TC_Y_MS"))      TC_TIMEOUT_Y_MS = clamp_i(iv, 0, 30000);
             else if (!strcmp(param, "MM_PER_STEP"))  { MM_PER_STEP = fv < 0.001f ? 0.001f : fv > 10.0f ? 10.0f : fv; }
             else handled = false;
             if (handled) cmd_reply("OK", NULL);
@@ -1748,6 +1769,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "TC_UNLOAD_MS")) snprintf(out, sizeof(out), "TC_UNLOAD_MS:%d", TC_TIMEOUT_UNLOAD_MS);
         else if (!strcmp(param, "TC_TH_MS"))     snprintf(out, sizeof(out), "TC_TH_MS:%d", TC_TIMEOUT_TH_MS);
         else if (!strcmp(param, "TC_LOAD_MS"))   snprintf(out, sizeof(out), "TC_LOAD_MS:%d", TC_TIMEOUT_LOAD_MS);
+        else if (!strcmp(param, "TC_Y_MS"))      snprintf(out, sizeof(out), "TC_Y_MS:%d", TC_TIMEOUT_Y_MS);
         else if (!strcmp(param, "MM_PER_STEP"))  snprintf(out, sizeof(out), "MM_PER_STEP:%.5f", (double)MM_PER_STEP);
         else if (!strcmp(param, "RUN_CURRENT_MA") && idx >= 0)  snprintf(out, sizeof(out), "RUN_CURRENT_MA:%d:%d", lane, TMC_RUN_CURRENT_MA[idx]);
         else if (!strcmp(param, "HOLD_CURRENT_MA") && idx >= 0) snprintf(out, sizeof(out), "HOLD_CURRENT_MA:%d:%d", lane, TMC_HOLD_CURRENT_MA[idx]);
