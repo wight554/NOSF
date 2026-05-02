@@ -272,7 +272,8 @@ typedef enum {
     TASK_IDLE = 0,
     TASK_AUTOLOAD,
     TASK_FEED,
-    TASK_UNLOAD
+    TASK_UNLOAD,     // extruder unload: reverse until OUT clears
+    TASK_UNLOAD_MMU  // MMU unload: reverse until IN clears
 } task_t;
 
 typedef enum {
@@ -296,7 +297,7 @@ typedef struct lane_s {
     uint diag_pin;
     uint32_t motion_started_ms;
     bool stall_armed;
-    bool unload_out_latch;
+    bool unload_sensor_latch;
     fault_t fault;
     int lane_id;
     uint32_t runout_block_until_ms;
@@ -455,13 +456,13 @@ static void lane_setup(lane_t *L, uint pin_in, uint pin_out, motor_t m, int lane
     L->lane_id = lane_id;
     L->runout_block_until_ms = 0;
     L->retract_deadline_ms = 0;
-    L->unload_out_latch = false;
+    L->unload_sensor_latch = false;
 }
 
 static void lane_stop(lane_t *L) {
     L->task = TASK_IDLE;
     L->stall_armed = false;
-    L->unload_out_latch = false;
+    L->unload_sensor_latch = false;
     L->retract_deadline_ms = 0;
     motor_stop(&L->m);
 }
@@ -471,11 +472,13 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     L->fault = FAULT_NONE;
     L->motion_started_ms = now_ms;
     L->stall_armed = false;
-    L->unload_out_latch = false;
+    L->unload_sensor_latch = false;
     L->retract_deadline_ms = 0;
 
     if (t == TASK_AUTOLOAD) {
         L->autoload_deadline_ms = now_ms + (uint32_t)autoload_timeout_ms;
+    } else {
+        L->autoload_deadline_ms = 0; // callers that want a timeout set it after lane_start
     }
 
     motor_enable(&L->m, true);
@@ -518,16 +521,30 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
     }
 
     if (L->task == TASK_UNLOAD && L->retract_deadline_ms == 0) {
-        // Manual UL: run backward until OUT sensor clears (sensor-latch).
+        // Extruder unload: reverse until OUT sensor clears.
         if (lane_out_present(L)) {
-            L->unload_out_latch = true;
+            L->unload_sensor_latch = true;
         }
-        if (L->unload_out_latch && !lane_out_present(L)) {
+        if (L->unload_sensor_latch && !lane_out_present(L)) {
             lane_stop(L);
             char lane_s[2] = { (char)('0' + L->lane_id), 0 };
             cmd_event("UNLOADED", lane_s);
-        } else if ((int32_t)(now_ms - L->autoload_deadline_ms) >= 0) {
-            // Safety timeout.
+        } else if (L->autoload_deadline_ms != 0 && (int32_t)(now_ms - L->autoload_deadline_ms) >= 0) {
+            lane_stop(L);
+            cmd_event("UNLOAD_TIMEOUT", NULL);
+        }
+    }
+
+    if (L->task == TASK_UNLOAD_MMU) {
+        // MMU unload: reverse until IN sensor clears.
+        if (lane_in_present(L)) {
+            L->unload_sensor_latch = true;
+        }
+        if (L->unload_sensor_latch && !lane_in_present(L)) {
+            lane_stop(L);
+            char lane_s[2] = { (char)('0' + L->lane_id), 0 };
+            cmd_event("UNLOADED", lane_s);
+        } else if (L->autoload_deadline_ms != 0 && (int32_t)(now_ms - L->autoload_deadline_ms) >= 0) {
             lane_stop(L);
             cmd_event("UNLOAD_TIMEOUT", NULL);
         }
@@ -776,6 +793,7 @@ static const char *task_name(task_t t) {
         case TASK_AUTOLOAD: return "AUTOLOAD";
         case TASK_FEED: return "FEED";
         case TASK_UNLOAD: return "UNLOAD";
+        case TASK_UNLOAD_MMU: return "UNLOAD_MMU";
         default: return "?";
     }
 }
@@ -1526,7 +1544,17 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         }
         sync_enabled = false;
         lane_start(A, TASK_UNLOAD, REV_SPS, false, now_ms, 0);
-        A->autoload_deadline_ms = now_ms + 30000u; // 30 s safety timeout
+        A->autoload_deadline_ms = now_ms + 30000u;
+        cmd_reply("OK", NULL);
+    } else if (!strcmp(cmd, "UM")) {
+        lane_t *A = lane_ptr(active_lane);
+        if (!A) {
+            cmd_reply("ER", "NO_ACTIVE_LANE");
+            return;
+        }
+        sync_enabled = false;
+        lane_start(A, TASK_UNLOAD_MMU, REV_SPS, false, now_ms, 0);
+        A->autoload_deadline_ms = now_ms + 30000u;
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "CU")) {
         if (!ENABLE_CUTTER) {

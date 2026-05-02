@@ -69,7 +69,7 @@
 
 // ----- Direction invert -----
 // Set to 1 if motor runs backward on LO: command
-#define CONF_M1_DIR_INVERT      1   // VERIFY: check physically
+#define CONF_M1_DIR_INVERT      0   // VERIFY: check physically
 #define CONF_M2_DIR_INVERT      0   // VERIFY: check physically
 
 // ----- Firmware version -----
