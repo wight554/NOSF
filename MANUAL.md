@@ -32,7 +32,7 @@ Both `UL:` and `UM:` stop automatically when the target sensor clears and emit `
 | Command | Description |
 |---------|-------------|
 | `T:<1\|2>` | Set active lane without motion. |
-| `TC:<1\|2>` | Full toolchange to lane N. Unloads current lane (cuts if `CUTTER=1`), swaps, loads target lane. Returns `ER:NO_ACTIVE_LANE` if active lane is unknown. |
+| `TC:<1\|2>` | Full toolchange to lane N. Unloads current lane (cuts if `CUTTER=1`), swaps, then runs the new lane forward at `FEED_SPS` until toolhead sensor (`TS:1`). Returns `ER:NO_ACTIVE_LANE` if active lane is unknown. |
 
 ---
 

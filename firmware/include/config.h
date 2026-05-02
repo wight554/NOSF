@@ -15,10 +15,11 @@
 #define CONF_RSENSE_OHM         0.110f  // Ohms — confirmed from schematic
 
 // ----- Speeds (steps per second) -----
-#define CONF_FEED_SPS           5000
-#define CONF_REV_SPS            4000
-#define CONF_AUTO_SPS           6000
-#define CONF_SYNC_MAX_SPS       8000
+// At MM_PER_STEP=0.001417: 25000 SPS ≈ 35 mm/s, 50000 SPS ≈ 71 mm/s
+#define CONF_FEED_SPS           25000
+#define CONF_REV_SPS            25000
+#define CONF_AUTO_SPS           25000
+#define CONF_SYNC_MAX_SPS       30000
 #define CONF_SYNC_MIN_SPS       0
 
 // ----- Motion -----
@@ -51,9 +52,9 @@
 
 // ----- Toolchange timeouts -----
 #define CONF_TC_TIMEOUT_CUT_MS      5000
-#define CONF_TC_TIMEOUT_UNLOAD_MS   8000
+#define CONF_TC_TIMEOUT_UNLOAD_MS   60000
 #define CONF_TC_TIMEOUT_TH_MS       3000  // 0 = don't wait for TS: from host
-#define CONF_TC_TIMEOUT_LOAD_MS     15000
+#define CONF_TC_TIMEOUT_LOAD_MS     60000
 #define CONF_TC_TIMEOUT_Y_MS        5000  // 0 = skip Y-splitter wait on unload
 
 // ----- Safety / swap -----

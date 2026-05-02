@@ -895,24 +895,32 @@ static void tc_tick(uint32_t now_ms) {
             }
             char lane_s[2] = { (char)('0' + active_lane), 0 };
             cmd_event("TC:LOADING", lane_s);
-            lane_start(A, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, TC_TIMEOUT_LOAD_MS);
+            toolhead_has_filament = false;
+            lane_start(A, TASK_LOAD_FULL, FEED_SPS, true, now_ms, 0);
+            A->autoload_deadline_ms = now_ms + (uint32_t)TC_TIMEOUT_LOAD_MS;
             g_tc_ctx.phase_start_ms = now_ms;
             g_tc_ctx.state = TC_LOAD_WAIT_OUT;
             break;
         }
 
         case TC_LOAD_WAIT_OUT:
+            // Non-stopping checkpoint: TASK_LOAD_FULL continues past OUT toward toolhead.
             if (lane_out_present(A)) {
                 g_tc_ctx.phase_start_ms = now_ms;
-                g_tc_ctx.state = (TC_TIMEOUT_TH_MS > 0) ? TC_LOAD_WAIT_TH : TC_LOAD_DONE;
-            } else if (age > (uint32_t)TC_TIMEOUT_LOAD_MS) {
+                g_tc_ctx.state = TC_LOAD_WAIT_TH;
+            } else if (A->task == TASK_IDLE) {
                 tc_enter_error("LOAD_TIMEOUT");
             }
             break;
 
         case TC_LOAD_WAIT_TH:
-            if (toolhead_has_filament || age > (uint32_t)TC_TIMEOUT_TH_MS) {
-                g_tc_ctx.state = TC_LOAD_DONE;
+            // Wait for TASK_LOAD_FULL to complete (stopped by TS:1 or deadline).
+            if (A->task == TASK_IDLE) {
+                if (toolhead_has_filament) {
+                    g_tc_ctx.state = TC_LOAD_DONE;
+                } else {
+                    tc_enter_error("LOAD_TIMEOUT");
+                }
             }
             break;
 
@@ -1578,7 +1586,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         }
         sync_enabled = false;
         lane_start(A, TASK_UNLOAD, REV_SPS, false, now_ms, 0);
-        A->autoload_deadline_ms = now_ms + 30000u;
+        A->autoload_deadline_ms = now_ms + (uint32_t)TC_TIMEOUT_UNLOAD_MS;
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "UM")) {
         lane_t *A = lane_ptr(active_lane);
@@ -1588,7 +1596,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         }
         sync_enabled = false;
         lane_start(A, TASK_UNLOAD_MMU, REV_SPS, false, now_ms, 0);
-        A->autoload_deadline_ms = now_ms + 30000u;
+        A->autoload_deadline_ms = now_ms + (uint32_t)TC_TIMEOUT_UNLOAD_MS;
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "FD")) {
         lane_t *A = lane_ptr(active_lane);
