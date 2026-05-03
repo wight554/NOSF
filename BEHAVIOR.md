@@ -246,26 +246,69 @@ keeps StallGuard enabled across the full operating speed range whenever
 StallGuard below a certain speed (useful to suppress false triggers during
 ramp-up, though `STARTUP_MS` already handles that in firmware).
 
+### Buffer + StallGuard combined control
+
+Buffer arm position and SG_RESULT are complementary signals:
+
+| Signal | Measures | Speed |
+|--------|----------|-------|
+| `g_buf_pos` | Displacement — integrated velocity error | Slow (arm must move) |
+| `SG_RESULT` | Load / tension — instantaneous force on filament | Fast (direct measurement) |
+
+Together they form an outer+inner loop:
+
+```
+target_sps = baseline
+           + KP_BUF  × buf_pos            (buffer: slow, displacement-based)
+           + KP_SG   × (THR − SG_RESULT)  (SG: fast, tension-based)
+           + PRE_RAMP                      (predictive: kick before ADVANCE arrives)
+```
+
+`SG_SYNC_TRIM` is the maximum speed addition when `SG_RESULT = 0` (full
+tension / near-stall). Correction scales linearly: half trim at half tension,
+zero trim when `SG_RESULT ≥ SG_SYNC_THR`.
+
 ### Tuning `SG_SYNC_THR` (sync load trim)
 
-During sync printing, the buffer arm position drives the primary speed
-correction. `SG_SYNC_THR` adds a secondary trim: if `SG_RESULT` drops below
-`SG_SYNC_THR`, the MMU is running slow relative to the extruder (high
-filament tension) and `SG_SYNC_TRIM_SPS` extra speed is added immediately.
+1. Enable sync and print at normal speed.
+2. Poll SG while buffer is at neutral (neither ADVANCE nor TRAILING):
+   ```
+   SG:1
+   SG:1
+   SG:1
+   ```
+   Note the stable value during normal, unloaded sync — call it `SG_STEADY`.
+3. Set `SG_SYNC_THR` just below `SG_STEADY` so the trim activates only when
+   tension rises above the baseline:
+   ```
+   SET:SG_SYNC_THR:80     # if SG_STEADY ≈ 120, set to ~80 (⅔ of steady)
+   ```
+4. Set `SG_SYNC_TRIM` to the extra speed you want at maximum tension.  Start
+   conservatively (e.g., 500–1000 mm/min) and increase if the buffer still
+   spikes to ADVANCE before the correction catches up:
+   ```
+   SET:SG_SYNC_TRIM:600
+   ```
+5. `SG_SYNC_THR:0` disables the trim entirely (safe default).
 
-Procedure:
-1. Enable sync and print for a few minutes: `SM:1` (or trigger via `TS:1`).
-2. Watch `EV:BS` events — the third field is `buf_pos`.
-3. While printing at steady speed with buffer near neutral, run `SG:1` several
-   times and note the typical `SG_RESULT` range — call it `SG_STEADY`.
-4. Set `SG_SYNC_THR` to about 80 % of the minimum observed `SG_STEADY`:
-   ```
-   SET:SG_SYNC_THR:80
-   ```
-5. If the MMU occasionally drops behind (buffer spikes to ADVANCE) without the
-   trim correcting it, increase `SG_SYNC_THR` or `SG_SYNC_TRIM`. If false
-   trims are causing overshoot, decrease `SG_SYNC_THR`.
-6. `SG_SYNC_THR:0` disables the trim entirely (safe default).
+### Stall recovery during sync
+
+A stall during buffer sync usually means a tension spike (extruder briefly
+pulled harder than the correction could handle), not a physical jam.
+
+**First stall** — the IRQ stops the motor, then `stall_pump` detects sync mode
+and instead of hard-stopping:
+- Sets `stall_recovery = true` (3 s window, `CONF_STALL_RECOVERY_MS`).
+- Resets `sync_current_sps = 0` so the motor ramps up from zero.
+- Emits `EV:STALL:<lane>` (host is informed regardless).
+- `sync_tick` restarts the motor and the proportional controller — the fresh
+  ramp gives the tension a chance to release before speed builds back up.
+
+**Second stall within the recovery window** — the motor is hard-stopped and
+`EV:STALL:<lane>` is emitted again.  This means a real jam.
+
+Recovery is **disabled** (`CONF_STALL_RECOVERY_MS = 0`) when StallGuard is
+not tuned (default `SGTHRS = 0` → DIAG never fires → recovery never triggers).
 
 ---
 

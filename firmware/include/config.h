@@ -57,6 +57,13 @@
 #define CONF_TC_TIMEOUT_LOAD_MS     60000
 #define CONF_TC_TIMEOUT_Y_MS        5000  // 0 = skip Y-splitter wait on unload
 
+// ----- Stall recovery (sync mode) -----
+// During buffer sync, a stall most likely means high filament tension rather
+// than a jam. The firmware lets sync_tick ramp back up and clears the state
+// after this window. If the motor stalls again within the window it's a real
+// jam and a hard stop is issued. Set to 0 to hard-stop on first stall always.
+#define CONF_STALL_RECOVERY_MS      3000
+
 // ----- Safety / swap -----
 #define CONF_LOW_DELAY_MS           400
 #define CONF_SWAP_COOLDOWN_MS       500

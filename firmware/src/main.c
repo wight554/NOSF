@@ -80,6 +80,7 @@ static int SG_SYNC_THR = CONF_SG_SYNC_THR;
 static int SG_SYNC_TRIM_SPS = CONF_SG_SYNC_TRIM_SPS;
 static float SG_ALPHA = CONF_SG_ALPHA;
 static float g_sg_load = 255.0f;   // EMA-filtered SG_RESULT (255 = neutral/unknown)
+static int STALL_RECOVERY_MS = CONF_STALL_RECOVERY_MS;
 
 static int BUF_SENSOR_TYPE = CONF_BUF_SENSOR_TYPE;
 static float BUF_NEUTRAL = CONF_BUF_NEUTRAL;
@@ -334,6 +335,8 @@ typedef struct lane_s {
     uint diag_pin;
     uint32_t motion_started_ms;
     bool stall_armed;
+    bool stall_recovery;              // true = first stall fired during sync; next stall = hard stop
+    uint32_t stall_recovery_deadline_ms;
     bool unload_sensor_latch;
     fault_t fault;
     int lane_id;
@@ -513,6 +516,8 @@ static void lane_setup(lane_t *L, uint pin_in, uint pin_out, motor_t m, int lane
 static void lane_stop(lane_t *L) {
     L->task = TASK_IDLE;
     L->stall_armed = false;
+    L->stall_recovery = false;
+    L->stall_recovery_deadline_ms = 0;
     L->unload_sensor_latch = false;
     L->retract_deadline_ms = 0;
     L->buf_advance_since_ms = 0;
@@ -559,6 +564,11 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         if ((int32_t)(now_ms - L->motion_started_ms) >= MOTION_STARTUP_MS) {
             L->stall_armed = true;
         }
+    }
+
+    // Expire the stall recovery window so a subsequent stall will hard-stop.
+    if (L->stall_recovery && (int32_t)(now_ms - L->stall_recovery_deadline_ms) >= 0) {
+        L->stall_recovery = false;
     }
 
     if (L->task == TASK_AUTOLOAD) {
@@ -1261,11 +1271,9 @@ static void sync_tick(uint32_t now_ms) {
 
     sync_last_tick_ms = now_ms;
 
-    // Poll SG_RESULT every 5 ticks (~100 ms) for load-based trim.
-    // Only when SG_SYNC_THR is non-zero and the motor is actively running.
-    static int sg_poll_ctr = 0;
-    if (SG_SYNC_THR > 0 && ++sg_poll_ctr >= 5) {
-        sg_poll_ctr = 0;
+    // Poll SG_RESULT every sync tick (20 ms) for fast tension feedback.
+    // SG responds before the buffer arm moves, giving an inner-loop lead signal.
+    if (SG_SYNC_THR > 0) {
         lane_t *AL = lane_ptr(active_lane);
         if (AL && AL->task == TASK_FEED) {
             uint16_t sg_raw;
@@ -1292,8 +1300,15 @@ static void sync_tick(uint32_t now_ms) {
 
     float correction = (float)SYNC_KP_SPS * buf_pos;
     if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
-    // SG trim: low SG_RESULT = high tension = extruder pulling ahead of buffer signal.
-    if (SG_SYNC_THR > 0 && (int)g_sg_load < SG_SYNC_THR) correction += (float)SG_SYNC_TRIM_SPS;
+    // Proportional SG correction: scales from 0 (SG at/above THR = normal tension)
+    // to SG_SYNC_TRIM_SPS (SG=0 = maximum tension / near stall).
+    // SG reacts before the buffer arm moves, providing a fast inner-loop lead.
+    if (SG_SYNC_THR > 0 && (int)g_sg_load < SG_SYNC_THR) {
+        float sg_frac = clamp_f(
+            (float)(SG_SYNC_THR - (int)g_sg_load) / (float)SG_SYNC_THR,
+            0.0f, 1.0f);
+        correction += sg_frac * (float)SG_SYNC_TRIM_SPS;
+    }
 
     int target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, SYNC_MAX_SPS);
 
@@ -1350,17 +1365,30 @@ static void stall_init(void) {
     gpio_set_irq_enabled(PIN_M2_DIAG, GPIO_IRQ_EDGE_RISE, true);
 }
 
+static void stall_handle(lane_t *L, const char *lane_s) {
+    if (sync_enabled && !L->stall_recovery && STALL_RECOVERY_MS > 0) {
+        // During sync a stall most likely means tension spike, not a jam.
+        // Let the motor stop briefly (already done in IRQ), then let sync_tick
+        // ramp back up.  If stall fires again within STALL_RECOVERY_MS it's a
+        // real jam and the else-branch below will hard-stop.
+        L->stall_recovery = true;
+        L->stall_recovery_deadline_ms = g_now_ms + (uint32_t)STALL_RECOVERY_MS;
+        sync_current_sps = 0;  // ramp from zero; sync_tick restarts the motor
+        cmd_event("STALL", lane_s);
+    } else {
+        lane_fault(L, FAULT_STALL);
+        cmd_event("STALL", lane_s);
+    }
+}
+
 static void stall_pump(void) {
     if (stall_pending_l1) {
         stall_pending_l1 = false;
-        lane_fault(&g_lane1, FAULT_STALL);
-        cmd_event("STALL", "1");
+        stall_handle(&g_lane1, "1");
     }
-
     if (stall_pending_l2) {
         stall_pending_l2 = false;
-        lane_fault(&g_lane2, FAULT_STALL);
-        cmd_event("STALL", "2");
+        stall_handle(&g_lane2, "2");
     }
 }
 
