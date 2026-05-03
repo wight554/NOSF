@@ -1,0 +1,240 @@
+# NightOwl Controller – Behavioral Reference
+
+This document describes *what the firmware does and why* — state transitions,
+failure modes, interlocks, and recovery paths. For the command syntax see
+`MANUAL.md`; for hardware pin assignments see `HARDWARE.md`.
+
+---
+
+## Filament states
+
+Each lane tracks filament position inferred from its two sensors.
+
+| IN | OUT | Meaning |
+|----|-----|---------|
+| 0  | 0   | Absent — no filament in this lane |
+| 1  | 0   | Pre-loaded — filament parked between IN and OUT (drive gear engaged) |
+| 1  | 1   | Loaded — filament past OUT, in bowden or extruder |
+| 0  | 1   | In-transit — tip just cleared IN, body still at OUT (brief, during unload) |
+
+Pre-loaded is the normal parked state after `LO:` or autopreload completes.
+
+---
+
+## Boot sequence
+
+1. Hardware init (GPIOs, PWM, TMC2209 UART).
+2. `settings_load()` — restores runtime parameters from flash.
+3. **Sensor settling** — `din_update()` is spun for 25 ms so the 10 ms
+   debounce threshold can commit correct stable values.  Without this step,
+   sensors read by `gpio_get()` in `din_init()` may reflect power-on
+   transients.
+4. **Active lane detection** — two-pass:
+   - First pass: if exactly one lane has OUT triggered, that lane is active.
+   - Fallback: if no OUT is triggered, check IN sensors — first lane with
+     IN=1 and OUT=0 is selected (pre-loaded state).
+   - If neither pass finds a lane, `active_lane` stays 0 (unknown).
+5. `prev_*_in_present` is initialised from current sensor state so that
+   autopreload does **not** re-trigger for filament already present at boot.
+
+---
+
+## Autopreload
+
+Fires automatically when an IN sensor rises (filament freshly inserted).
+
+**Conditions to start:**
+- Lane is IDLE, no toolchange in progress, cutter not busy.
+- That lane's OUT sensor is currently clear (not pre-loaded already).
+- `AUTO_PRELOAD` runtime toggle is on (default: 1).
+
+**What it does:**
+- Starts `TASK_AUTOLOAD` at `AUTO_SPS` — drives filament forward until OUT
+  triggers.
+- On OUT trigger: reverses by `RETRACT_MM` (default 10 mm) and stops, leaving
+  the tip just before OUT (pre-loaded state).
+- Sets `active_lane` to this lane if the other lane's OUT is clear.
+
+Autopreload does **not** fire for filament that was already present at boot
+(rising-edge detection, with `prev_*` initialised at startup).
+
+---
+
+## Load commands
+
+### `LO:` — Lane autoload (to pre-loaded state)
+
+Runs `TASK_AUTOLOAD` at `AUTO_SPS` until OUT triggers, then retracts
+`RETRACT_MM`. Parks filament just before OUT. Does **not** load to toolhead.
+Use this to pre-load a lane before a print starts.
+
+### `FL:` — Full load to toolhead
+
+Runs `TASK_LOAD_FULL` at `FEED_SPS` continuously until the host sends `TS:1`
+(toolhead sensor triggered). OUT sensor is a non-stopping checkpoint.
+
+**Interlocks checked before starting:**
+- Active lane must be set — `ER:NO_ACTIVE_LANE`.
+- IN sensor must be present — `ER:NO_FILAMENT`.
+- Other lane must not be idle at OUT (filament blocking the path) —
+  `ER:OTHER_LANE_ACTIVE`.
+
+**Failure detection during `FL:`:**
+
+| Condition | Timeout | Event |
+|-----------|---------|-------|
+| IN goes low >1 s after start | immediate | `EV:RUNOUT:<lane>` |
+| OUT never seen after 10 s | 10 s | `EV:RUNOUT:<lane>` |
+| `TS:1` never received | `TC_LOAD_MS` (60 s) | `EV:LOAD_TIMEOUT:<lane>` |
+
+**Why two runout paths:**
+
+- *Tail in drive gear* — a short disconnected piece is in the gear, gets
+  pushed forward, passes IN within a second or two, then IN goes low.
+  Detected by the 1 s IN-loss check.
+
+- *Tail behind drive gear* — the IN sensor is positioned behind (spool side
+  of) the drive gear.  If filament is at IN but not engaged in the gear, the
+  motor spins freely, IN stays high, and OUT never triggers.  Detected by the
+  10 s OUT checkpoint.  User must manually remove the tail from the IN sensor
+  area.
+
+---
+
+## Unload commands
+
+### `UL:` — Unload from extruder
+
+Runs reverse at `REV_SPS` until OUT clears.
+**Requires OUT to be triggered before starting** — returns `ER:NOT_LOADED` if
+OUT is already clear.  Use this when the filament tip is past the OUT sensor
+(inside the bowden or extruder).
+
+### `UM:` — Unload from MMU
+
+Runs reverse at `REV_SPS` until IN clears.
+Use this when the filament tip is between IN and OUT (pre-loaded state).
+No OUT precondition required.
+
+**Choosing the right command:**
+
+| Filament position | Command |
+|-------------------|---------|
+| Tip in extruder / bowden (OUT=1) | `UL:` |
+| Tip parked before OUT (OUT=0, IN=1) | `UM:` |
+
+Both commands emit `EV:UNLOADED:<lane>` on success or `EV:UNLOAD_TIMEOUT`
+after `TC_UNLOAD_MS` (60 s).
+
+---
+
+## Toolchange — `TC:<lane>`
+
+Full automated cycle. Emits phase events at each step.
+
+```
+TC_IDLE
+  → TC_UNLOAD_CUT       (if CUTTER=1: run cutter sequence)
+  → TC_UNLOAD_REVERSE   (start TASK_UNLOAD on current lane)
+      if OUT already clear: skip motor, jump directly to post-unload
+  → TC_UNLOAD_WAIT_OUT  (wait for OUT to clear, timeout = TC_UNLOAD_MS)
+  → TC_UNLOAD_WAIT_Y    (wait for Y-splitter to clear, if TC_Y_MS > 0)
+  → TC_UNLOAD_WAIT_TH   (wait for TS:0 from host, if TC_TH_MS > 0)
+  → TC_UNLOAD_DONE
+  → TC_SWAP             (set active_lane = target)
+  → TC_LOAD_START       (check Y-splitter clear; start TASK_LOAD_FULL)
+  → TC_LOAD_WAIT_OUT    (non-stopping checkpoint; error if task idles first)
+  → TC_LOAD_WAIT_TH     (wait for TASK_LOAD_FULL to complete)
+      success: toolhead_has_filament=true → TC_LOAD_DONE
+      failure: task idled without TS:1 → TC error LOAD_TIMEOUT
+  → TC_LOAD_DONE        → EV:TC:DONE:<lane>
+```
+
+**Pre-loaded unload shortcut:** If the current lane's OUT is clear when
+`TC_UNLOAD_REVERSE` runs (filament parked before OUT), the motor is not
+started at all — the unload phase is skipped immediately.  This avoids a
+spurious motor pulse followed by an immediate stop.
+
+**Error conditions** emit `EV:TC:ERROR:<reason>`:
+
+| Reason | Cause |
+|--------|-------|
+| `NO_ACTIVE_LANE` | `active_lane` is 0 at TC start |
+| `UNLOAD_TIMEOUT` | OUT did not clear within `TC_UNLOAD_MS` |
+| `Y_TIMEOUT` | Y-splitter did not clear within `TC_Y_MS` |
+| `HUB_NOT_CLEAR` | Y-splitter still occupied at load start |
+| `LOAD_TIMEOUT` | TASK_LOAD_FULL timed out without `TS:1` |
+
+---
+
+## Motor acceleration ramp
+
+All lane tasks start at `RAMP_STEP_SPS` (default 200 SPS) and increment by
+`RAMP_STEP_SPS` every `RAMP_TICK_MS` (default 5 ms) until `target_sps` is
+reached.  At 200 SPS / 5 ms the ramp to 25 000 SPS takes ~625 ms.
+
+The autopreload retract (direction reversal after OUT trigger) also starts
+from zero to avoid hammering the motor on direction change.
+
+StallGuard is not armed until `STARTUP_MS` (default 10 s) after motion starts,
+providing clearance for the ramp and bowden pressure to stabilise before stall
+detection can fire.
+
+---
+
+## StallGuard
+
+StallGuard detects motor **stall** (excess load).  It fires via DIAG GPIO IRQ
+and emits `EV:STALL:<lane>`.
+
+StallGuard is **not** useful for detecting absent filament (free-spinning
+motor = low load = SG value high, no trigger).  Filament absence is detected
+by sensor events (IN/OUT) as described in the load failure section above.
+
+---
+
+## Active lane tracking
+
+`active_lane` (0 = unknown, 1 or 2) is changed by:
+
+| Event | New value |
+|-------|-----------|
+| Boot: OUT sensor detected on exactly one lane | that lane |
+| Boot fallback: IN=1, OUT=0 on a lane | first such lane (L1 priority) |
+| `T:<n>` command | `n` |
+| Autopreload insert, other lane OUT clear | inserted lane |
+| `TC:` SWAP phase | target lane |
+
+`active_lane = 0` blocks `LO:`, `FL:`, `FD:`, `UL:`, `UM:`, and `TC:`.
+Set it manually with `T:1` or `T:2` if boot detection failed.
+
+---
+
+## Common workflows
+
+### First use — both lanes pre-loaded (IN=1, OUT=0)
+
+```
+# Boot sets active_lane=1 automatically.
+FL:          # load lane 1 to toolhead
+TS:1         # confirm filament reached toolhead
+```
+
+### Switch lanes during a print
+
+```
+TC:2         # full toolchange: unload L1, load L2, wait for TS:1
+TS:1         # confirm after filament reaches toolhead
+```
+
+### Recover from a failed load (EV:RUNOUT)
+
+1. Manually remove the filament tail from the IN sensor area.
+2. If filament is genuinely present, re-insert past the IN sensor.
+3. Autopreload will trigger (if `AUTO_PRELOAD=1`), or run `LO:` manually.
+4. Then `FL:` to load to toolhead.
+
+### Recover from EV:STALL
+
+StallGuard tripped — a jam is likely.  Stop (`ST:`), clear the blockage
+manually, then restart the load sequence.
