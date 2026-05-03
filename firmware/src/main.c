@@ -280,7 +280,8 @@ typedef enum {
     TASK_FEED,
     TASK_UNLOAD,      // extruder unload: reverse until OUT clears
     TASK_UNLOAD_MMU,  // MMU unload: reverse until IN clears
-    TASK_LOAD_FULL    // full load: forward until toolhead sensor (TS:1), then stop
+    TASK_LOAD_FULL,   // full load: forward until toolhead sensor (TS:1), then stop
+    TASK_MOVE         // timed exact-distance move; stops at autoload_deadline_ms
 } task_t;
 
 typedef enum {
@@ -610,6 +611,14 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         }
     }
 
+    if (L->task == TASK_MOVE) {
+        if (L->autoload_deadline_ms != 0 && (int32_t)(now_ms - L->autoload_deadline_ms) >= 0) {
+            lane_stop(L);
+            char lane_s[2] = { (char)('0' + L->lane_id), 0 };
+            cmd_event("MOVE_DONE", lane_s);
+        }
+    }
+
     if ((L->task == TASK_FEED || L->task == TASK_AUTOLOAD) && !lane_in_present(L)) {
         if ((int32_t)(now_ms - L->motion_started_ms) >= MOTION_STARTUP_MS &&
             (int32_t)(now_ms - L->runout_block_until_ms) >= 0) {
@@ -856,6 +865,7 @@ static const char *task_name(task_t t) {
         case TASK_UNLOAD: return "UNLOAD";
         case TASK_UNLOAD_MMU: return "UNLOAD_MMU";
         case TASK_LOAD_FULL: return "LOAD_FULL";
+        case TASK_MOVE: return "MOVE";
         default: return "?";
     }
 }
@@ -1121,6 +1131,8 @@ static void sync_apply_to_active(void) {
         sync_current_sps = 0;
         return;
     }
+    if (A->task == TASK_MOVE) return;  // don't clobber an in-progress timed move
+
     if (sync_current_sps > 0) {
         if (A->task != TASK_FEED) {
             lane_start(A, TASK_FEED, sync_current_sps, true, g_now_ms, 0);
@@ -1724,6 +1736,27 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         }
         sync_enabled = false;
         cutter_start(A, now_ms);
+        cmd_reply("OK", NULL);
+    } else if (!strcmp(cmd, "MV")) {
+        lane_t *A = lane_ptr(active_lane);
+        if (!A) {
+            cmd_reply("ER", "NO_ACTIVE_LANE");
+            return;
+        }
+        float mm = 0.0f;
+        int sps = 0;
+        if (sscanf(p, "%f:%d", &mm, &sps) != 2 || sps <= 0) {
+            cmd_reply("ER", "ARG");
+            return;
+        }
+        sps = clamp_i(sps, 200, 50000);
+        bool forward = (mm >= 0.0f);
+        float dist_mm = mm < 0.0f ? -mm : mm;
+        uint32_t duration_ms = (uint32_t)(dist_mm / ((float)sps * MM_PER_STEP) * 1000.0f);
+        if (duration_ms < 1) duration_ms = 1;
+        sync_enabled = false;
+        lane_start(A, TASK_MOVE, sps, forward, now_ms, 0);
+        A->autoload_deadline_ms = now_ms + duration_ms;
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "ST")) {
         tc_abort();
