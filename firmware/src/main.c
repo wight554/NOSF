@@ -14,6 +14,7 @@
 #include "hardware/flash.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
+#include "hardware/adc.h"
 #include "hardware/pwm.h"
 #include "hardware/sync.h"
 
@@ -29,6 +30,7 @@
 
 #define PIN_BUF_ADVANCE  18
 #define PIN_BUF_TRAILING 12
+#define PIN_BUF_ANALOG   26  // GP26 = ADC0; change to 27/28/29 if needed
 
 #define PIN_M1_EN        8
 #define PIN_M1_DIR       9
@@ -79,6 +81,14 @@ static int SG_SYNC_TRIM_SPS = CONF_SG_SYNC_TRIM_SPS;
 static float SG_ALPHA = CONF_SG_ALPHA;
 static float g_sg_load = 255.0f;   // EMA-filtered SG_RESULT (255 = neutral/unknown)
 
+static int BUF_SENSOR_TYPE = CONF_BUF_SENSOR_TYPE;
+static float BUF_NEUTRAL = CONF_BUF_NEUTRAL;
+static float BUF_RANGE = CONF_BUF_RANGE;
+static float BUF_THR = CONF_BUF_THR;
+static float BUF_ANALOG_ALPHA = CONF_BUF_ANALOG_ALPHA;
+static int SYNC_KP_SPS = CONF_SYNC_KP_SPS;
+static int TS_BUF_FALLBACK_MS = CONF_TS_BUF_FALLBACK_MS;
+
 static int SERVO_OPEN_US = CONF_SERVO_OPEN_US;
 static int SERVO_CLOSE_US = CONF_SERVO_CLOSE_US;
 static int SERVO_BLOCK_US = CONF_SERVO_BLOCK_US;
@@ -118,6 +128,12 @@ static bool g_shadow_vsense[2] = {true, true};
 
 // ===================== Helpers =====================
 static inline int clamp_i(int v, int lo, int hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+static inline float clamp_f(float v, float lo, float hi) {
     if (v < lo) return lo;
     if (v > hi) return hi;
     return v;
@@ -322,6 +338,7 @@ typedef struct lane_s {
     fault_t fault;
     int lane_id;
     uint32_t runout_block_until_ms;
+    uint32_t buf_advance_since_ms;  // for TS:1 buffer fallback
 } lane_t;
 
 typedef enum {
@@ -426,6 +443,8 @@ static uint32_t sync_last_evt_ms = 0;
 static volatile bool stall_pending_l1 = false;
 static volatile bool stall_pending_l2 = false;
 
+static float g_buf_analog_pos = 0.0f;  // EMA-filtered normalised position [-1, +1]
+
 static bool prev_lane1_in_present = false;
 static bool prev_lane2_in_present = false;
 
@@ -482,6 +501,7 @@ static void lane_setup(lane_t *L, uint pin_in, uint pin_out, motor_t m, int lane
     L->runout_block_until_ms = 0;
     L->retract_deadline_ms = 0;
     L->unload_sensor_latch = false;
+    L->buf_advance_since_ms = 0;
 }
 
 static void lane_stop(lane_t *L) {
@@ -489,6 +509,7 @@ static void lane_stop(lane_t *L) {
     L->stall_armed = false;
     L->unload_sensor_latch = false;
     L->retract_deadline_ms = 0;
+    L->buf_advance_since_ms = 0;
     L->current_sps = 0;
     L->target_sps = 0;
     motor_stop(&L->m);
@@ -598,6 +619,18 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
     if (L->task == TASK_LOAD_FULL) {
         // Track whether filament has passed OUT (reuse unload_sensor_latch as out_seen).
         if (lane_out_present(L)) L->unload_sensor_latch = true;
+
+        // TS:1 buffer fallback: after filament passes OUT, if buffer stays at ADVANCE
+        // for TS_BUF_FALLBACK_MS, the tip is backed up against the toolhead — treat as loaded.
+        if (TS_BUF_FALLBACK_MS > 0 && L->unload_sensor_latch) {
+            if (g_buf.state == BUF_ADVANCE) {
+                if (L->buf_advance_since_ms == 0) L->buf_advance_since_ms = now_ms;
+                else if ((int32_t)(now_ms - L->buf_advance_since_ms) >= TS_BUF_FALLBACK_MS)
+                    toolhead_has_filament = true;
+            } else {
+                L->buf_advance_since_ms = 0;
+            }
+        }
 
         char lane_s[2] = { (char)('0' + L->lane_id), 0 };
         if (toolhead_has_filament) {
@@ -1076,7 +1109,29 @@ static bool predict_advance_coming(void) {
     return mid_count > 0 && (short_count * 2 >= mid_count);
 }
 
+// Read and EMA-filter the analog buffer position into g_buf_analog_pos.
+// Called once per sync tick when BUF_SENSOR_TYPE == 1.
+static void buf_analog_update(void) {
+    adc_select_input(PIN_BUF_ANALOG - 26);
+    uint32_t sum = 0;
+    for (int i = 0; i < 4; i++) sum += adc_read();
+    float fraction = (float)(sum >> 2) / 4095.0f;
+
+    float delta = fraction - BUF_NEUTRAL;
+    float scale = (BUF_RANGE > 0.001f) ? BUF_RANGE : 0.001f;
+    float norm = clamp_f(delta / scale, -1.0f, 1.0f);
+    if (BUF_INVERT) norm = -norm;
+
+    g_buf_analog_pos = BUF_ANALOG_ALPHA * norm + (1.0f - BUF_ANALOG_ALPHA) * g_buf_analog_pos;
+}
+
 static buf_state_t buf_read(void) {
+    if (BUF_SENSOR_TYPE == 1) {
+        if (g_buf_analog_pos >  BUF_THR) return BUF_ADVANCE;
+        if (g_buf_analog_pos < -BUF_THR) return BUF_TRAILING;
+        return BUF_MID;
+    }
+
     bool adv_raw = on_al(&g_buf_adv_din);
     bool trl_raw = on_al(&g_buf_trl_din);
 
@@ -1158,13 +1213,7 @@ static void sync_apply_to_active(void) {
 }
 
 static void sync_on_transition(buf_state_t prev, buf_state_t now_state) {
-    int delta = (int)(g_buf.arm_vel_mm_s / MM_PER_STEP * SYNC_RATIO);
-    if (now_state == BUF_ADVANCE) {
-        sync_current_sps += delta;
-    } else if (now_state == BUF_TRAILING) {
-        sync_current_sps -= delta;
-    }
-
+    // Velocity kick removed: proportional control handles speed changes continuously.
     if (prev == BUF_ADVANCE && now_state == BUF_MID) {
         baseline_update_on_settle(g_buf.dwell_ms);
     }
@@ -1175,6 +1224,8 @@ static void sync_tick(uint32_t now_ms) {
     if ((now_ms - sync_last_tick_ms) < (uint32_t)SYNC_TICK_MS) return;
 
     sync_last_tick_ms = now_ms;
+
+    if (BUF_SENSOR_TYPE == 1) buf_analog_update();
 
     // Poll SG_RESULT every 5 ticks (~100 ms) for load-based trim.
     // Only when SG_SYNC_THR is non-zero and the motor is actively running.
@@ -1203,38 +1254,35 @@ static void sync_tick(uint32_t now_ms) {
     if (s != prev) {
         buf_update(s, now_ms);
         sync_on_transition(prev, s);
-    } else {
-        switch (s) {
-            case BUF_ADVANCE:
-                sync_current_sps += SYNC_RAMP_UP_SPS;
-                break;
-            case BUF_TRAILING:
-                sync_current_sps -= SYNC_RAMP_DN_SPS;
-                if (sync_current_sps < 0) sync_current_sps = 0;
-                break;
-            case BUF_MID: {
-                int target = g_baseline_sps + (predict_advance_coming() ? PRE_RAMP_SPS : 0);
-                // SG trim: if load is high (SG below threshold), extruder is pulling
-                // ahead before the buffer arm has moved — pre-emptively speed up.
-                if (SG_SYNC_THR > 0 && (int)g_sg_load < SG_SYNC_THR) {
-                    target += SG_SYNC_TRIM_SPS;
-                }
-                if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
-                else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
-                break;
-            }
-            case BUF_FAULT:
-                break;
-        }
     }
 
+    // Proportional speed control.
+    // buf_pos: +1 = ADVANCE (extruder pulling, speed up MMU),
+    //          -1 = TRAILING (buffer full, slow down MMU).
+    float buf_pos = (BUF_SENSOR_TYPE == 1)
+        ? g_buf_analog_pos
+        : (s == BUF_ADVANCE ? 1.0f : s == BUF_TRAILING ? -1.0f : 0.0f);
+
+    float correction = (float)SYNC_KP_SPS * buf_pos;
+    if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
+    // SG trim: low SG_RESULT = high tension = extruder pulling ahead of buffer signal.
+    if (SG_SYNC_THR > 0 && (int)g_sg_load < SG_SYNC_THR) correction += (float)SG_SYNC_TRIM_SPS;
+
+    int target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, SYNC_MAX_SPS);
+
+    if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
+    else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
     sync_current_sps = clamp_i(sync_current_sps, SYNC_MIN_SPS, SYNC_MAX_SPS);
+
     sync_apply_to_active();
 
     if ((now_ms - sync_last_evt_ms) >= 500u) {
         sync_last_evt_ms = now_ms;
-        char ev[32];
-        snprintf(ev, sizeof(ev), "%s,%d", buf_state_name(s), sync_current_sps);
+        char ev[48];
+        snprintf(ev, sizeof(ev), "%s,%.1f,%.2f",
+                 buf_state_name(s),
+                 (double)sps_to_mm_per_min(sync_current_sps),
+                 (double)buf_pos);
         cmd_event("BS", ev);
     }
 }
@@ -1292,7 +1340,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NightOwl settings sentinel.
-#define SETTINGS_VERSION 7u
+#define SETTINGS_VERSION 8u
 
 typedef struct {
     uint32_t magic;
@@ -1334,6 +1382,11 @@ typedef struct {
 
     int sg_sync_thr, sg_sync_trim_sps;
     float sg_alpha;
+
+    int buf_sensor_type;
+    float buf_neutral, buf_range, buf_thr, buf_analog_alpha;
+    int sync_kp_sps;
+    int ts_buf_fallback_ms;
 
     float mm_per_step;
 
@@ -1413,6 +1466,14 @@ static void settings_defaults(void) {
     SG_SYNC_TRIM_SPS = CONF_SG_SYNC_TRIM_SPS;
     SG_ALPHA = CONF_SG_ALPHA;
 
+    BUF_SENSOR_TYPE = CONF_BUF_SENSOR_TYPE;
+    BUF_NEUTRAL = CONF_BUF_NEUTRAL;
+    BUF_RANGE = CONF_BUF_RANGE;
+    BUF_THR = CONF_BUF_THR;
+    BUF_ANALOG_ALPHA = CONF_BUF_ANALOG_ALPHA;
+    SYNC_KP_SPS = CONF_SYNC_KP_SPS;
+    TS_BUF_FALLBACK_MS = CONF_TS_BUF_FALLBACK_MS;
+
     MM_PER_STEP = CONF_MM_PER_STEP;
 }
 
@@ -1478,6 +1539,14 @@ static void settings_save(void) {
     s.sg_sync_thr = SG_SYNC_THR;
     s.sg_sync_trim_sps = SG_SYNC_TRIM_SPS;
     s.sg_alpha = SG_ALPHA;
+
+    s.buf_sensor_type = BUF_SENSOR_TYPE;
+    s.buf_neutral = BUF_NEUTRAL;
+    s.buf_range = BUF_RANGE;
+    s.buf_thr = BUF_THR;
+    s.buf_analog_alpha = BUF_ANALOG_ALPHA;
+    s.sync_kp_sps = SYNC_KP_SPS;
+    s.ts_buf_fallback_ms = TS_BUF_FALLBACK_MS;
 
     s.mm_per_step = MM_PER_STEP;
 
@@ -1591,6 +1660,14 @@ static void settings_load(void) {
     SG_SYNC_TRIM_SPS = s->sg_sync_trim_sps;
     SG_ALPHA = s->sg_alpha;
 
+    BUF_SENSOR_TYPE = s->buf_sensor_type;
+    BUF_NEUTRAL = s->buf_neutral;
+    BUF_RANGE = s->buf_range;
+    BUF_THR = s->buf_thr;
+    BUF_ANALOG_ALPHA = s->buf_analog_alpha;
+    SYNC_KP_SPS = s->sync_kp_sps;
+    TS_BUF_FALLBACK_MS = s->ts_buf_fallback_ms;
+
     // Motor parameters always come from compile-time config (tune.h / config.ini).
     // Flash values for these fields are ignored so reflashing always takes effect.
     TMC_RUN_CURRENT_MA[0] = CONF_RUN_CURRENT_MA;
@@ -1628,11 +1705,11 @@ static void status_dump(void) {
     (void)tmc_read_sg_result(&g_tmc1, &sg1);
     (void)tmc_read_sg_result(&g_tmc2, &sg2);
 
-    char b[240];
+    char b[256];
     snprintf(b, sizeof(b),
         "LN:%d,TC:%s,L1T:%s,L2T:%s,"
         "I1:%d,O1:%d,I2:%d,O2:%d,"
-        "TH:%d,YS:%d,BUF:%s,SPS:%.1f,BL:%.1f,SM:%d,BI:%d,AP:%d,CU:%d,"
+        "TH:%d,YS:%d,BUF:%s,SPS:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,"
         "SG1:%u,SG2:%u,SGF:%d",
         active_lane, tc_state_name(g_tc_ctx.state),
         task_name(g_lane1.task), task_name(g_lane2.task),
@@ -1645,6 +1722,7 @@ static void status_dump(void) {
         buf_state_name(g_buf.state),
         (double)sps_to_mm_per_min(sync_current_sps),
         (double)sps_to_mm_per_min(g_baseline_sps),
+        (double)g_buf_analog_pos,
         sync_enabled ? 1 : 0,
         BUF_INVERT ? 1 : 0,
         AUTO_PRELOAD ? 1 : 0,
@@ -1899,6 +1977,13 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "SG_SYNC_THR"))  SG_SYNC_THR = clamp_i(iv, 0, 511);
             else if (!strcmp(param, "SG_SYNC_TRIM")) SG_SYNC_TRIM_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
             else if (!strcmp(param, "SG_ALPHA"))     { SG_ALPHA = fv < 0.01f ? 0.01f : fv > 1.0f ? 1.0f : fv; }
+            else if (!strcmp(param, "BUF_SENSOR"))   BUF_SENSOR_TYPE = clamp_i(iv, 0, 1);
+            else if (!strcmp(param, "BUF_NEUTRAL"))  BUF_NEUTRAL = clamp_f(fv, 0.0f, 1.0f);
+            else if (!strcmp(param, "BUF_RANGE"))    BUF_RANGE = clamp_f(fv, 0.01f, 0.5f);
+            else if (!strcmp(param, "BUF_THR"))      BUF_THR = clamp_f(fv, 0.01f, 0.99f);
+            else if (!strcmp(param, "BUF_ALPHA"))    BUF_ANALOG_ALPHA = clamp_f(fv, 0.01f, 1.0f);
+            else if (!strcmp(param, "SYNC_KP"))      SYNC_KP_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
+            else if (!strcmp(param, "TS_BUF_MS"))    TS_BUF_FALLBACK_MS = clamp_i(iv, 0, 30000);
             else if (!strcmp(param, "STARTUP_MS"))   MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
             else if (!strcmp(param, "SERVO_OPEN"))   SERVO_OPEN_US = clamp_i(iv, 400, 2600);
             else if (!strcmp(param, "SERVO_CLOSE"))  SERVO_CLOSE_US = clamp_i(iv, 400, 2600);
@@ -1943,6 +2028,13 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "SG_SYNC_THR"))  snprintf(out, sizeof(out), "SG_SYNC_THR:%d", SG_SYNC_THR);
         else if (!strcmp(param, "SG_SYNC_TRIM")) snprintf(out, sizeof(out), "SG_SYNC_TRIM:%.1f", (double)sps_to_mm_per_min(SG_SYNC_TRIM_SPS));
         else if (!strcmp(param, "SG_ALPHA"))     snprintf(out, sizeof(out), "SG_ALPHA:%.3f", (double)SG_ALPHA);
+        else if (!strcmp(param, "BUF_SENSOR"))   snprintf(out, sizeof(out), "BUF_SENSOR:%d", BUF_SENSOR_TYPE);
+        else if (!strcmp(param, "BUF_NEUTRAL"))  snprintf(out, sizeof(out), "BUF_NEUTRAL:%.3f", (double)BUF_NEUTRAL);
+        else if (!strcmp(param, "BUF_RANGE"))    snprintf(out, sizeof(out), "BUF_RANGE:%.3f", (double)BUF_RANGE);
+        else if (!strcmp(param, "BUF_THR"))      snprintf(out, sizeof(out), "BUF_THR:%.3f", (double)BUF_THR);
+        else if (!strcmp(param, "BUF_ALPHA"))    snprintf(out, sizeof(out), "BUF_ALPHA:%.3f", (double)BUF_ANALOG_ALPHA);
+        else if (!strcmp(param, "SYNC_KP"))      snprintf(out, sizeof(out), "SYNC_KP:%.1f", (double)sps_to_mm_per_min(SYNC_KP_SPS));
+        else if (!strcmp(param, "TS_BUF_MS"))    snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
         else if (!strcmp(param, "STARTUP_MS"))   snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
         else if (!strcmp(param, "SERVO_OPEN"))   snprintf(out, sizeof(out), "SERVO_OPEN:%d", SERVO_OPEN_US);
         else if (!strcmp(param, "SERVO_CLOSE"))  snprintf(out, sizeof(out), "SERVO_CLOSE:%d", SERVO_CLOSE_US);
@@ -2146,6 +2238,9 @@ int main(void) {
 
     servo_init(PIN_SERVO);
     servo_set_us(PIN_SERVO, SERVO_BLOCK_US);
+
+    adc_init();
+    adc_gpio_init(PIN_BUF_ANALOG);
 
     stall_init();
     neopixel_init(PIN_NEOPIXEL);

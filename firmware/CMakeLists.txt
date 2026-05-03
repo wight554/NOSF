@@ -46,6 +46,7 @@ target_link_libraries(nightowl_controller
   hardware_flash
   hardware_sync
   hardware_pio
+  hardware_adc
 )
 
 pico_enable_stdio_usb(nightowl_controller 1)

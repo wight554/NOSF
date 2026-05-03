@@ -77,6 +77,24 @@
 #define CONF_SG_SYNC_TRIM_SPS   200     // extra SPS added when under tension
 #define CONF_SG_ALPHA           0.20f   // EMA weight for SG filter (higher = faster response)
 
+// ----- Analog buffer sensor (PSF / Hall-effect) -----
+// Set BUF_SENSOR_TYPE=1 to enable; wire signal pin to GP26–GP29.
+#define CONF_BUF_SENSOR_TYPE    0       // 0=dual-endstop, 1=analog PSF
+#define CONF_BUF_NEUTRAL        0.5f    // TUNE: ADC fraction at mechanical neutral
+#define CONF_BUF_RANGE          0.45f   // TUNE: ADC fraction from neutral to full deflection
+#define CONF_BUF_THR            0.30f   // TUNE: normalised threshold for ADVANCE/TRAILING
+#define CONF_BUF_ANALOG_ALPHA   0.20f   // EMA weight for analog pos filter
+
+// ----- Sync proportional gain -----
+// Total speed offset (SPS) applied when buffer is at full deflection (±1).
+// In mm/min ≈ CONF_SYNC_KP_SPS * MM_PER_STEP * 60.
+#define CONF_SYNC_KP_SPS        10000
+
+// ----- TS:1 buffer fallback -----
+// During FL:/TC load: if buffer holds ADVANCE for this many ms after OUT seen,
+// treat as filament-at-toolhead (TS:1 substitute). 0 = disabled.
+#define CONF_TS_BUF_FALLBACK_MS 0
+
 // ----- Direction invert -----
 // Set to 1 if motor runs backward on LO: command
 #define CONF_M1_DIR_INVERT      0   // VERIFY: check physically
