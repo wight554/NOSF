@@ -1213,9 +1213,28 @@ static void sync_apply_to_active(void) {
 }
 
 static void sync_on_transition(buf_state_t prev, buf_state_t now_state) {
-    // Velocity kick removed: proportional control handles speed changes continuously.
-    if (prev == BUF_ADVANCE && now_state == BUF_MID) {
+    if (prev == BUF_ADVANCE && now_state == BUF_MID && sync_enabled) {
         baseline_update_on_settle(g_buf.dwell_ms);
+    }
+}
+
+// Update buffer sensor state unconditionally — called every main-loop iteration
+// so g_buf.state and g_buf_analog_pos are always current regardless of sync_enabled.
+static uint32_t buf_analog_last_ms = 0;
+
+static void buf_sensor_tick(uint32_t now_ms) {
+    if (BUF_SENSOR_TYPE == 1) {
+        if ((now_ms - buf_analog_last_ms) >= (uint32_t)SYNC_TICK_MS) {
+            buf_analog_last_ms = now_ms;
+            buf_analog_update();
+        }
+    }
+
+    buf_state_t prev = g_buf.state;
+    buf_state_t s = buf_read_stable(now_ms);
+    if (s != prev) {
+        buf_update(s, now_ms);
+        sync_on_transition(prev, s);
     }
 }
 
@@ -1224,8 +1243,6 @@ static void sync_tick(uint32_t now_ms) {
     if ((now_ms - sync_last_tick_ms) < (uint32_t)SYNC_TICK_MS) return;
 
     sync_last_tick_ms = now_ms;
-
-    if (BUF_SENSOR_TYPE == 1) buf_analog_update();
 
     // Poll SG_RESULT every 5 ticks (~100 ms) for load-based trim.
     // Only when SG_SYNC_THR is non-zero and the motor is actively running.
@@ -1241,19 +1258,13 @@ static void sync_tick(uint32_t now_ms) {
         }
     }
 
-    buf_state_t prev = g_buf.state;
-    buf_state_t s = buf_read_stable(now_ms);
+    buf_state_t s = g_buf.state;  // kept current by buf_sensor_tick()
 
     if (s == BUF_FAULT) {
         sync_current_sps = 0;
         sync_apply_to_active();
         cmd_event("BS", "FAULT,0");
         return;
-    }
-
-    if (s != prev) {
-        buf_update(s, now_ms);
-        sync_on_transition(prev, s);
     }
 
     // Proportional speed control.
@@ -2295,6 +2306,7 @@ int main(void) {
         autopreload_tick(g_now_ms);
         lane_tick(&g_lane1, g_now_ms);
         lane_tick(&g_lane2, g_now_ms);
+        buf_sensor_tick(g_now_ms);
         sync_tick(g_now_ms);
 
         // Local indicator
