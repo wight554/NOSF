@@ -192,12 +192,85 @@ StallGuard is **not** useful for detecting absent filament (free-spinning
 motor = low load = SG value high, no trigger).  Filament absence is detected
 by sensor events (IN/OUT) as described in the load failure section above.
 
+### How it works (TMC2209)
+
+`SG_RESULT` is a 10-bit value produced continuously by the chip:
+- **High value (~200–510)** → low motor load (free spin or light load).
+- **Low value (~0–100)** → high load or stall.
+
+The chip asserts the DIAG pin (triggering `EV:STALL`) when
+`SG_RESULT ≤ 2 × SGTHRS`. `SGTHRS` is set per lane via `config.h`
+(`CONF_SGT_L1`, `CONF_SGT_L2`) and is written to the TMC on init.
+StallGuard is only active when motor speed is below `TCOOLTHRS` (steps/s);
+above that speed it is suppressed by the chip to avoid false triggers.
+
+### Tuning for stall detection
+
+1. Run the motor at printing speed with filament loaded:
+   ```
+   T:1
+   FD:
+   ```
+2. Read `SG_RESULT` repeatedly:
+   ```
+   SG:1
+   SG:1
+   SG:1
+   ```
+   Note the **minimum** value seen during normal, unobstructed run — call it `SG_RUN`.
+3. Stop the motor (`ST:`).
+4. Set `SGTHRS` so that `2 × SGTHRS` is roughly 50 % of `SG_RUN`.
+   Use the TMC register write command (register 0x40 on TMC2209):
+   ```
+   TW:1:0x40:<value>
+   ```
+   Example: if `SG_RUN ≈ 160`, set `SGTHRS = 40` → threshold = 80 (50 % of 160):
+   ```
+   TW:1:0x40:40
+   ```
+5. Test: push filament against a hard stop by hand while the motor runs — confirm
+   `EV:STALL:1` fires. If it fires during normal run, increase `SGTHRS`; if it
+   never fires on a real stall, decrease it.
+6. Persist the value by updating `CONF_SGT_L1` / `CONF_SGT_L2` in `config.h`.
+
+`STARTUP_MS` (default 10 s) delays StallGuard arming after motion starts —
+keep it above your ramp + bowden stabilisation time to prevent false triggers
+at the beginning of a move.
+
+`TCOOLTHRS` sets the upper speed threshold for StallGuard.  If the motor
+speed (in steps/s) exceeds this value the chip disables StallGuard.  Increase
+it if stalls are missed at high speed; default 400 SPS is intentionally low so
+StallGuard remains active at typical feed speeds (~25 000 SPS).  Check the
+TMC2209 datasheet — `TCOOLTHRS` is a velocity register with a non-linear
+encoding (it stores the inverse of speed); the firmware writes the raw value
+from `CONF_TCOOLTHRS` directly via `TW:`.
+
+### Tuning `SG_SYNC_THR` (sync load trim)
+
+During sync printing, the buffer arm position drives the primary speed
+correction. `SG_SYNC_THR` adds a secondary trim: if `SG_RESULT` drops below
+`SG_SYNC_THR`, the MMU is running slow relative to the extruder (high
+filament tension) and `SG_SYNC_TRIM_SPS` extra speed is added immediately.
+
+Procedure:
+1. Enable sync and print for a few minutes: `SM:1` (or trigger via `TS:1`).
+2. Watch `EV:BS` events — the third field is `buf_pos`.
+3. While printing at steady speed with buffer near neutral, run `SG:1` several
+   times and note the typical `SG_RESULT` range — call it `SG_STEADY`.
+4. Set `SG_SYNC_THR` to about 80 % of the minimum observed `SG_STEADY`:
+   ```
+   SET:SG_SYNC_THR:80
+   ```
+5. If the MMU occasionally drops behind (buffer spikes to ADVANCE) without the
+   trim correcting it, increase `SG_SYNC_THR` or `SG_SYNC_TRIM`. If false
+   trims are causing overshoot, decrease `SG_SYNC_THR`.
+6. `SG_SYNC_THR:0` disables the trim entirely (safe default).
+
 ---
 
 ## Sync mode auto-toggle
 
-Buffer sync (`SM:`) is managed automatically — `SM:1`/`SM:0` are available for
-debugging but are not needed in normal operation.
+Buffer sync is managed automatically based on toolhead filament state.
 
 | Event | Sync state |
 |-------|-----------|
@@ -210,6 +283,19 @@ debugging but are not needed in normal operation.
 Sync is never active during loading, unloading, or pre-load operations.
 Autopreload (`LO:` or IN-sensor insert) on a non-active lane does **not**
 interrupt sync running on the active lane.
+
+**Manual override — `SM:`**
+
+`SM:0` / `SM:1` override sync immediately and take effect until the next
+automatic lifecycle event clears them.  Use this when you need sync off for
+a specific operation without triggering a full load/unload cycle:
+
+- *Tip shaping before TC:* send `SM:0`, run your tip-shaping moves, then
+  issue `TC:` — the toolchange cycle auto-disables sync at start and
+  auto-enables it when the new lane is loaded.
+- *Manual extrusion test:* `SM:0` → `FD:` / `MV:` → `SM:1` when done.
+- *Pause mid-print:* `SM:0` to stop sync; `SM:1` to resume (or re-send
+  `TS:1` to let the firmware re-enable it automatically).
 
 ---
 

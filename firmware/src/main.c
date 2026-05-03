@@ -442,7 +442,7 @@ static uint32_t sync_last_evt_ms = 0;
 static volatile bool stall_pending_l1 = false;
 static volatile bool stall_pending_l2 = false;
 
-static float g_buf_analog_pos = 0.0f;  // EMA-filtered normalised position [-1, +1]
+static float g_buf_pos = 0.0f;  // normalised buffer position [-1, +1]; analog = ADC EMA, endstop = zone EMA
 
 static bool prev_lane1_in_present = false;
 static bool prev_lane2_in_present = false;
@@ -1114,7 +1114,7 @@ static bool predict_advance_coming(void) {
     return mid_count > 0 && (short_count * 2 >= mid_count);
 }
 
-// Read and EMA-filter the analog buffer position into g_buf_analog_pos.
+// Read and EMA-filter the analog buffer position into g_buf_pos.
 // Called once per sync tick when BUF_SENSOR_TYPE == 1.
 static void buf_analog_update(void) {
     adc_select_input(PIN_BUF_ANALOG - 26);
@@ -1127,13 +1127,13 @@ static void buf_analog_update(void) {
     float norm = clamp_f(delta / scale, -1.0f, 1.0f);
     if (BUF_INVERT) norm = -norm;
 
-    g_buf_analog_pos = BUF_ANALOG_ALPHA * norm + (1.0f - BUF_ANALOG_ALPHA) * g_buf_analog_pos;
+    g_buf_pos = BUF_ANALOG_ALPHA * norm + (1.0f - BUF_ANALOG_ALPHA) * g_buf_pos;
 }
 
 static buf_state_t buf_read(void) {
     if (BUF_SENSOR_TYPE == 1) {
-        if (g_buf_analog_pos >  BUF_THR) return BUF_ADVANCE;
-        if (g_buf_analog_pos < -BUF_THR) return BUF_TRAILING;
+        if (g_buf_pos >  BUF_THR) return BUF_ADVANCE;
+        if (g_buf_pos < -BUF_THR) return BUF_TRAILING;
         return BUF_MID;
     }
 
@@ -1223,23 +1223,35 @@ static void sync_on_transition(buf_state_t prev, buf_state_t now_state) {
     }
 }
 
-// Update buffer sensor state unconditionally — called every main-loop iteration
-// so g_buf.state and g_buf_analog_pos are always current regardless of sync_enabled.
-static uint32_t buf_analog_last_ms = 0;
+// Update buffer sensor state and g_buf_pos unconditionally — called every main-loop
+// iteration so both are current regardless of sync_enabled (needed for TS fallback).
+// g_buf_pos semantics: both modes produce a normalised position in [-1, +1].
+//   Analog:  ADC EMA (BUF_ANALOG_ALPHA) — reflects continuous arm deflection.
+//   Endstop: zone EMA (BUF_ANALOG_ALPHA) toward {-1, 0, +1} — soft ramp on zone
+//            transitions so proportional control ramps instead of stepping sharply.
+static uint32_t buf_pos_last_ms = 0;
 
 static void buf_sensor_tick(uint32_t now_ms) {
-    if (BUF_SENSOR_TYPE == 1) {
-        if ((now_ms - buf_analog_last_ms) >= (uint32_t)SYNC_TICK_MS) {
-            buf_analog_last_ms = now_ms;
-            buf_analog_update();
-        }
-    }
+    bool do_pos = (now_ms - buf_pos_last_ms) >= (uint32_t)SYNC_TICK_MS;
+    if (do_pos) buf_pos_last_ms = now_ms;
+
+    // Analog: update g_buf_pos BEFORE buf_read_stable() so buf_read() uses the
+    // current ADC value to classify the zone this tick.
+    if (BUF_SENSOR_TYPE == 1 && do_pos) buf_analog_update();
 
     buf_state_t prev = g_buf.state;
     buf_state_t s = buf_read_stable(now_ms);
     if (s != prev) {
         buf_update(s, now_ms);
         sync_on_transition(prev, s);
+    }
+
+    // Endstop: update g_buf_pos AFTER state is committed so the EMA target is
+    // the freshly-settled zone, not the previous one.
+    if (BUF_SENSOR_TYPE == 0 && do_pos) {
+        float target = (g_buf.state == BUF_ADVANCE) ?  1.0f :
+                       (g_buf.state == BUF_TRAILING) ? -1.0f : 0.0f;
+        g_buf_pos = BUF_ANALOG_ALPHA * target + (1.0f - BUF_ANALOG_ALPHA) * g_buf_pos;
     }
 }
 
@@ -1273,11 +1285,10 @@ static void sync_tick(uint32_t now_ms) {
     }
 
     // Proportional speed control.
-    // buf_pos: +1 = ADVANCE (extruder pulling, speed up MMU),
-    //          -1 = TRAILING (buffer full, slow down MMU).
-    float buf_pos = (BUF_SENSOR_TYPE == 1)
-        ? g_buf_analog_pos
-        : (s == BUF_ADVANCE ? 1.0f : s == BUF_TRAILING ? -1.0f : 0.0f);
+    // g_buf_pos: +1 = ADVANCE (extruder pulling ahead, speed up MMU),
+    //            -1 = TRAILING (buffer filling, slow down MMU).
+    // Both sensor modes produce the same [-1, +1] range via EMA in buf_sensor_tick.
+    float buf_pos = g_buf_pos;
 
     float correction = (float)SYNC_KP_SPS * buf_pos;
     if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
@@ -1738,7 +1749,7 @@ static void status_dump(void) {
         buf_state_name(g_buf.state),
         (double)sps_to_mm_per_min(sync_current_sps),
         (double)sps_to_mm_per_min(g_baseline_sps),
-        (double)g_buf_analog_pos,
+        (double)g_buf_pos,
         sync_enabled ? 1 : 0,
         BUF_INVERT ? 1 : 0,
         AUTO_PRELOAD ? 1 : 0,
