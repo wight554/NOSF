@@ -581,20 +581,27 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
     }
 
     if (L->task == TASK_LOAD_FULL) {
-        // Full load: forward until host reports toolhead sensor (TS:1), then stop.
+        // Track whether filament has passed OUT (reuse unload_sensor_latch as out_seen).
+        if (lane_out_present(L)) L->unload_sensor_latch = true;
+
+        char lane_s[2] = { (char)('0' + L->lane_id), 0 };
         if (toolhead_has_filament) {
             lane_stop(L);
-            char lane_s[2] = { (char)('0' + L->lane_id), 0 };
             cmd_event("LOADED", lane_s);
         } else if (!lane_in_present(L) &&
                    (int32_t)(now_ms - L->motion_started_ms) >= 1000) {
-            // Filament tail passed IN before reaching OUT — nothing on the spool.
+            // Filament tail passed IN before OUT — nothing on the spool.
             lane_stop(L);
-            char lane_s[2] = { (char)('0' + L->lane_id), 0 };
+            cmd_event("RUNOUT", lane_s);
+        } else if (!L->unload_sensor_latch &&
+                   (int32_t)(now_ms - L->motion_started_ms) >= 10000) {
+            // OUT not seen after 10 s — motor likely free-spinning (tail stuck at IN
+            // behind drive gear, not engaged). User must clear manually.
+            lane_stop(L);
             cmd_event("RUNOUT", lane_s);
         } else if (L->autoload_deadline_ms != 0 && (int32_t)(now_ms - L->autoload_deadline_ms) >= 0) {
             lane_stop(L);
-            cmd_event("LOAD_TIMEOUT", NULL);
+            cmd_event("LOAD_TIMEOUT", lane_s);
         }
     }
 
