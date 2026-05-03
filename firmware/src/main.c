@@ -1267,6 +1267,11 @@ static void buf_sensor_tick(uint32_t now_ms) {
         float target = (g_buf.state == BUF_ADVANCE) ?  1.0f :
                        (g_buf.state == BUF_TRAILING) ? -1.0f : 0.0f;
         g_buf_pos = BUF_ANALOG_ALPHA * target + (1.0f - BUF_ANALOG_ALPHA) * g_buf_pos;
+        // After TRAILING resolves to MID, negative EMA lag would set a
+        // sub-baseline target and delay recovery.  Clamp to zero so SYNC_UP
+        // alone controls how fast the motor returns to speed.
+        // Positive lag (ADVANCE→MID) is kept: it produces a smooth deceleration.
+        if (g_buf.state == BUF_MID && g_buf_pos < 0.0f) g_buf_pos = 0.0f;
     }
 }
 

@@ -93,9 +93,10 @@ def run_neutral_profiling(ser, lane, target_speed=2100):
 
 def run_advance_profiling(ser, lane):
     print("\n--- PHASE 2: Advance Profiling (Tension / Extruder Pulling) ---")
-    print("This phase requires manual coordination with your 3D printer (via Klipper/Mainsail).")
-    print("1. Heat your hotend to printing temperature.")
-    print("2. Ensure filament is loaded all the way into the extruder.")
+    print("Prerequisites:")
+    print("  - Filament loaded past the toolhead, extruder engaged")
+    print("  - Hotend at print temperature")
+    print("  - Mainsail / Fluidd console open in a browser tab (or a second SSH session)")
     input("Press Enter when ready...")
 
     send_cmd(ser, f"T:{lane}")
@@ -105,14 +106,19 @@ def run_advance_profiling(ser, lane):
     send_cmd(ser, f"SET:FEED:{baseline_speed}")
     send_cmd(ser, "FD:")
 
-    print(f"\nMMU is now feeding continuously at {baseline_speed} mm/min.")
-    print("In your Klipper console, command the extruder to pull faster than the MMU feeds")
-    print("to simulate maximum tension. Increase extruder speed gradually:")
-    print("  G1 E100 F900   ; matched speed — no tension")
-    print("  G1 E100 F1500  ; faster pull — light tension")
-    print("  G1 E100 F2400  ; maximum tension")
-    print("\nMonitoring SG_RESULT (lower = more tension)...")
-    print("Press Ctrl+C to stop and see results.")
+    print(f"\nMMU motor running at {baseline_speed} mm/min (15 mm/s).")
+    print("In your Klipper console, run these commands one at a time.")
+    print("Each G1 move takes 4-7 s — wait for it to finish before the next:")
+    print()
+    print("  M83               ; relative extrusion mode")
+    print("  G1 E100 F900      ; 15 mm/s — matched speed, no tension (SG baseline)")
+    print("  G1 E100 F1500     ; 25 mm/s — light tension, SG should start dropping")
+    print("  G1 E100 F2400     ; 40 mm/s — maximum tension, SG should reach its floor")
+    print()
+    print("Watch 'Lowest SG seen' below — it should drop during F1500 and F2400 moves.")
+    print("If SG stays flat, see KLIPPER.md Troubleshooting section.")
+    print("Press Ctrl+C to stop and record results.")
+    print()
 
     lowest_sg = 511
     try:
