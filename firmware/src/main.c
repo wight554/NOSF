@@ -1299,25 +1299,30 @@ static void sync_tick(uint32_t now_ms) {
     // Both sensor modes produce the same [-1, +1] range via EMA in buf_sensor_tick.
     float buf_pos = g_buf_pos;
 
-    float correction = (float)SYNC_KP_SPS * buf_pos;
-    if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
-    // Proportional SG correction: scales from 0 (SG at/above THR = normal tension)
-    // to SG_SYNC_TRIM_SPS (SG=0 = maximum tension / near stall).
-    // SG reacts before the buffer arm moves, providing a fast inner-loop lead.
-    if (s != BUF_TRAILING && SG_SYNC_THR > 0 && (int)g_sg_load < SG_SYNC_THR) {
-        float tension_range = (float)(SG_SYNC_THR - SG_TENSION_MAX);
-        if (tension_range < 1.0f) tension_range = 1.0f;
-        float sg_frac = clamp_f(
-            (float)(SG_SYNC_THR - (int)g_sg_load) / tension_range,
-            0.0f, 1.0f);
-        correction += sg_frac * (float)SG_SYNC_TRIM_SPS;
+    if (s == BUF_TRAILING) {
+        // Pause syncing when pushing against the wall, wait for neutral
+        sync_current_sps = 0;
+    } else {
+        float correction = (float)SYNC_KP_SPS * buf_pos;
+        if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
+        // Proportional SG correction: scales from 0 (SG at/above THR = normal tension)
+        // to SG_SYNC_TRIM_SPS (SG=0 = maximum tension / near stall).
+        // SG reacts before the buffer arm moves, providing a fast inner-loop lead.
+        if (SG_SYNC_THR > 0 && (int)g_sg_load < SG_SYNC_THR) {
+            float tension_range = (float)(SG_SYNC_THR - SG_TENSION_MAX);
+            if (tension_range < 1.0f) tension_range = 1.0f;
+            float sg_frac = clamp_f(
+                (float)(SG_SYNC_THR - (int)g_sg_load) / tension_range,
+                0.0f, 1.0f);
+            correction += sg_frac * (float)SG_SYNC_TRIM_SPS;
+        }
+
+        int target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, SYNC_MAX_SPS);
+
+        if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
+        else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
+        sync_current_sps = clamp_i(sync_current_sps, SYNC_MIN_SPS, SYNC_MAX_SPS);
     }
-
-    int target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, SYNC_MAX_SPS);
-
-    if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
-    else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
-    sync_current_sps = clamp_i(sync_current_sps, SYNC_MIN_SPS, SYNC_MAX_SPS);
 
     sync_apply_to_active();
 
