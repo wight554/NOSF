@@ -85,6 +85,7 @@ Runs `TASK_LOAD_FULL` at `FEED_SPS` continuously until the host sends `TS:1`
 |-----------|---------|-------|
 | IN goes low >1 s after start | immediate | `EV:RUNOUT:<lane>` |
 | OUT never seen after 10 s | 10 s | `EV:RUNOUT:<lane>` |
+| Buffer holds TRAILING after OUT for `TS_BUF_MS` | `TS_BUF_MS` | `EV:LOADED:<lane>` (fallback) |
 | `TS:1` never received | `TC_LOAD_MS` (60 s) | `EV:LOAD_TIMEOUT:<lane>` |
 
 **Why two runout paths:**

@@ -620,10 +620,11 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         // Track whether filament has passed OUT (reuse unload_sensor_latch as out_seen).
         if (lane_out_present(L)) L->unload_sensor_latch = true;
 
-        // TS:1 buffer fallback: after filament passes OUT, if buffer stays at ADVANCE
-        // for TS_BUF_FALLBACK_MS, the tip is backed up against the toolhead — treat as loaded.
+        // TS:1 buffer fallback: after filament passes OUT, if buffer stays TRAILING
+        // for TS_BUF_FALLBACK_MS, the tip is pressing against the toolhead entry (filament
+        // blocked = MMU still pushing, buffer fills up). Treat as loaded.
         if (TS_BUF_FALLBACK_MS > 0 && L->unload_sensor_latch) {
-            if (g_buf.state == BUF_ADVANCE) {
+            if (g_buf.state == BUF_TRAILING) {
                 if (L->buf_advance_since_ms == 0) L->buf_advance_since_ms = now_ms;
                 else if ((int32_t)(now_ms - L->buf_advance_since_ms) >= TS_BUF_FALLBACK_MS)
                     toolhead_has_filament = true;
