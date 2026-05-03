@@ -64,10 +64,15 @@
 #define CONF_REQUIRE_Y_EMPTY_SWAP   true
 
 // ----- StallGuard -----
-// TUNE: run motor at load, read SG: value, set threshold to ~50% of that
-#define CONF_SGT_L1             80
-#define CONF_SGT_L2             80
-#define CONF_TCOOLTHRS          400
+// SGTHRS=0 disables stall detection (DIAG never fires). Tune before enabling:
+// run motor loaded, read SG: value, set SGTHRS ≈ SG_RESULT/2.
+// See BEHAVIOR.md for full procedure.
+#define CONF_SGT_L1             0
+#define CONF_SGT_L2             0
+// TCOOLTHRS: StallGuard active when TSTEP <= TCOOLTHRS. TSTEP = CLK/SPS
+// (~12.5 MHz / 25000 SPS ≈ 500). Set above max operating TSTEP so SG is
+// active across the full speed range when SGTHRS > 0.
+#define CONF_TCOOLTHRS          1000
 
 // ----- StallGuard buffer sync -----
 // SG_SYNC_THR: SG_RESULT below this = under tension → apply speed trim.

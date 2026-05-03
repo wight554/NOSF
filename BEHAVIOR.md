@@ -237,13 +237,14 @@ above that speed it is suppressed by the chip to avoid false triggers.
 keep it above your ramp + bowden stabilisation time to prevent false triggers
 at the beginning of a move.
 
-`TCOOLTHRS` sets the upper speed threshold for StallGuard.  If the motor
-speed (in steps/s) exceeds this value the chip disables StallGuard.  Increase
-it if stalls are missed at high speed; default 400 SPS is intentionally low so
-StallGuard remains active at typical feed speeds (~25 000 SPS).  Check the
-TMC2209 datasheet — `TCOOLTHRS` is a velocity register with a non-linear
-encoding (it stores the inverse of speed); the firmware writes the raw value
-from `CONF_TCOOLTHRS` directly via `TW:`.
+`TCOOLTHRS` is compared against `TSTEP` (clock cycles per step, so it
+*decreases* as speed increases).  StallGuard is **active** when
+`TSTEP ≤ TCOOLTHRS`.  With the TMC2209 internal clock at ~12.5 MHz and a
+feed rate of 25 000 SPS, `TSTEP ≈ 500`.  The default `CONF_TCOOLTHRS = 1000`
+keeps StallGuard enabled across the full operating speed range whenever
+`SGTHRS > 0`.  Set `TCOOLTHRS` lower than your minimum TSTEP to disable
+StallGuard below a certain speed (useful to suppress false triggers during
+ramp-up, though `STARTUP_MS` already handles that in firmware).
 
 ### Tuning `SG_SYNC_THR` (sync load trim)
 
