@@ -125,7 +125,7 @@ All speed parameters use **mm/min** (same as Klipper `F`). Defaults are hardware
 | `BUF_RANGE` | Analog sensor: ADC fraction from neutral to full deflection | 0.45 |
 | `BUF_THR` | Analog sensor: normalised threshold to declare ADVANCE/TRAILING | 0.30 |
 | `BUF_ALPHA` | Analog sensor: EMA filter weight (higher = faster response) | 0.20 |
-| `TS_BUF_MS` | Buffer-based TS:1 fallback: ms buffer must hold ADVANCE after OUT seen (0 = disabled) | 0 |
+| `TS_BUF_MS` | Buffer-based TS:1 fallback: ms buffer must hold TRAILING after OUT seen — tip pressed against extruder gears (0 = disabled) | 2000 |
 
 ### Per-lane
 

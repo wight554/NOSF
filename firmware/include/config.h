@@ -91,9 +91,9 @@
 #define CONF_SYNC_KP_SPS        10000
 
 // ----- TS:1 buffer fallback -----
-// During FL:/TC load: if buffer holds ADVANCE for this many ms after OUT seen,
-// treat as filament-at-toolhead (TS:1 substitute). 0 = disabled.
-#define CONF_TS_BUF_FALLBACK_MS 0
+// During FL:/TC load: if buffer holds TRAILING for this many ms after OUT seen,
+// treat as filament-at-toolhead (tip pressed against extruder gears). 0 = disabled.
+#define CONF_TS_BUF_FALLBACK_MS 2000
 
 // ----- Direction invert -----
 // Set to 1 if motor runs backward on LO: command
