@@ -274,10 +274,13 @@ Use `scripts/tune_stallguard.py --neutral` and `--advance` to profile SG values
 automatically, then apply the recommendations.
 
 1. Run `tune_stallguard.py --neutral` with filament loaded but not touching the
-   extruder.  It profiles free-spin SG at print-speed range and recommends
-   `SG_SYNC_THR` (~75% of free-spin SG at target speed):
+   extruder.  Pass `--feed-speed` matching your actual sync/print speed so the
+   recommendation reflects free-spin SG at the speed the motor actually runs.
+   It profiles the SpreadCycle range and recommends `SG_SYNC_THR` (~75% of
+   free-spin SG at the target speed):
    ```
-   SET:SG_SYNC_THR:50     # example: free-spin SG ≈ 63 at 2100 mm/min
+   python3 scripts/tune_stallguard.py --neutral --feed-speed 2400   # 40 mm/s max
+   SET:SG_SYNC_THR:109    # example: free-spin SG ≈ 145 at 2400 mm/min
    ```
 2. Run `tune_stallguard.py --advance` while commanding the extruder to pull
    faster than the MMU feeds.  Apply the recommended `SG_TENSION_MAX`:
@@ -293,6 +296,72 @@ automatically, then apply the recommendations.
    SET:SG_SYNC_TRIM:600
    ```
 4. `SG_SYNC_THR:0` disables the trim entirely (safe default).
+
+### Trailing state — motor stop and recovery
+
+When the buffer enters the TRAILING zone (arm deflects toward "too much fed"),
+`sync_current_sps` is forced to zero every sync tick (20 ms) until the buffer
+returns to MID.  The SG correction loop does not run while the motor is
+stopped.
+
+**Recovery sequence:**
+
+1. TRAILING declared (after `BUF_HYST` ms in zone) — motor stops within one
+   sync tick (≤ 20 ms).
+2. Motor stays stopped; extruder draws down the surplus in the buffer.
+3. Buffer arm returns to MID — motor begins ramping from 0 toward the
+   proportional target at `SYNC_UP` SPS per tick.
+4. `g_buf_pos` still reflects the recently-trailing position (EMA lag with
+   `BUF_ALPHA`), so the initial target is slightly below baseline.  This
+   acts as a natural brake — the motor does not overshoot immediately back
+   into ADVANCE.
+
+**Why SYNC_UP matters for your print speed**
+
+`SYNC_UP` (default 300 SPS/tick) is the ramp increment per 20 ms sync tick:
+
+```
+ramp rate  =  SYNC_UP (SPS) / 0.020 s  =  50 × SYNC_UP  SPS/s
+time to speed  =  target_SPS / (50 × SYNC_UP)  seconds
+```
+
+At 40 mm/s the target is ~28 200 SPS; with the default SYNC_UP = 300 the ramp
+takes **1.9 s**.  A 5 mm buffer half-travel is emptied by the extruder in
+~125 ms at 40 mm/s — the motor cannot keep up and the buffer swings straight to
+ADVANCE, causing TRAILING ↔ ADVANCE oscillation.
+
+Recommended starting points (ramp to speed in ~0.5 s):
+
+| Print speed | SPS (MM_PER_STEP = 0.001417) | SYNC_UP |
+|-------------|------------------------------|---------|
+| 20 mm/s (1200 mm/min) | ≈14 100 | 600 |
+| 30 mm/s (1800 mm/min) | ≈21 200 | 850 |
+| 40 mm/s (2400 mm/min) | ≈28 200 | 1200 |
+
+```
+SET:SYNC_UP:1200     # 40 mm/s printer
+```
+
+**Symptom → fix table:**
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Buffer oscillates TRAILING ↔ ADVANCE every few seconds | Ramp too slow — motor can't recover before buffer empties | Increase `SYNC_UP` |
+| TRAILING fires on every corner / retraction | `BUF_HYST` too short or `SYNC_KP` too high | Increase `BUF_HYST` (100–200 ms) or reduce `SYNC_KP` |
+| Motor overshoots into TRAILING right after recovery | Ramp too fast or `SYNC_KP` too high | Decrease `SYNC_UP` or `SYNC_KP` |
+| TRAILING persists even after surplus should be consumed | Sensor fault or endstop wiring | Check `?:` — verify TRAILING endstop reads correctly |
+
+**Monitoring TRAILING recovery:**
+
+`EV:BS` events (every 500 ms) report `<state>,<speed mm/min>,<buf_pos −1..+1>`:
+```
+EV:BS:TRAILING,0.0,-0.84
+EV:BS:MID,341.2,-0.54
+EV:BS:MID,1024.5,-0.21
+EV:BS:MID,2125.5,-0.01
+```
+A healthy recovery shows speed climbing and `buf_pos` converging to zero.
+Oscillation (TRAILING → ADVANCE → TRAILING) means `SYNC_UP` is too low.
 
 ### Stall recovery during sync
 

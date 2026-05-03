@@ -113,8 +113,8 @@ All speed parameters use **mm/min** (same as Klipper `F`). Defaults are hardware
 | `SYNC_MAX` | Max sync speed (mm/min) | ≈2551 |
 | `SYNC_MIN` | Min sync speed (mm/min) | 0 |
 | `SYNC_KP` | Proportional gain: speed correction at full buffer deflection (mm/min per unit) | ≈851 |
-| `SYNC_UP` | Sync ramp-up increment (steps/s per tick) — internal tuning | 300 |
-| `SYNC_DN` | Sync ramp-down increment (steps/s per tick) — internal tuning | 150 |
+| `SYNC_UP` | Sync ramp-up increment (SPS per 20 ms tick) — increase for faster printers: ~600 at 20 mm/s, ~1200 at 40 mm/s | 300 |
+| `SYNC_DN` | Sync ramp-down increment (SPS per 20 ms tick) when speed target decreases | 150 |
 | `SYNC_RATIO` | Buffer arm velocity → speed scale factor | 1.0 |
 | `PRE_RAMP` | Pre-advance speed offset (mm/min) | ≈34 |
 | `BUF_TRAVEL` | Half-travel of buffer arm (mm) | 5.0 |
