@@ -685,6 +685,10 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
             char lane_s[2] = { (char)('0' + L->lane_id), 0 };
             cmd_event("RUNOUT", lane_s);
             L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
+            if (L->task == TASK_FEED) {
+                set_toolhead_filament(false);
+            }
+            lane_stop(L);
         }
     }
 }
