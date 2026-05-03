@@ -68,6 +68,7 @@ YS:<n>         Y-splitter sensor
 BUF:<state>    Buffer state (MID/ADVANCE/TRAILING/FAULT)
 SPS:<n>        Current sync speed (mm/min)
 BL:<n>         Baseline sync speed (mm/min)
+BP:<n>         Normalised buffer position (-1.0 = full trailing … +1.0 = full advance)
 SM:<n>         Sync mode enabled
 BI:<n>         Buffer sensor inverted
 AP:<n>         AUTO_PRELOAD enabled
@@ -111,6 +112,7 @@ All speed parameters use **mm/min** (same as Klipper `F`). Defaults are hardware
 | `TC_LOAD_MS` | Toolchange load timeout (ms) | 60000 |
 | `SYNC_MAX` | Max sync speed (mm/min) | ≈2551 |
 | `SYNC_MIN` | Min sync speed (mm/min) | 0 |
+| `SYNC_KP` | Proportional gain: speed correction at full buffer deflection (mm/min per unit) | ≈851 |
 | `SYNC_UP` | Sync ramp-up increment (steps/s per tick) — internal tuning | 300 |
 | `SYNC_DN` | Sync ramp-down increment (steps/s per tick) — internal tuning | 150 |
 | `SYNC_RATIO` | Buffer arm velocity → speed scale factor | 1.0 |
@@ -118,6 +120,12 @@ All speed parameters use **mm/min** (same as Klipper `F`). Defaults are hardware
 | `BUF_TRAVEL` | Half-travel of buffer arm (mm) | 5.0 |
 | `BUF_HYST` | Buffer zone debounce (ms) | 30 |
 | `BASELINE` | Baseline sync speed override (mm/min) | adaptive |
+| `BUF_SENSOR` | Buffer sensor type: `0` = dual endstop, `1` = analog PSF | 0 |
+| `BUF_NEUTRAL` | Analog sensor: ADC fraction at mechanical neutral (0.0–1.0) | 0.5 |
+| `BUF_RANGE` | Analog sensor: ADC fraction from neutral to full deflection | 0.45 |
+| `BUF_THR` | Analog sensor: normalised threshold to declare ADVANCE/TRAILING | 0.30 |
+| `BUF_ALPHA` | Analog sensor: EMA filter weight (higher = faster response) | 0.20 |
+| `TS_BUF_MS` | Buffer-based TS:1 fallback: ms buffer must hold ADVANCE after OUT seen (0 = disabled) | 0 |
 
 ### Per-lane
 
@@ -183,7 +191,7 @@ Events are emitted without being requested. Format: `EV:<type>:<data>\n`.
 | `EV:TC:DONE` | `<lane>` | Toolchange completed |
 | `EV:TC:ERROR` | `<reason>` | Toolchange failed |
 | `EV:CUT:FEEDING` | — | Cutter feed phase started |
-| `EV:BS` | `<zone>,<sps>` | Buffer sync update (500 ms interval) |
+| `EV:BS` | `<zone>,<mm_min>,<buf_pos>` | Buffer sync update (500 ms interval); buf_pos is normalised −1..+1 |
 
 ---
 
