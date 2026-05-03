@@ -24,3 +24,6 @@ firmware/include/tune.h
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
+
+# AI Scratchpads
+gemini.md

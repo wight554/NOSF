@@ -1303,7 +1303,7 @@ static void sync_tick(uint32_t now_ms) {
     // Proportional SG correction: scales from 0 (SG at/above THR = normal tension)
     // to SG_SYNC_TRIM_SPS (SG=0 = maximum tension / near stall).
     // SG reacts before the buffer arm moves, providing a fast inner-loop lead.
-    if (SG_SYNC_THR > 0 && (int)g_sg_load < SG_SYNC_THR) {
+    if (s != BUF_TRAILING && SG_SYNC_THR > 0 && (int)g_sg_load < SG_SYNC_THR) {
         float sg_frac = clamp_f(
             (float)(SG_SYNC_THR - (int)g_sg_load) / (float)SG_SYNC_THR,
             0.0f, 1.0f);
