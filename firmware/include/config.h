@@ -115,15 +115,28 @@
 // ----- ISS mode -----
 #define CONF_ISS_MODE           0       // 0 = MMU, 1 = Infinite Spool System
 #define CONF_ISS_Y_TIMEOUT_MS   10000   // max wait for Y-splitter to clear after runout (ms)
-// ISS_JOIN_SPS: fast approach speed used in TC_ISS_LOADING.
+
+// --- State 1: Fast Approach (TC_ISS_APPROACH) ---
+// ISS_JOIN_SPS: approach speed; must exceed max print speed so we catch up quickly.
 #define CONF_ISS_JOIN_SPS       25000
-// ISS_PRESS_SPS: bang-bang speed during TC_ISS_PRESSING.
-// SG is in SpeedCycle (active) when TSTEP <= TCOOLTHRS, i.e. SPS >= CLK/TCOOLTHRS.
-// With CLK≈12.5 MHz and TCOOLTHRS=1000 that threshold is ~12500 SPS.
-// Keep ISS_PRESS_SPS above that to allow SG-based pressure control.
+// ISS_SG_MA_LEN: moving-average window for SG during approach (samples at SYNC_TICK_MS).
+#define CONF_ISS_SG_MA_LEN      5
+// ISS_SG_DERIV_THR: |drop in filtered SG per tick| that signals tip-to-tail contact.
+// Tune: free-air SG ≈ 14, full crash ≈ 0 → threshold ≈ 3–5 SG units/tick.
+#define CONF_ISS_SG_DERIV_THR   3
+
+// --- State 2: Follow Sync (TC_ISS_FOLLOW) ---
+// ISS_PRESS_SPS: top speed in follow sync (ADVANCE or MID, SG near free-air).
+// Keep above max print speed so the buffer stays TRAILING-biased.
+// SG active in SpeedCycle when SPS >= CLK/TCOOLTHRS (~12500 at default TCOOLTHRS=1000).
 #define CONF_ISS_PRESS_SPS      15000
-// ISS_CONFIRM_MS: how long to stay in the pressing phase before handing off to sync.
-#define CONF_ISS_CONFIRM_MS     500
+// ISS_TRAILING_SPS: coasting speed when buffer is TRAILING.
+// Set well below print speed: extruder pulling faster creates SG-detectable tension.
+#define CONF_ISS_TRAILING_SPS   8000
+// ISS_SG_TARGET: desired filtered SG value in follow sync.
+// Must be > 0 (crash) and < free-air SG (~14). Typical starting point: ~7.
+// Motor speed is proportionally interpolated between 0 (SG=0) and ISS_PRESS_SPS (SG≥target).
+#define CONF_ISS_SG_TARGET      7
 
 // ----- Firmware version -----
 #define CONF_FW_VERSION         "NOSF_ERB_0.2.0"

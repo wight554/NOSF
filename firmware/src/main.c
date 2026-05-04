@@ -69,7 +69,9 @@ static int ISS_MODE = CONF_ISS_MODE;
 static int ISS_Y_TIMEOUT_MS = CONF_ISS_Y_TIMEOUT_MS;
 static int ISS_JOIN_SPS = CONF_ISS_JOIN_SPS;
 static int ISS_PRESS_SPS = CONF_ISS_PRESS_SPS;
-static int ISS_CONFIRM_MS = CONF_ISS_CONFIRM_MS;
+static int ISS_TRAILING_SPS = CONF_ISS_TRAILING_SPS;
+static int ISS_SG_DERIV_THR = CONF_ISS_SG_DERIV_THR;
+static float ISS_SG_TARGET = CONF_ISS_SG_TARGET;
 
 static int RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
 static int RAMP_TICK_MS = CONF_RAMP_TICK_MS;
@@ -391,8 +393,8 @@ typedef enum {
     TC_LOAD_WAIT_TH,
     TC_LOAD_DONE,
     TC_ISS_WAIT_Y,    // ISS: old tail exited OUT, waiting for Y-splitter to clear
-    TC_ISS_LOADING,   // ISS: fast approach — new tip racing to meet old tail
-    TC_ISS_PRESSING,  // ISS: bang-bang contact hold for the entire bowden journey
+    TC_ISS_APPROACH,  // ISS State 1: fast approach — detect contact via SG derivative
+    TC_ISS_FOLLOW,    // ISS State 2: follow sync — SG-interpolated speed, exit on ADVANCE
     TC_ERROR
 } tc_state_t;
 
@@ -401,8 +403,14 @@ typedef struct {
     int target_lane;
     int from_lane;
     uint32_t phase_start_ms;
-    uint32_t iss_sg_read_ms;       // throttle for SG reads during TC_ISS_PRESSING
-    uint32_t iss_trailing_since_ms; // motor-off + TRAILING start time; 0 = not timing
+    uint32_t iss_tick_ms;                      // SYNC_TICK_MS rate limiter for ISS ticks
+    // SG moving-average ring buffer (States 1 & 2)
+    float    sg_ma_buf[CONF_ISS_SG_MA_LEN];    // raw SG readings
+    uint8_t  sg_ma_idx;                         // next write position
+    uint8_t  sg_ma_fill;                        // samples loaded so far (cap at MA_LEN)
+    float    sg_ma_prev;                        // MA from previous tick (for derivative)
+    // State 2 follow sync
+    int      iss_current_sps;                   // current ramped speed in TC_ISS_FOLLOW
 } tc_ctx_t;
 
 typedef enum {
@@ -970,8 +978,8 @@ static const char *tc_state_name(tc_state_t s) {
         case TC_LOAD_WAIT_TH: return "LOAD_WAIT_TH";
         case TC_LOAD_DONE: return "LOAD_DONE";
         case TC_ISS_WAIT_Y:   return "ISS_WAIT_Y";
-        case TC_ISS_LOADING:  return "ISS_LOADING";
-        case TC_ISS_PRESSING: return "ISS_PRESSING";
+        case TC_ISS_APPROACH: return "ISS_APPROACH";
+        case TC_ISS_FOLLOW:   return "ISS_FOLLOW";
         case TC_ERROR: return "ERROR";
         default: return "?";
     }
@@ -1114,102 +1122,189 @@ static void tc_tick(uint32_t now_ms) {
                 set_active_lane(g_tc_ctx.target_lane);
                 lane_t *NL = lane_ptr(active_lane);
                 cmd_event("ISS:JOINING", lane_s);
-                // Fast approach — close the gap quickly.
-                // Sync is NOT enabled yet; junction detected in TC_ISS_LOADING.
+                // State 1: fast approach — contact detected by SG derivative.
                 lane_start(NL, TASK_FEED, ISS_JOIN_SPS, true, now_ms, 0);
                 NL->autoload_deadline_ms = now_ms + (uint32_t)TC_TIMEOUT_LOAD_MS;
-                g_tc_ctx.iss_sg_read_ms = 0;
+                // Zero ISS ctx fields for fresh approach.
+                g_tc_ctx.iss_tick_ms = now_ms;
+                g_tc_ctx.sg_ma_idx   = 0;
+                g_tc_ctx.sg_ma_fill  = 0;
+                g_tc_ctx.sg_ma_prev  = 0.0f;
+                for (int i = 0; i < CONF_ISS_SG_MA_LEN; i++) g_tc_ctx.sg_ma_buf[i] = 0.0f;
                 g_tc_ctx.phase_start_ms = now_ms;
-                g_tc_ctx.state = TC_ISS_LOADING;
+                g_tc_ctx.state = TC_ISS_APPROACH;
             } else if (age > (uint32_t)ISS_Y_TIMEOUT_MS) {
                 tc_enter_error("ISS_Y_TIMEOUT");
             }
             break;
 
-        case TC_ISS_LOADING: {
-            // Junction detection — two signals:
-            //   TRAILING: new tip physically touching old tail (buffer overfeed).
-            //   stall:    SG resistance spike as tips meet under load.
-            bool stalled = (A->task == TASK_IDLE && A->fault == FAULT_STALL);
-            bool joined  = (g_buf.state == BUF_TRAILING || stalled);
-            if (joined) {
-                if (stalled) A->fault = FAULT_NONE;
-                lane_stop(A);
-                g_tc_ctx.iss_sg_read_ms = 0;
-                g_tc_ctx.phase_start_ms = now_ms;
-                g_tc_ctx.state = TC_ISS_PRESSING;
-            } else if (A->task == TASK_IDLE) {
-                tc_enter_error("ISS_LOAD_FAULT");
+        case TC_ISS_APPROACH: {
+            // State 1: Fast Approach & Soft Crash Detection.
+            //
+            // Motor runs at ISS_JOIN_SPS.  SG is sampled into a moving-average
+            // ring buffer every SYNC_TICK_MS.  The per-tick derivative (MA delta)
+            // is watched: a sharp negative drop means the new tip just hit the old
+            // tail at speed.  We transition immediately — before the buffer arm even
+            // moves — so we avoid grinding the filament with a hard SG==0 stall.
+            //
+            // Fallback: if the buffer reports TRAILING (physical contact at lower
+            // speed) or a hard DIAG stall fires, both also trigger transition.
+
+            if (A && A->task == TASK_IDLE && A->fault != FAULT_STALL) {
+                tc_enter_error("ISS_APPROACH_FAULT");
+                break;
+            }
+
+            // Tick-rate-limited SG sampling.
+            bool contacted = false;
+            if ((now_ms - g_tc_ctx.iss_tick_ms) >= (uint32_t)SYNC_TICK_MS) {
+                g_tc_ctx.iss_tick_ms = now_ms;
+
+                if (A && A->task == TASK_FEED) {
+                    uint16_t sg_raw;
+                    if (tmc_read_sg_result(A->tmc, &sg_raw)) {
+                        // Push into MA ring buffer.
+                        g_tc_ctx.sg_ma_buf[g_tc_ctx.sg_ma_idx] = (float)sg_raw;
+                        g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_ISS_SG_MA_LEN;
+                        if (g_tc_ctx.sg_ma_fill < CONF_ISS_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
+
+                        // Compute MA.
+                        if (g_tc_ctx.sg_ma_fill == CONF_ISS_SG_MA_LEN) {
+                            float sum = 0.0f;
+                            for (int i = 0; i < CONF_ISS_SG_MA_LEN; i++)
+                                sum += g_tc_ctx.sg_ma_buf[i];
+                            float sg_ma = sum / (float)CONF_ISS_SG_MA_LEN;
+                            g_sg_load = sg_ma;  // expose for diagnostics
+
+                            // Derivative: negative drop = contact.
+                            float deriv = sg_ma - g_tc_ctx.sg_ma_prev;
+                            g_tc_ctx.sg_ma_prev = sg_ma;
+                            if (ISS_SG_DERIV_THR > 0 && deriv < -(float)ISS_SG_DERIV_THR)
+                                contacted = true;
+                        } else {
+                            g_tc_ctx.sg_ma_prev = (float)sg_raw;
+                        }
+                    }
+                }
+            }
+
+            // Buffer/stall fallbacks (slower but reliable without SG calibration).
+            bool stalled = (A && A->task == TASK_IDLE && A->fault == FAULT_STALL);
+            if (g_buf.state == BUF_TRAILING || stalled)
+                contacted = true;
+
+            if (contacted) {
+                if (A) {
+                    if (stalled) A->fault = FAULT_NONE;
+                    lane_stop(A);
+                }
+                // Initialise State 2 at ISS_PRESS_SPS so follow sync starts
+                // immediately without a ramp-up delay.
+                g_tc_ctx.iss_current_sps = ISS_PRESS_SPS;
+                g_tc_ctx.iss_tick_ms     = now_ms;
+                g_tc_ctx.phase_start_ms  = now_ms;
+                g_tc_ctx.state = TC_ISS_FOLLOW;
             } else if (age > (uint32_t)TC_TIMEOUT_LOAD_MS) {
-                tc_enter_error("ISS_LOAD_TIMEOUT");
+                tc_enter_error("ISS_APPROACH_TIMEOUT");
             }
             break;
         }
 
-        case TC_ISS_PRESSING: {
-            // Bang-bang pressure hold for the entire bowden journey (can be ~1 m).
-            // Motor runs at ISS_PRESS_SPS to push tips together; stops when contact
-            // is detected. This continues until the extruder picks up the new tip.
+        case TC_ISS_FOLLOW: {
+            // State 2: Follow Sync (Bang-Bang + SG Interpolation).
             //
-            // SG path (SG_SYNC_THR > 0): motor on when g_sg_load > threshold
-            //   (free/light), motor off when load detected (contact).
-            // Buffer fallback: motor on when MID/ADVANCE, off when TRAILING.
-            // TRAILING always overrides to motor-off regardless of path.
+            // Tips are touching.  We follow the old filament's speed through the
+            // entire bowden journey (~1 m) to the extruder.
             //
-            // Exit conditions (in priority order):
-            //   1. TS:1 received (toolhead_has_filament) — extruder confirmed pickup.
-            //   2. Motor off + TRAILING sustained for ISS_CONFIRM_MS — sensorless
-            //      pickup: buffer can't drain because extruder is consuming the new
-            //      filament and holding the buffer back.
-            //   3. TC_TIMEOUT_LOAD_MS elapsed — declare success anyway.
+            // Speed is driven by two signals:
+            //   SG interpolation — target ISS_SG_TARGET (above crash=0, below
+            //     free-air=~14).  Speed scales linearly: SG at target → ISS_PRESS_SPS,
+            //     SG at 0 → 0.  If SG not configured (ISS_SG_TARGET==0), speed comes
+            //     from buffer state alone.
+            //   Buffer cap — when TRAILING (buffer full), speed is clamped to
+            //     ISS_TRAILING_SPS regardless of SG.
+            //
+            // Exit (State 3 — Toolhead Handover):
+            //   BUF_ADVANCE: extruder grabbed the new tip and is pulling faster than
+            //     we are pushing → buffer empties → ADVANCE fires.  Definitive event.
+            //   toolhead_has_filament (TS:1): host confirmed pickup.
+            //   Safety timeout: TC_TIMEOUT_LOAD_MS.
 
-            // Throttled SG poll (every SYNC_TICK_MS).
-            if (SG_SYNC_THR > 0 &&
-                (now_ms - g_tc_ctx.iss_sg_read_ms) >= (uint32_t)SYNC_TICK_MS) {
-                g_tc_ctx.iss_sg_read_ms = now_ms;
-                uint16_t sg_raw;
-                if (A && tmc_read_sg_result(A->tmc, &sg_raw)) {
-                    g_sg_load = SG_ALPHA * (float)sg_raw + (1.0f - SG_ALPHA) * g_sg_load;
-                }
-            }
-
-            bool motor_on;
-            if (SG_SYNC_THR > 0) {
-                motor_on = (g_sg_load > (float)SG_SYNC_THR);
-            } else {
-                motor_on = (g_buf.state != BUF_TRAILING);
-            }
-            if (g_buf.state == BUF_TRAILING) motor_on = false;
-
-            if (A) {
-                if (motor_on && A->task == TASK_IDLE) {
-                    lane_start(A, TASK_FEED, ISS_PRESS_SPS, true, now_ms, 0);
-                } else if (!motor_on && A->task == TASK_FEED) {
-                    lane_stop(A);
-                }
-            }
-
-            // Sensorless extruder pickup detection: motor off + TRAILING sustained.
-            // When extruder grabs the new tip it pulls filament through, the buffer
-            // can no longer drain (extruder consumes it), so TRAILING persists even
-            // though the motor is stopped.
-            if (!motor_on && g_buf.state == BUF_TRAILING) {
-                if (g_tc_ctx.iss_trailing_since_ms == 0)
-                    g_tc_ctx.iss_trailing_since_ms = now_ms;
-            } else {
-                g_tc_ctx.iss_trailing_since_ms = 0;
-            }
-
-            bool pickup_detected = toolhead_has_filament ||
-                (g_tc_ctx.iss_trailing_since_ms != 0 &&
-                 (now_ms - g_tc_ctx.iss_trailing_since_ms) >= (uint32_t)ISS_CONFIRM_MS);
-
-            if (pickup_detected || age > (uint32_t)TC_TIMEOUT_LOAD_MS) {
+            // ADVANCE = handover confirmed (State 3 exit).
+            if (g_buf.state == BUF_ADVANCE || toolhead_has_filament) {
                 if (A) lane_stop(A);
                 set_toolhead_filament(true);
                 char lane_s[2] = { (char)('0' + active_lane), 0 };
                 cmd_event("ISS:LOADED", lane_s);
                 g_tc_ctx.state = TC_IDLE;
+                break;
+            }
+
+            if (age > (uint32_t)TC_TIMEOUT_LOAD_MS) {
+                if (A) lane_stop(A);
+                set_toolhead_filament(true);
+                char lane_s[2] = { (char)('0' + active_lane), 0 };
+                cmd_event("ISS:LOADED", lane_s);
+                g_tc_ctx.state = TC_IDLE;
+                break;
+            }
+
+            // Tick-rate-limited speed update.
+            if ((now_ms - g_tc_ctx.iss_tick_ms) < (uint32_t)SYNC_TICK_MS) break;
+            g_tc_ctx.iss_tick_ms = now_ms;
+
+            // SG moving-average update.
+            if (A && A->task == TASK_FEED) {
+                uint16_t sg_raw;
+                if (tmc_read_sg_result(A->tmc, &sg_raw)) {
+                    g_tc_ctx.sg_ma_buf[g_tc_ctx.sg_ma_idx] = (float)sg_raw;
+                    g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_ISS_SG_MA_LEN;
+                    if (g_tc_ctx.sg_ma_fill < CONF_ISS_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
+
+                    float sum = 0.0f;
+                    for (int i = 0; i < CONF_ISS_SG_MA_LEN; i++)
+                        sum += g_tc_ctx.sg_ma_buf[i];
+                    g_sg_load = sum / (float)CONF_ISS_SG_MA_LEN;
+                }
+            }
+
+            // Speed target from SG interpolation.
+            // sg_frac ∈ [0, 1]: 0 when SG=0 (hard contact → stop), 1 when SG≥target (free).
+            int target_sps;
+            if (ISS_SG_TARGET > 0.0f && g_tc_ctx.sg_ma_fill == CONF_ISS_SG_MA_LEN) {
+                float sg_frac = clamp_f(g_sg_load / ISS_SG_TARGET, 0.0f, 1.0f);
+                target_sps = (int)((float)ISS_PRESS_SPS * sg_frac);
+            } else {
+                // SG not calibrated — full speed unless buffer says otherwise.
+                target_sps = ISS_PRESS_SPS;
+            }
+
+            // Buffer state cap: TRAILING → clamp to coasting speed.
+            if (g_buf.state == BUF_TRAILING)
+                target_sps = MIN(target_sps, ISS_TRAILING_SPS);
+
+            // Ramp toward target.
+            if (g_tc_ctx.iss_current_sps > target_sps)
+                g_tc_ctx.iss_current_sps -= SYNC_RAMP_DN_SPS;
+            else if (g_tc_ctx.iss_current_sps < target_sps)
+                g_tc_ctx.iss_current_sps += SYNC_RAMP_UP_SPS;
+            g_tc_ctx.iss_current_sps = clamp_i(g_tc_ctx.iss_current_sps, 0, ISS_PRESS_SPS);
+
+            // Drive motor.
+            if (A) {
+                if (g_tc_ctx.iss_current_sps > 0) {
+                    if (A->task != TASK_FEED)
+                        lane_start(A, TASK_FEED, g_tc_ctx.iss_current_sps, true, now_ms, 0);
+                    else
+                        motor_set_rate_sps(&A->m, g_tc_ctx.iss_current_sps);
+                } else if (A->task == TASK_FEED) {
+                    lane_stop(A);
+                }
+                // Stall during follow: contact spike, not a jam — clear and continue.
+                if (A->fault == FAULT_STALL) {
+                    A->fault = FAULT_NONE;
+                    g_tc_ctx.iss_current_sps = ISS_TRAILING_SPS;
+                }
             }
             break;
         }
@@ -1577,7 +1672,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 11u
+#define SETTINGS_VERSION 12u
 
 typedef struct {
     uint32_t magic;
@@ -1626,7 +1721,9 @@ typedef struct {
     int iss_y_timeout_ms;
     int iss_join_sps;
     int iss_press_sps;
-    int iss_confirm_ms;
+    int iss_trailing_sps;
+    int iss_sg_deriv_thr;
+    float iss_sg_target;
 
     // Grouped booleans — packed together to avoid per-field padding.
     bool buf_invert;
@@ -1727,7 +1824,9 @@ static void settings_defaults(void) {
     ISS_Y_TIMEOUT_MS = CONF_ISS_Y_TIMEOUT_MS;
     ISS_JOIN_SPS = CONF_ISS_JOIN_SPS;
     ISS_PRESS_SPS = CONF_ISS_PRESS_SPS;
-    ISS_CONFIRM_MS = CONF_ISS_CONFIRM_MS;
+    ISS_TRAILING_SPS = CONF_ISS_TRAILING_SPS;
+    ISS_SG_DERIV_THR = CONF_ISS_SG_DERIV_THR;
+    ISS_SG_TARGET = CONF_ISS_SG_TARGET;
 }
 
 static void settings_save(void) {
@@ -1808,7 +1907,9 @@ static void settings_save(void) {
     s.iss_y_timeout_ms = ISS_Y_TIMEOUT_MS;
     s.iss_join_sps = ISS_JOIN_SPS;
     s.iss_press_sps = ISS_PRESS_SPS;
-    s.iss_confirm_ms = ISS_CONFIRM_MS;
+    s.iss_trailing_sps = ISS_TRAILING_SPS;
+    s.iss_sg_deriv_thr = ISS_SG_DERIV_THR;
+    s.iss_sg_target = ISS_SG_TARGET;
 
     s.crc32 = crc32_buf((const uint8_t *)&s, offsetof(settings_t, crc32));
 
@@ -1933,7 +2034,9 @@ static void settings_load(void) {
     ISS_Y_TIMEOUT_MS = s->iss_y_timeout_ms;
     ISS_JOIN_SPS = s->iss_join_sps;
     ISS_PRESS_SPS = s->iss_press_sps;
-    ISS_CONFIRM_MS = s->iss_confirm_ms;
+    ISS_TRAILING_SPS = s->iss_trailing_sps;
+    ISS_SG_DERIV_THR = s->iss_sg_deriv_thr;
+    ISS_SG_TARGET = s->iss_sg_target;
 
     // Motor parameters always come from compile-time config (tune.h / config.ini).
     // Flash values for these fields are ignored so reflashing always takes effect.
@@ -2241,7 +2344,9 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "ISS_Y_MS"))         ISS_Y_TIMEOUT_MS = clamp_i(iv, 1000, 60000);
             else if (!strcmp(param, "ISS_JOIN_SPS"))     ISS_JOIN_SPS = clamp_i(iv, 1000, 50000);
             else if (!strcmp(param, "ISS_PRESS_SPS"))    ISS_PRESS_SPS = clamp_i(iv, 1000, 50000);
-            else if (!strcmp(param, "ISS_CONFIRM_MS"))   ISS_CONFIRM_MS = clamp_i(iv, 100, 5000);
+            else if (!strcmp(param, "ISS_TRAILING_SPS")) ISS_TRAILING_SPS = clamp_i(iv, 0, 50000);
+            else if (!strcmp(param, "ISS_SG_DERIV_THR")) ISS_SG_DERIV_THR = clamp_i(iv, 0, 500);
+            else if (!strcmp(param, "ISS_SG_TARGET"))    ISS_SG_TARGET = clamp_f(fv, 0.0f, 1023.0f);
             else if (!strcmp(param, "BASELINE"))         g_baseline_sps = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
             else if (!strcmp(param, "SG_SYNC_THR"))  SG_SYNC_THR = clamp_i(iv, 0, 511);
             else if (!strcmp(param, "SG_SYNC_TRIM")) SG_SYNC_TRIM_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
@@ -2298,7 +2403,9 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "ISS_Y_MS"))         snprintf(out, sizeof(out), "ISS_Y_MS:%d", ISS_Y_TIMEOUT_MS);
         else if (!strcmp(param, "ISS_JOIN_SPS"))     snprintf(out, sizeof(out), "ISS_JOIN_SPS:%d", ISS_JOIN_SPS);
         else if (!strcmp(param, "ISS_PRESS_SPS"))    snprintf(out, sizeof(out), "ISS_PRESS_SPS:%d", ISS_PRESS_SPS);
-        else if (!strcmp(param, "ISS_CONFIRM_MS"))   snprintf(out, sizeof(out), "ISS_CONFIRM_MS:%d", ISS_CONFIRM_MS);
+        else if (!strcmp(param, "ISS_TRAILING_SPS")) snprintf(out, sizeof(out), "ISS_TRAILING_SPS:%d", ISS_TRAILING_SPS);
+        else if (!strcmp(param, "ISS_SG_DERIV_THR")) snprintf(out, sizeof(out), "ISS_SG_DERIV_THR:%d", ISS_SG_DERIV_THR);
+        else if (!strcmp(param, "ISS_SG_TARGET"))    snprintf(out, sizeof(out), "ISS_SG_TARGET:%.1f", (double)ISS_SG_TARGET);
         else if (!strcmp(param, "BASELINE"))     snprintf(out, sizeof(out), "BASELINE:%.1f", (double)sps_to_mm_per_min(g_baseline_sps));
         else if (!strcmp(param, "SG_SYNC_THR"))  snprintf(out, sizeof(out), "SG_SYNC_THR:%d", SG_SYNC_THR);
         else if (!strcmp(param, "SG_SYNC_TRIM")) snprintf(out, sizeof(out), "SG_SYNC_TRIM:%.1f", (double)sps_to_mm_per_min(SG_SYNC_TRIM_SPS));
