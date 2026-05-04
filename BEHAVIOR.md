@@ -246,27 +246,91 @@ keeps StallGuard enabled across the full operating speed range whenever
 StallGuard below a certain speed (useful to suppress false triggers during
 ramp-up, though `STARTUP_MS` already handles that in firmware).
 
-### Buffer + StallGuard combined control
+### Buffer + StallGuard combined speed control
 
-Buffer arm position and SG_RESULT are complementary signals:
+The sync speed controller runs every 20 ms (`SYNC_TICK_MS`).  Each tick
+computes an instantaneous **target speed**, then rate-limits the motor toward it.
 
-| Signal | Measures | Speed |
-|--------|----------|-------|
-| `g_buf_pos` | Displacement — integrated velocity error | Slow (arm must move) |
-| `SG_RESULT` | Load / tension — instantaneous force on filament | Fast (direct measurement) |
-
-Together they form an outer+inner loop:
+#### Target speed computation
 
 ```
-target_sps = baseline
-           + KP_BUF  × buf_pos            (buffer: slow, displacement-based)
-           + KP_SG   × (THR − SG_RESULT)  (SG: fast, tension-based)
-           + PRE_RAMP                      (predictive: kick before ADVANCE arrives)
+correction = SYNC_KP × g_buf_pos
+           + PRE_RAMP  (if predict_advance_coming)
+           + sg_frac × SG_SYNC_TRIM
+
+where  sg_frac = clamp((SG_SYNC_THR − SG_RESULT) /
+                       (SG_SYNC_THR − SG_TENSION_MAX),  0, 1)
+
+target = clamp(baseline + correction, SYNC_MIN, SYNC_MAX)
 ```
 
-`SG_SYNC_TRIM` is the maximum speed addition at full tension.  Correction scales
-linearly from zero (when `SG_RESULT ≥ SG_SYNC_THR`) to `SG_SYNC_TRIM` (when
-`SG_RESULT ≤ SG_TENSION_MAX`).
+The three additive correction terms:
+
+| Term | Signal | What it measures | Typical latency to react |
+|------|--------|-----------------|--------------------------|
+| `SYNC_KP × g_buf_pos` | Buffer arm position | Velocity error (accumulated displacement) | 100–200 ms — arm must physically move |
+| `sg_frac × SG_SYNC_TRIM` | `SG_RESULT` (motor load) | Instantaneous filament tension | ~20 ms — 1 tick after tension appears |
+| `PRE_RAMP` | History of short MID dwells | Extruder repeatedly returning to MID quickly | 1–3 state transitions |
+
+#### Motor speed rate-limiting
+
+`target` is recalculated every tick and can jump as soon as a signal changes.
+The motor does **not** jump to `target` immediately — it ramps:
+
+```
+each 20 ms tick:
+    if sync_current_sps > target:  sync_current_sps −= SYNC_DN
+    if sync_current_sps < target:  sync_current_sps += SYNC_UP
+```
+
+SG raises `target` within one tick of detecting tension — before the buffer arm
+has moved far enough to register.  `SYNC_UP` then controls how fast the motor
+actually reaches that new target.  The practical result: the motor begins
+accelerating ~100 ms earlier than with buffer correction alone, reducing maximum
+arm deflection.
+
+#### TRAILING — both corrections disabled, SG polling continues
+
+When the buffer is in TRAILING, `sync_current_sps` is forced to 0 each tick.
+The target computation (buffer + SG corrections) is **skipped entirely**.
+
+SG **polling still runs** during TRAILING — `g_sg_load` continues to track
+motor load so the EMA is not stale when the motor restarts.  No speed
+correction is applied from it until the buffer leaves TRAILING.
+
+Applying SG correction during TRAILING would be counterproductive: the surplus
+is mechanical (arm against endstop), not a tension problem.  The motor must stay
+stopped until the extruder draws down the slack.
+
+#### Baseline adaptation
+
+When the buffer stays in MID for > 500 ms, `g_baseline_sps` drifts slowly
+toward `sync_current_sps` via a low-weight EMA.  The baseline therefore
+tracks the printer's long-term average feed rate automatically.  `SET:BASELINE`
+overrides this adaptive tracking with a fixed value.
+
+All three correction terms are deviations from this baseline — when the printer
+runs steadily and the arm stays at MID, all corrections converge to zero and
+`sync_current_sps` ≈ `baseline`.
+
+#### Timeline during a printer acceleration event
+
+| Time | Event | Buffer state | SG | Motor target | Motor speed |
+|------|-------|--------------|----|--------------|-------------|
+| 0 ms | Extruder begins accelerating | MID | normal | baseline | ≈ baseline |
+| 20 ms | Tension builds in bowden (arm has not moved yet) | MID | SG drops below `SG_SYNC_THR` | +`SG_SYNC_TRIM` × sg_frac | ramps up at SYNC_UP |
+| 100–200 ms | Arm reaches ADVANCE endstop | ADVANCE, g_buf_pos → +1 | SG still low | +`SYNC_KP` added on top | ramps up further |
+| 300–400 ms | Motor catches extruder speed | arm returns toward MID | tension eases, SG recovers | both terms fall | ramps down at SYNC_DN |
+
+Without SG correction the motor only reacts when the arm physically hits
+ADVANCE (~100–200 ms in).  With SG, ramping begins at ~20 ms — the arm deflects
+less and may never reach the ADVANCE endstop at all.
+
+#### When SG correction is off
+
+`SG_SYNC_THR` defaults to 0 (disabled).  `g_sg_load` is still tracked each tick
+but adds nothing to the correction.  The buffer arm alone drives speed
+corrections — no tuning required, but slower to react.
 
 ### Tuning `SG_SYNC_THR` and `SG_TENSION_MAX` (sync load trim)
 
