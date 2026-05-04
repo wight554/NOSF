@@ -184,117 +184,35 @@ gcode:
 
 ---
 
-## Advance profiling — tuning SG_TENSION_MAX
+## ISS StallGuard tuning (`ISS_SG_TARGET`, `ISS_SG_DERIV_THR`)
 
-This one-time procedure calibrates `SG_TENSION_MAX`: the SG value at maximum
-expected bowden tension, so the sync speed trim applies proportionally between
-`SG_SYNC_THR` (threshold) and `SG_TENSION_MAX` (100 % correction point).
+StallGuard is used **only in ISS (Endless Spool) mode** — it is not involved in
+normal buffer sync.  Two parameters control it:
 
-**Prerequisites:**
-- `SG_SYNC_THR` already set — run `tune_stallguard.py --neutral` first (see `BEHAVIOR.md`)
-- Filament loaded past the toolhead, extruder engaged
-- Hotend at print temperature
+| Parameter | Role |
+|-----------|------|
+| `ISS_SG_DERIV_THR` | Approach contact sensitivity: SG drop per tick that fires the handoff from fast approach to follow sync |
+| `ISS_SG_TARGET` | Follow sync setpoint: motor speed scales from `ISS_PRESS_SPS` (SG ≥ target) down to 0 (SG = 0) |
 
-### Using the Klipper macro (recommended)
-
-The `NOSF_ADVANCE_PROFILE` macro drives the MMU motor and the extruder in
-one coordinated sequence.  This avoids pushing filament into stationary extruder
-gears — the extruder starts within milliseconds of the MMU motor.
-
-Add to `printer.cfg`:
-
-```ini
-[gcode_macro NOSF_ADVANCE_PROFILE]
-description: Advance profiling — drives MMU + extruder to calibrate SG_TENSION_MAX
-gcode:
-    {% set LANE = params.LANE|default(1)|int %}
-    M83                                                 ; relative extrusion
-    ; Setup
-    RUN_SHELL_COMMAND CMD=nosf PARAMS="T:{LANE}"
-    RUN_SHELL_COMMAND CMD=nosf PARAMS="SM:0"
-    RUN_SHELL_COMMAND CMD=nosf PARAMS="SET:FEED:900"
-    ; Start MMU motor, then immediately extrude at matched speed
-    ; (< 200 ms gap = < 3 mm at 15 mm/s — within bowden slack)
-    RUN_SHELL_COMMAND CMD=nosf PARAMS="FD:"
-    G1 E100 F900                                        ; 15 mm/s matched — SG baseline, no tension
-    ; Build tension progressively
-    G1 E100 F1500                                       ; 25 mm/s — light tension
-    ; Maximum tension: split move so SG is read mid-run while motor is still loaded
-    G1 E50 F2400                                        ; 40 mm/s — first half
-    RUN_SHELL_COMMAND CMD=nosf PARAMS="SG:{LANE}"   ; capture SG under tension
-    G1 E50 F2400                                        ; 40 mm/s — second half
-    RUN_SHELL_COMMAND CMD=nosf PARAMS="SG:{LANE}"   ; capture SG again
-    ; Stop
-    RUN_SHELL_COMMAND CMD=nosf PARAMS="ST:"
-    { action_respond_info("Profiling complete. Use the lowest SG value above as SG_TENSION_MAX.") }
-    { action_respond_info("Apply: python3 scripts/nosf_test.py SET:SG_TENSION_MAX:<value> SV:") }
-```
-
-Run from the Mainsail / Fluidd console:
-```
-NOSF_ADVANCE_PROFILE LANE=1
-```
-
-The two `SG:` reads appear in the console output.  The lower of the two values
-is your `SG_TENSION_MAX`.  Apply it:
-```
-RUN_SHELL_COMMAND CMD=nosf PARAMS="SET:SG_TENSION_MAX:24"
-RUN_SHELL_COMMAND CMD=nosf PARAMS="SV:"
-```
-
-> The SG read happens a few hundred milliseconds after each G1 segment
-> completes — there is slight tension decay before the read.  If the value seems
-> high (> 80 % of the free-spin SG), repeat the run and use the minimum across
-> all readings.
-
-### Using the SSH script (alternative — real-time monitoring)
-
-If you prefer to watch SG in real time from a second terminal:
-
-**Terminal 1 (SSH):**
-```bash
-cd ~/NOSF
-python3 scripts/tune_stallguard.py --advance --lane 1
-```
-The script starts the MMU motor at 900 mm/min and polls SG every 100 ms.
-
-**Terminal 2 (Mainsail console or second SSH):**
-```gcode
-M83
-G1 E100 F900    ; matched speed — SG baseline
-G1 E100 F1500   ; light tension
-G1 E100 F2400   ; maximum tension
-```
-Press `Ctrl+C` in Terminal 1 when done.  The script prints the minimum SG.
-
-> Do **not** run both the SSH script and the macro simultaneously — they both
-> open the serial port and will conflict.
-
-### Applying the result
+Run the tuning script from SSH on the Pi:
 
 ```bash
-python3 scripts/nosf_test.py "SET:SG_TENSION_MAX:24" "SV:"
+# Minimum: free-air baseline only
+python3 ~/NOSF/scripts/tune_iss_sg.py --lane 1
+
+# Recommended: include contact calibration
+python3 ~/NOSF/scripts/tune_iss_sg.py --lane 1 --contact
+
+# Apply settings automatically
+python3 ~/NOSF/scripts/tune_iss_sg.py --lane 1 --contact --apply
 ```
 
-Replace `24` with the lowest SG recorded under maximum tension.
-
-### What this calibrates
-
-```
-SG ≥ SG_SYNC_THR                    →  0 % of SG_SYNC_TRIM
-SG_SYNC_THR > SG > SG_TENSION_MAX   →  proportional (0–100 %)
-SG ≤ SG_TENSION_MAX                 →  100 % of SG_SYNC_TRIM
-```
-
-Without a calibrated `SG_TENSION_MAX` (default 0), full trim fires only at
-SG ≈ 0 (near-stall).  After profiling, the 100 % point matches your actual
-bowden + extruder combination.
+See `BEHAVIOR.md` → *Tuning ISS StallGuard* for the full procedure and
+fine-tuning table.
 
 ---
 
-## ADVANCE buffer state tuning
-
-After SG parameters are set, tune the buffer-based correction.
+## Buffer sync tuning
 
 ### SYNC_KP — proportional buffer correction
 
@@ -344,21 +262,6 @@ oscillates.
 > so recovery after a TRAILING stop is controlled by `SYNC_UP` alone.
 > ADVANCE→MID retains the positive lag for smooth deceleration.
 
-### SG_SYNC_TRIM — magnitude of tension correction
-
-`SG_SYNC_TRIM` (default ≈ 17 mm/min) is the extra speed added at full tension.
-After `SG_SYNC_THR` and `SG_TENSION_MAX` are calibrated, tune the magnitude:
-
-1. Print at target speed with sync enabled.
-2. If the buffer still frequently hits ADVANCE before `SYNC_KP` catches up,
-   increase `SG_SYNC_TRIM`:
-   ```
-   SET:SG_SYNC_TRIM:300
-   SET:SG_SYNC_TRIM:600    ; increase further if arm still swings to ADVANCE
-   ```
-3. If speed fluctuates during steady printing, raise `SG_SYNC_THR` slightly to
-   narrow the trigger window.
-
 ---
 
 ## Troubleshooting
@@ -369,6 +272,6 @@ After `SG_SYNC_THR` and `SG_TENSION_MAX` are calibrated, tune the magnitude:
 | `TS:1` not reaching NOSF | Sensor wiring or config | Test: `RUN_SHELL_COMMAND CMD=nosf PARAMS="TS:1"` |
 | `TC:` times out | Bowden too long / jam | Increase `TC_LOAD_MS` / `TC_UNLOAD_MS` |
 | Sync not enabling after load | No `TS:1` sent | Check sensor or enable `TS_BUF_MS` fallback |
-| SG flat through all profiling speeds | Bowden too long — tension dissipated | Shorten bowden; or use `SG_TENSION_MAX:0` (100 % trim at near-stall only) |
-| SG drops at baseline F900 | Extruder pulling harder than MMU at matched speed | Lower MMU feed speed: edit macro `SET:FEED:600` |
-| Lowest SG very high (> 80 % of free-spin) | Tension not fully building | Check filament is fully engaged in extruder; run profiling again |
+| ISS approach never detects contact | `ISS_SG_DERIV_THR` too high or SG disabled | Run `tune_iss_sg.py --lane N --contact`; verify `CONF_SGT_L1/L2 > 0` in config.h |
+| ISS approach fires immediately (false trigger) | `ISS_SG_DERIV_THR` too low | Increase `ISS_SG_DERIV_THR`; or increase `CONF_ISS_SG_MA_LEN` to smooth noise |
+| ISS follow sync motor stops mid-bowden | SG dropping to 0 (hard friction) | Check PTFE routing; reduce `ISS_PRESS_SPS` |
