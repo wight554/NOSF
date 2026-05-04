@@ -346,6 +346,7 @@ typedef struct lane_s {
     int lane_id;
     uint32_t runout_block_until_ms;
     uint32_t buf_advance_since_ms;  // for TS:1 buffer fallback
+    uint32_t iss_tail_ms;           // ISS: timestamp when IN cleared; 0 = not tracking
 } lane_t;
 
 typedef enum {
@@ -458,6 +459,8 @@ static bool prev_lane2_in_present = false;
 
 // ===================== Forward declarations =====================
 static void cmd_event(const char *type, const char *data);
+static inline tc_state_t tc_state(void);
+static void iss_trigger(int runout_lane, uint32_t now_ms);
 
 // Auto-enable/disable sync whenever toolhead filament state changes.
 static void set_toolhead_filament(bool present) {
@@ -527,6 +530,7 @@ static void lane_stop(lane_t *L) {
     L->unload_sensor_latch = false;
     L->retract_deadline_ms = 0;
     L->buf_advance_since_ms = 0;
+    L->iss_tail_ms = 0;
     L->current_sps = 0;
     L->target_sps = 0;
     motor_stop(&L->m);
@@ -687,14 +691,34 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
     if ((L->task == TASK_FEED || L->task == TASK_AUTOLOAD) && !lane_in_present(L)) {
         if ((int32_t)(now_ms - L->motion_started_ms) >= MOTION_STARTUP_MS &&
             (int32_t)(now_ms - L->runout_block_until_ms) >= 0) {
-            char lane_s[2] = { (char)('0' + L->lane_id), 0 };
-            cmd_event("RUNOUT", lane_s);
-            L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
             bool was_feed = (L->task == TASK_FEED);
-            if (was_feed) set_toolhead_filament(false);
+            if (ISS_MODE && was_feed && tc_state() == TC_IDLE && lane_out_present(L)) {
+                // Filament tail still between IN and OUT — keep motor running.
+                // ISS switch fires when OUT clears, buffer→ADVANCE, or 10 s elapsed.
+                L->iss_tail_ms = now_ms;
+                L->runout_block_until_ms = now_ms + 30000u;
+            } else {
+                char lane_s[2] = { (char)('0' + L->lane_id), 0 };
+                cmd_event("RUNOUT", lane_s);
+                L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
+                if (was_feed) set_toolhead_filament(false);
+                lane_stop(L);
+                if (ISS_MODE && was_feed && tc_state() == TC_IDLE)
+                    iss_trigger(L->lane_id, now_ms);
+            }
+        }
+    }
+
+    if (ISS_MODE && L->iss_tail_ms != 0 && L->task == TASK_FEED) {
+        uint32_t tail_age = now_ms - L->iss_tail_ms;
+        if (!lane_out_present(L) || g_buf.state == BUF_ADVANCE || tail_age >= 10000u) {
+            char lane_s[2] = { (char)('0' + L->lane_id), 0 };
+            L->iss_tail_ms = 0;
+            L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
+            cmd_event("RUNOUT", lane_s);
+            set_toolhead_filament(false);
             lane_stop(L);
-            if (ISS_MODE && was_feed && tc_state() == TC_IDLE)
-                iss_trigger(L->lane_id, now_ms);
+            iss_trigger(L->lane_id, now_ms);
         }
     }
 }
