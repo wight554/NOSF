@@ -58,7 +58,7 @@ if [ -n "$RL5_PCT" ]; then
     RC7=$(pct_color "$RL7")
     RL7_RST_STR=""
     if [ -n "$RL7_RST" ]; then
-      RL7_RST_STR=" ($(date -r "$RL7_RST" "+%a %H:%M" 2>/dev/null || date -d "@$RL7_RST" "+%a %H:%M" 2>/dev/null))"
+      RL7_RST_STR=" ($(date -r "$RL7_RST" "+%Y-%m-%d %H:%M" 2>/dev/null || date -d "@$RL7_RST" "+%Y-%m-%d %H:%M" 2>/dev/null))"
     fi
     OUT="${OUT}  ${RC7}7d:${RL7}%${RL7_RST_STR}${X}"
   fi
