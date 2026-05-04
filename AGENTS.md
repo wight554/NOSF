@@ -67,7 +67,8 @@ cmake -S firmware -B build_local -G Ninja -DPICO_SDK_PATH=/path/to/pico-sdk
 ## Non-Negotiable Rules
 
 1. **Build must pass** before committing. Run `ninja -C build_local`.
-2. **Commit and push after every change** — code or docs, no exceptions.
+2. **Commit and push after every change — automatically, without asking.**
+   Do not ask the user "should I commit?" — just do it.
 3. **Bump `SETTINGS_VERSION`** in `main.c` whenever a field is added to or
    removed from `settings_t`. The current version is in that file; grep for it.
 4. **Do not mock or stub hardware** — all changes must compile against the real
@@ -103,6 +104,43 @@ Rules:
 - Body: explain *why*, not just what
 - Always include `Co-Authored-By` with your model name
 - Push immediately after every commit: `git push`
+
+## TASK.md Workflow — Required Before Writing Any Code
+
+Context windows are finite. If you research a problem, form a plan in memory,
+and then start writing code, you risk hitting the context limit mid-way and
+losing everything. **Write it down first.**
+
+### Before touching any file:
+
+1. **Research phase** — read relevant source files, grep for symbols, understand
+   the current state. Write all findings into `TASK.md` under a `## Findings`
+   section. Include: what you read, what you learned, what constraints exist.
+
+2. **Plan phase** — draft the complete implementation plan in `TASK.md` before
+   opening an editor. For every file you intend to modify, write:
+   - File path
+   - Exactly what changes and why
+   - Any risk or invariant to watch for
+
+   Example entry:
+   ```
+   ### firmware/src/main.c
+   - Add SET:SGT_L1 handler after line ~2322 (STARTUP_MS handler)
+     `else if (!strcmp(param, "SGT_L1")) { TMC_SGT_L1 = clamp_i(iv,0,255); tmc_set_sgthrs(&g_tmc1, (uint8_t)TMC_SGT_L1); }`
+   - Add GET:SGT_L1 mirror after line ~2377
+   - Risk: lane_start() resets stall_armed — must set true after the call
+   ```
+
+3. **Implement** — work through the plan file by file. After each file is done,
+   mark it complete in `TASK.md` and commit + push immediately.
+
+4. **Never hold more than one file's worth of changes in memory** before
+   committing. Small commits are safe; large in-memory plans are not.
+
+This protects against the most common failure mode: agent hits context limit
+between planning and implementation, and the next session has no idea what was
+intended.
 
 ---
 
