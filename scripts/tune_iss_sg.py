@@ -176,9 +176,9 @@ def compute_recommendations(free_air_sg, contact_floor=None):
 
     return {'ISS_SG_TARGET': target, 'ISS_SG_DERIV_THR': deriv_thr}
 
-def print_recommendations(recs, free_air_sg, contact_floor):
+def print_recommendations(recs, free_air_sg, contact_floor, lane):
     print(f"\n{'='*60}")
-    print("Recommendations")
+    print(f"Recommendations  (lane {lane})")
     print(f"{'='*60}")
     print(f"  Free-air SG baseline : {free_air_sg:.1f}")
     if contact_floor is not None:
@@ -197,6 +197,13 @@ def print_recommendations(recs, free_air_sg, contact_floor):
     print(f"    from fast approach to follow sync.")
     print(f"    Lower → more sensitive (catches softer contacts).")
     print(f"    Higher → less sensitive (ignores brief variation).")
+    print()
+    print("NOTE: ISS_SG_TARGET and ISS_SG_DERIV_THR are global parameters —")
+    print("  they apply to both lanes.  If SG characteristics differ between lanes")
+    print("  (different SGTHRS in config.h, different bowden lengths), run this")
+    print("  script for each lane and use the more conservative values:")
+    print("    ISS_SG_TARGET    → lower of the two (earlier speed reduction)")
+    print("    ISS_SG_DERIV_THR → lower of the two (more sensitive contact detect)")
     print()
     print("Apply commands:")
     for k, v in recs.items():
@@ -271,7 +278,7 @@ It is NOT used during normal buffer sync.
             contact_floor = phase_contact(ser, args.lane, join_sps, free_air_sg)
 
         recs = compute_recommendations(free_air_sg, contact_floor)
-        print_recommendations(recs, free_air_sg, contact_floor)
+        print_recommendations(recs, free_air_sg, contact_floor, args.lane)
 
         if args.apply:
             apply_settings(ser, recs)
