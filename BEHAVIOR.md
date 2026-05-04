@@ -185,8 +185,12 @@ detection can fire.
 
 ## StallGuard
 
-StallGuard detects motor **stall** (excess load).  It fires via DIAG GPIO IRQ
-and emits `EV:STALL:<lane>`.
+StallGuard is used exclusively in **ISS mode** (dual-endstop buffer sensor)
+to detect filament contact during the approach phase and to gate the DIAG
+hard-stop fallback during follow.  It is not tuned or used for buffer sync
+stall detection — during normal sync the buffer arm position provides all
+the load feedback needed, and SG readings in ADVANCE/TRAILING states are
+not reliably distinguishable.
 
 StallGuard is **not** useful for detecting absent filament (free-spinning
 motor = low load = SG value high, no trigger).  Filament absence is detected
@@ -194,71 +198,22 @@ by sensor events (IN/OUT) as described in the load failure section above.
 
 ### How it works (TMC2209)
 
-`SG_RESULT` is a 10-bit value produced continuously by the chip:
-- **High value (~200–510)** → low motor load (free spin or light load).
+`SG_RESULT` is a 10-bit value (0–511) produced continuously by the chip:
+- **High value (~200–511)** → low motor load (free spin or light load).
 - **Low value (~0–100)** → high load or stall.
 
 The chip asserts the DIAG pin (triggering `EV:STALL`) when
 `SG_RESULT ≤ 2 × SGTHRS`. `SGTHRS` is set per lane at runtime via
 `SET:SGT_L1:<value>` / `SET:SGT_L2:<value>` (writes to chip immediately)
 and defaults from `CONF_SGT_L1` / `CONF_SGT_L2` in `config.h`.
-StallGuard is only active above a minimum motor speed determined by
-`TCOOLTHRS` — see the TCOOLTHRS note below.
 
-### Tuning for stall detection
-
-1. Load filament through the full bowden path on the lane you are tuning
-   (IN sensor must be triggered; filament tip at or past the toolhead).
-   Select the lane and start the feed motor at `FEED_SPS`:
-   ```
-   T:1
-   FD:
-   ```
-   `FD:` runs at the current `FEED_SPS` value. Verify it matches your
-   normal print speed with `GET:FEED` (shown in mm/min); adjust with
-   `SET:FEED:<mm_min>` if needed before reading SG.
-2. Monitor `SG_RESULT` — either with the live script (recommended):
-   ```
-   python3 scripts/sg_monitor.py --port /dev/ttyACM0 --speed <mm_min>
-   ```
-   or by polling manually:
-   ```
-   SG:1
-   ```
-   Note the **minimum** value seen during normal, unobstructed run — call it `SG_RUN`.
-3. Stop the motor (`ST:`).
-4. Set `SGTHRS` so that `2 × SGTHRS` is roughly 50 % of `SG_RUN`
-   (`SGTHRS = SG_RUN / 4`):
-   ```
-   SET:SGT_L1:<value>
-   ```
-   Example: `SG_RUN ≈ 160` → `SGTHRS = 40` → DIAG threshold = 80 (50 % of 160):
-   ```
-   SET:SGT_L1:40
-   ```
-5. Test: push filament against a hard stop by hand while the motor runs — confirm
-   `EV:STALL:1` fires. If it fires during normal run, increase `SGT_L1`; if it
-   never fires on a real stall, decrease it.
-6. Persist to flash:
-   ```
-   SV:
-   ```
-   To also change the compile-time default, update `CONF_SGT_L1` / `CONF_SGT_L2`
-   in `config.h` and rebuild.
-
-`STARTUP_MS` (default 10 s) delays StallGuard arming after motion starts —
-keep it above your ramp + bowden stabilisation time to prevent false triggers
-at the beginning of a move.
-
-`TCOOLTHRS` is compared against `TSTEP` (clock cycles per step, so TSTEP
-*decreases* as speed increases).  StallGuard is **active** when
-`TSTEP ≤ TCOOLTHRS`, i.e. when the motor is running **fast enough**.
-With the TMC2209 internal clock at ~12.5 MHz and a feed rate of 25 000 SPS,
-`TSTEP ≈ 500`.  The default `CONF_TCOOLTHRS = 1000` keeps StallGuard enabled
-across the full operating speed range whenever `SGTHRS > 0`.
-Set `TCOOLTHRS` lower than the TSTEP at your minimum operating speed to
-suppress StallGuard at low speeds (though `STARTUP_MS` already handles
-false triggers during ramp-up in firmware).
+`TCOOLTHRS` gates when SG_RESULT is computed: StallGuard is **active** when
+`TSTEP ≤ TCOOLTHRS`.  TSTEP is clock cycles per step and *decreases* as
+speed increases, so StallGuard is active when the motor is running **fast
+enough**.  With the TMC2209 internal clock at ~12.5 MHz and ISS approach
+speed `ISS_JOIN_SPS = 25 000 SPS`, `TSTEP ≈ 500`.  The default
+`CONF_TCOOLTHRS = 1000` keeps StallGuard enabled across the full ISS
+operating range.
 
 ### Buffer sync speed control
 
@@ -597,8 +552,12 @@ and instead of hard-stopping:
 **Second stall within the recovery window** — the motor is hard-stopped and
 `EV:STALL:<lane>` is emitted again.  This means a real jam.
 
-Recovery is **disabled** (`CONF_STALL_RECOVERY_MS = 0`) when StallGuard is
-not tuned (default `SGTHRS = 0` → DIAG never fires → recovery never triggers).
+Recovery is **disabled by default** — the default `SGTHRS = 0` means DIAG
+never fires, so recovery never triggers.  Enabling it requires manually
+tuning `SGT_L1`/`SGT_L2` for sync conditions, which is not recommended
+(SG readings during ADVANCE and TRAILING are not reliably separable).
+In practice this feature is only useful if you have experimentally
+confirmed a stable stall threshold for your specific bowden path.
 
 ---
 
