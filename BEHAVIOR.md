@@ -281,64 +281,94 @@ The motor stays stopped until the extruder draws down the buffer surplus.
 **SG is not used during normal buffer sync.**  Buffer arm position alone drives
 the sync speed controller.
 
-SG_RESULT is read only in two ISS states:
+ISS uses StallGuard in two complementary ways:
+
+| Layer | Mechanism | What it catches |
+|-------|-----------|-----------------|
+| Soft contact | SG_RESULT MA derivative vs `ISS_SG_DERIV_THR` | Gentle tip-to-tail touch before filament stalls |
+| Hard contact | DIAG interrupt via `SGTHRS` (`SGT_L1`/`SGT_L2`) | Jams, hard crashes, cases the derivative misses |
+
+Stall detection (`stall_armed`) is enabled **immediately** when the approach motor
+starts — bypassing the `STARTUP_MS` warmup used in normal sync.  This is safe
+because `TCOOLTHRS` gates StallGuard below operating speed: DIAG cannot fire
+during the slow ramp-up, only once the motor reaches approach speed.
 
 **`TC_ISS_APPROACH` — contact detection at approach speed**
 
 The motor runs at `ISS_JOIN_SPS`.  SG is sampled into a 5-sample moving-average
-ring buffer every `SYNC_TICK_MS`.  The per-tick MA derivative is compared to
-`ISS_SG_DERIV_THR`: a sharp negative drop (SG falling faster than the threshold)
-means the new tip just hit the old tail.  Transition to follow sync fires
+ring buffer every `SYNC_TICK_MS`.
+
+*Primary path (soft contact — 2-endstop only):*
+The per-tick MA derivative is compared to `ISS_SG_DERIV_THR`: a sharp negative
+drop means the new tip just hit the old tail.  Transition to follow sync fires
 immediately — before the buffer arm moves and before the motor stalls — so
 filament is not ground at approach speed.
 
-`BUF_TRAILING` and a hard DIAG stall remain as fallbacks for the case where SG
-is not configured (`ISS_SG_DERIV_THR = 0`).
+*Hard-contact fallback (any buffer type):*
+If the DIAG pin fires (`SG_RESULT ≤ 2 × SGTHRS`) — a hard crash at approach
+speed — the stall IRQ stops the motor and sets `FAULT_STALL`.  The approach
+loop detects this, clears the fault, and transitions to follow sync.  This
+catches contacts the derivative misses (slow contact rate, noisy SG signal) and
+provides a safety net even when `ISS_SG_DERIV_THR = 0`.
+
+`BUF_TRAILING` is an additional fallback (physical buffer sensor driven).
 
 **`TC_ISS_FOLLOW` — pressure maintenance during 1 m bowden journey**
 
-Speed is interpolated linearly from the filtered SG:
+Speed is interpolated linearly from the filtered SG (2-endstop only):
 
 ```
 sg_frac   = clamp(SG_RESULT / ISS_SG_TARGET,  0, 1)
 target    = ISS_PRESS_SPS × sg_frac
 ```
 
-- `SG ≥ ISS_SG_TARGET` → full `ISS_PRESS_SPS` (no/light contact, catch up)
+- `SG ≥ ISS_SG_TARGET` → full `ISS_PRESS_SPS` (light/no contact, catch up)
 - `SG = 0` → 0 SPS (hard contact, let old tail lead)
 - `BUF_TRAILING` caps speed to `ISS_TRAILING_SPS` regardless of SG
 - `BUF_ADVANCE` (extruder pulling faster than we push) → handover detected, exit
 
-SG is only sampled in 2-endstop buffer mode (`BUF_SENSOR_TYPE = 0`).  With an
-analog buffer sensor the arm position already provides continuous pressure
-feedback; SG is not needed and is not read.
+A stall during follow (DIAG fires again) is treated as a pressure spike, not an
+error: the fault is cleared and speed drops to `ISS_TRAILING_SPS`.
 
-### Tuning ISS StallGuard (`ISS_SG_TARGET`, `ISS_SG_DERIV_THR`)
+With an analog buffer sensor the arm position provides continuous pressure
+feedback; SG_RESULT is not sampled.  SGTHRS/DIAG still fires on hard jams.
 
-Use `scripts/tune_iss_sg.py`.  It requires filament loaded in the lane with the
-tip free (not touching anything).
+### Tuning ISS StallGuard (`ISS_SG_TARGET`, `ISS_SG_DERIV_THR`, `SGT_L1`/`SGT_L2`)
+
+Use `scripts/tune_iss_sg.py`.  Filament must be loaded in the lane with the tip
+free (not touching anything).
 
 ```bash
-# Step 1 — free-air baseline (always required):
+# Step 0 — observe free-air SG and verify StallGuard is active:
+python3 scripts/sg_monitor.py --lane 1 --speed 2120
+# Then manually press filament against the tip to see the SG drop live.
+# If SG stays at 0 across all speeds, check TCOOLTHRS covers operating speed.
+
+# Step 1 — free-air baseline only:
 python3 scripts/tune_iss_sg.py --lane 1
 
-# Step 2 — add contact calibration for a more accurate ISS_SG_DERIV_THR:
+# Step 2 — add contact calibration (required for accurate SGTHRS):
 python3 scripts/tune_iss_sg.py --lane 1 --contact
 
 # Step 3 — apply and save in one pass:
 python3 scripts/tune_iss_sg.py --lane 1 --contact --apply
+
+# Repeat for lane 2 (SGT_L2 is per-lane; global params use more conservative):
+python3 scripts/tune_iss_sg.py --lane 2 --contact --apply
 ```
 
-**What the script measures:**
+**What the script measures and recommends:**
 
-1. Runs the motor at `ISS_JOIN_SPS`, samples SG for 3 s → free-air baseline.
-2. (With `--contact`) Guides you through gently pressing a piece of filament
-   against the moving tip.  Records the SG floor under light contact.
-3. Recommends:
-   - `ISS_SG_TARGET ≈ free_air / 2` — motor runs at half `ISS_PRESS_SPS` at
-     the setpoint; backs off further as SG drops toward 0.
-   - `ISS_SG_DERIV_THR ≈ 40 % of total SG drop per tick` — catches sharp
-     approach contacts while ignoring normal speed-related variation.
+| Parameter | Scope | Formula | Purpose |
+|-----------|-------|---------|---------|
+| `ISS_SG_TARGET` | Global | `free_air / 2` | Follow sync pressure setpoint |
+| `ISS_SG_DERIV_THR` | Global | `40 % of drop / tick` | Soft contact sensitivity in approach |
+| `SGT_L{N}` (SGTHRS) | Per-lane | `contact_floor / 2` | Hard-contact DIAG fallback — fires when SG ≤ 2 × value |
+
+**Why `contact_floor / 2` for SGTHRS:**
+TMC fires DIAG when `SG_RESULT ≤ 2 × SGTHRS`.  Setting `SGTHRS = contact_floor / 2`
+means DIAG fires exactly at the hard-contact floor — the point where filament is
+already jammed, not just lightly touching.
 
 **Manual adjustment after tuning:**
 
@@ -348,6 +378,8 @@ python3 scripts/tune_iss_sg.py --lane 1 --contact --apply
 | Follow sync barely touches (tips separate) | Increase `ISS_SG_TARGET` |
 | Approach misses soft contacts | Decrease `ISS_SG_DERIV_THR` |
 | Approach triggers prematurely on speed noise | Increase `ISS_SG_DERIV_THR` |
+| Approach grinds filament before stopping | Decrease `SGT_L{N}` (fire DIAG earlier) |
+| DIAG fires during free-spin approach | Increase `SGT_L{N}` or check TCOOLTHRS |
 
 ### Trailing state — motor stop and recovery
 

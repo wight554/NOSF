@@ -174,7 +174,17 @@ def compute_recommendations(free_air_sg, contact_floor=None):
         # Without contact data: estimate using 25% floor assumption.
         deriv_thr = max(1, round(free_air_sg * 0.30))
 
-    return {'ISS_SG_TARGET': target, 'ISS_SG_DERIV_THR': deriv_thr}
+    # SGT (SGTHRS): hard-contact DIAG fallback in ISS approach.
+    # TMC fires DIAG when SG_RESULT ≤ 2 × SGTHRS.
+    # Set so DIAG fires at the hard-contact floor — catches jams missed by
+    # the SG derivative (e.g., very slow contact or noisy derivative signal).
+    if contact_floor is not None:
+        sgt = max(1, round(contact_floor / 2))
+    else:
+        # Without contact data: rough estimate — assume 70 % drop at hard crash.
+        sgt = max(1, round(free_air_sg * 0.15))
+
+    return {'ISS_SG_TARGET': target, 'ISS_SG_DERIV_THR': deriv_thr, 'SGT': sgt}
 
 def print_recommendations(recs, free_air_sg, contact_floor, lane):
     print(f"\n{'='*60}")
@@ -187,27 +197,36 @@ def print_recommendations(recs, free_air_sg, contact_floor, lane):
 
     tgt = recs['ISS_SG_TARGET']
     dth = recs['ISS_SG_DERIV_THR']
-    print(f"  ISS_SG_TARGET    = {tgt}")
+    sgt = recs['SGT']
+
+    print(f"  ISS_SG_TARGET    = {tgt}  (global)")
     print(f"    Follow sync gentle-pressure setpoint.")
     print(f"    Motor speed scales linearly from ISS_PRESS_SPS (SG ≥ {tgt})")
     print(f"    down to 0 (SG = 0). Adjust if pressure feels too light or too heavy.")
     print()
-    print(f"  ISS_SG_DERIV_THR = {dth}")
+    print(f"  ISS_SG_DERIV_THR = {dth}  (global)")
     print(f"    Approach contact sensitivity: SG drop > {dth}/tick triggers handoff")
     print(f"    from fast approach to follow sync.")
     print(f"    Lower → more sensitive (catches softer contacts).")
     print(f"    Higher → less sensitive (ignores brief variation).")
     print()
-    print("NOTE: ISS_SG_TARGET and ISS_SG_DERIV_THR are global parameters —")
-    print("  they apply to both lanes.  If SG characteristics differ between lanes")
-    print("  (different SGTHRS in config.h, different bowden lengths), run this")
-    print("  script for each lane and use the more conservative values:")
-    print("    ISS_SG_TARGET    → lower of the two (earlier speed reduction)")
-    print("    ISS_SG_DERIV_THR → lower of the two (more sensitive contact detect)")
+    print(f"  SGT_L{lane}          = {sgt}  (per-lane SGTHRS)")
+    print(f"    Hard-contact DIAG fallback for lane {lane}.")
+    print(f"    TMC fires DIAG when SG_RESULT ≤ {2*sgt}  (= 2 × {sgt}).")
+    print(f"    Catches jams the SG derivative misses (slow contact, noisy SG).")
+    print(f"    Also provides jam protection during TC_ISS_FOLLOW.")
+    print(f"    Lower → triggers on lighter contacts; Higher → only hard jams.")
+    print()
+    print("NOTE: ISS_SG_TARGET and ISS_SG_DERIV_THR are global (both lanes).")
+    print(f"  SGT_L{lane} is per-lane — run this script for each lane separately.")
+    print("  For global params, use the more conservative values across lanes:")
+    print("    ISS_SG_TARGET    → lower of the two")
+    print("    ISS_SG_DERIV_THR → lower of the two")
     print()
     print("Apply commands:")
     for k, v in recs.items():
-        print(f"  SET:{k}:{v}")
+        key = f"SGT_L{lane}" if k == 'SGT' else k
+        print(f"  SET:{key}:{v}")
     print("  SV:")
     print()
     print("Fine-tuning:")
@@ -215,12 +234,15 @@ def print_recommendations(recs, free_air_sg, contact_floor, lane):
     print("  ISS_SG_TARGET too low  → motor pushes too hard    (jam risk)")
     print("  ISS_SG_DERIV_THR too high → approach misses contacts (rare false-no)")
     print("  ISS_SG_DERIV_THR too low  → approach triggers on noise (early handoff)")
+    print(f"  SGT_L{lane} too high → DIAG fires on light contacts (premature stop)")
+    print(f"  SGT_L{lane} too low  → DIAG misses real jams (no fallback protection)")
 
-def apply_settings(ser, recs):
+def apply_settings(ser, recs, lane):
     print("\nApplying...")
     for k, v in recs.items():
-        resp = send_wait(ser, f"SET:{k}:{v}") or "timeout"
-        print(f"  SET:{k}:{v}  →  {resp}")
+        key = f"SGT_L{lane}" if k == 'SGT' else k
+        resp = send_wait(ser, f"SET:{key}:{v}") or "timeout"
+        print(f"  SET:{key}:{v}  →  {resp}")
     resp = send_wait(ser, "SV:") or "timeout"
     print(f"  SV:  →  {resp}")
 
@@ -281,7 +303,7 @@ It is NOT used during normal buffer sync.
         print_recommendations(recs, free_air_sg, contact_floor, args.lane)
 
         if args.apply:
-            apply_settings(ser, recs)
+            apply_settings(ser, recs, args.lane)
         else:
             print("Re-run with --apply to apply and save automatically.")
 

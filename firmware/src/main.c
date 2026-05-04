@@ -1120,6 +1120,11 @@ static void tc_tick(uint32_t now_ms) {
                 cmd_event("ISS:JOINING", lane_s);
                 // State 1: fast approach — contact detected by SG derivative.
                 lane_start(NL, TASK_FEED, ISS_JOIN_SPS, true, now_ms, 0);
+                // Arm stall immediately — STARTUP_MS warmup is for sync mode.
+                // During ISS approach we intentionally run into the old tail; a
+                // calibrated SGTHRS won't false-trigger on free-spin ramp-up
+                // because SG is suppressed by TCOOLTHRS until speed is high enough.
+                NL->stall_armed = true;
                 NL->autoload_deadline_ms = now_ms + (uint32_t)TC_TIMEOUT_LOAD_MS;
                 // Zero ISS ctx fields for fresh approach.
                 g_tc_ctx.iss_tick_ms = now_ms;
@@ -2320,6 +2325,9 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "SYNC_KP"))      SYNC_KP_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
             else if (!strcmp(param, "TS_BUF_MS"))    TS_BUF_FALLBACK_MS = clamp_i(iv, 0, 30000);
             else if (!strcmp(param, "STARTUP_MS"))   MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
+            else if (!strcmp(param, "SGT_L1"))    { TMC_SGT_L1 = clamp_i(iv, 0, 255); tmc_set_sgthrs(&g_tmc1, (uint8_t)TMC_SGT_L1); }
+            else if (!strcmp(param, "SGT_L2"))    { TMC_SGT_L2 = clamp_i(iv, 0, 255); tmc_set_sgthrs(&g_tmc2, (uint8_t)TMC_SGT_L2); }
+            else if (!strcmp(param, "TCOOLTHRS")) { TMC_TCOOLTHRS = clamp_i(iv, 0, 0xFFFFF); tmc_set_tcoolthrs(&g_tmc1, (uint32_t)TMC_TCOOLTHRS); tmc_set_tcoolthrs(&g_tmc2, (uint32_t)TMC_TCOOLTHRS); }
             else if (!strcmp(param, "SERVO_OPEN"))   SERVO_OPEN_US = clamp_i(iv, 400, 2600);
             else if (!strcmp(param, "SERVO_CLOSE"))  SERVO_CLOSE_US = clamp_i(iv, 400, 2600);
             else if (!strcmp(param, "SERVO_SETTLE")) SERVO_SETTLE_MS = clamp_i(iv, 100, 2000);
@@ -2375,6 +2383,9 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "SYNC_KP"))      snprintf(out, sizeof(out), "SYNC_KP:%.1f", (double)sps_to_mm_per_min(SYNC_KP_SPS));
         else if (!strcmp(param, "TS_BUF_MS"))    snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
         else if (!strcmp(param, "STARTUP_MS"))   snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
+        else if (!strcmp(param, "SGT_L1"))    snprintf(out, sizeof(out), "SGT_L1:%d", TMC_SGT_L1);
+        else if (!strcmp(param, "SGT_L2"))    snprintf(out, sizeof(out), "SGT_L2:%d", TMC_SGT_L2);
+        else if (!strcmp(param, "TCOOLTHRS")) snprintf(out, sizeof(out), "TCOOLTHRS:%d", TMC_TCOOLTHRS);
         else if (!strcmp(param, "SERVO_OPEN"))   snprintf(out, sizeof(out), "SERVO_OPEN:%d", SERVO_OPEN_US);
         else if (!strcmp(param, "SERVO_CLOSE"))  snprintf(out, sizeof(out), "SERVO_CLOSE:%d", SERVO_CLOSE_US);
         else if (!strcmp(param, "SERVO_SETTLE")) snprintf(out, sizeof(out), "SERVO_SETTLE:%d", SERVO_SETTLE_MS);
