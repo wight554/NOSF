@@ -1,4 +1,8 @@
 {
+  "statusLine": {
+    "type": "command",
+    "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.claude/statusline.sh\"'"
+  },
   "hooks": {
     "PreToolUse": [
       {
