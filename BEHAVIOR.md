@@ -395,40 +395,37 @@ Let the motor settle for 3–5 s before touching anything.  Note the stable SG
 reading — call it `SG_FREE`.  Typical values are 80–300 depending on
 `RUN_CURRENT_MA` and bowden friction.
 
-**Step 2 — Observe hard-contact (jam/wall) SG floor**
+**Step 2 — Observe jam SG floor**
 
-Keep `sg_monitor.py` running from Step 1.  You want to simulate the hardest
-contact the filament will ever see during an ISS approach — equivalent to the
-new tip crashing into the old tail at full approach speed and the motor being
-unable to push further.
+Keep `sg_monitor.py` running from Step 1.
 
-*What to use as the hard stop:*
+**Use firm finger grip — not a rigid wall crash.**  In a real ISS splice the new
+tip hits the old tail inside a PTFE tube, not concrete.  If you calibrate
+against a rigid surface (vice, frame), SG drops to near zero and SGTHRS ends up
+at 1–3, meaning DIAG only fires when the motor is already fully stalled and
+filament is being ground.  Finger grip produces the SG level that corresponds to
+"motor straining hard against a filament junction" — exactly the point where
+DIAG should intervene.
 
-- **Best:** grip the moving filament firmly between thumb and index finger about
-  10–20 cm from the NOSF exit and squeeze hard enough to stall the motor.
-  Hold for 3–5 s.  This directly replicates a jam at approach speed.
-- **Alternative:** press the filament tip against the metal frame of the printer
-  or a solid fixed object (vice, table edge) while it is running.
-- **Do not use** a rubber surface or anything compressible — it absorbs force and
-  gives a higher SG floor than a real plastic-on-plastic jam.
-
-*How to interpret the output:*
+Grip the moving filament firmly between thumb and index finger about 10–20 cm
+from the NOSF exit.  Squeeze as hard as you can sustain for 3–5 s.  You should
+feel the motor straining but not hear it completely stop.
 
 ```
   3.2s    198   100%   [########################################]  ← free air
-  6.1s    155    78%   [███████████████████████████████.........]  ← light finger pressure
-  6.8s     62    31%   [████████████............................]  ← firmer grip
-  7.1s     18     9%   [███▌...................................]  ← hard jam floor
-  7.3s      4     2%   [▌.......................................]  ← motor nearly stalled
+  6.1s    155    78%   [███████████████████████████████.........]  ← light grip
+  6.8s     62    31%   [████████████............................]  ← firm grip
+  7.1s     18     9%   [███▌...................................]  ← maximum grip, motor straining
+  7.3s      4     2%   [▌.......................................]  ← motor fully stalled (too far)
 ```
 
-The SG reading stabilises for 2–3 s at the hard-jam level before dropping
-further toward zero as the motor stalls completely.  **Use the stable plateau
-value** (~18 in the example above) as `SG_JAM`, not the absolute minimum (which
-is the motor fully stalled and not what you want DIAG to fire at).
+**Use the stable plateau** at maximum grip (~18 above) as `SG_JAM`.  The reading
+will continue falling toward zero if you hold long enough — that is the motor
+stalling, past the calibration target.  Release before the motor stops
+completely.
 
-Press Ctrl+C.  The session summary prints `SG floor` and a `Suggested SGT_L{N}`
-recommendation automatically:
+Press Ctrl+C.  The session summary shows `SG floor` and computes a suggested
+`SGT_L{N}` from it:
 
 ```
 Session summary  (lane 1, 2120 mm/min):
@@ -438,8 +435,9 @@ Session summary  (lane 1, 2120 mm/min):
   Suggested SGT_L1             : 9  (DIAG fires at SG ≤ 18)
 ```
 
-If you want to target the stable jam plateau instead of the absolute floor,
-calculate `SGT_L1 = SG_JAM / 2` manually (e.g. `18 / 2 = 9`).
+Because the script tracks the absolute minimum it may suggest a value from the
+full-stall territory.  If the plateau you observed was higher (e.g. 18), compute
+manually: `SGT_L1 = 18 / 2 = 9`.
 
 **Step 3 — Calculate and set SGTHRS**
 

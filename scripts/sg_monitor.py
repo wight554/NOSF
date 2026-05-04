@@ -172,6 +172,9 @@ range at typical SPS values).
                 print(f"  Observed drop                : {sg_peak - sg_floor}  ({drop_pct}%)")
                 print(f"  Suggested SGT_L{args.lane}           : {suggested_sgt}"
                       f"  (DIAG fires at SG ≤ {suggested_sgt * 2})")
+                print(f"  Note: suggestion uses absolute floor (full-stall territory).")
+                print(f"  If you observed a stable jam plateau above {sg_floor},")
+                print(f"  use that value instead: SGT_L{args.lane} = <plateau> / 2")
     finally:
         send_wait(ser, "ST:")
         ser.close()
