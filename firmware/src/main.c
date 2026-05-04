@@ -67,6 +67,9 @@ static bool REQUIRE_Y_EMPTY_SWAP = CONF_REQUIRE_Y_EMPTY_SWAP;
 
 static int ISS_MODE = CONF_ISS_MODE;
 static int ISS_Y_TIMEOUT_MS = CONF_ISS_Y_TIMEOUT_MS;
+static int ISS_JOIN_SPS = CONF_ISS_JOIN_SPS;
+static int ISS_PRESS_SPS = CONF_ISS_PRESS_SPS;
+static int ISS_CONFIRM_MS = CONF_ISS_CONFIRM_MS;
 
 static int RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
 static int RAMP_TICK_MS = CONF_RAMP_TICK_MS;
@@ -387,8 +390,10 @@ typedef enum {
     TC_LOAD_WAIT_OUT,
     TC_LOAD_WAIT_TH,
     TC_LOAD_DONE,
-    TC_ISS_WAIT_Y,   // ISS: old tail exited OUT, waiting for Y-splitter to clear
-    TC_ISS_LOADING,  // ISS: new lane syncing up to meet old filament tail
+    TC_ISS_WAIT_Y,    // ISS: old tail exited OUT, waiting for Y-splitter to clear
+    TC_ISS_LOADING,   // ISS: fast approach — new tip racing to meet old tail
+    TC_ISS_PRESSING,  // ISS: bang-bang pressure hold — keep tips in contact
+    TC_ISS_SYNCING,   // ISS: sync running, waiting for extruder to pick up new filament
     TC_ERROR
 } tc_state_t;
 
@@ -397,6 +402,7 @@ typedef struct {
     int target_lane;
     int from_lane;
     uint32_t phase_start_ms;
+    uint32_t iss_sg_read_ms;  // throttle for SG reads during TC_ISS_PRESSING
 } tc_ctx_t;
 
 typedef enum {
@@ -965,6 +971,8 @@ static const char *tc_state_name(tc_state_t s) {
         case TC_LOAD_DONE: return "LOAD_DONE";
         case TC_ISS_WAIT_Y:   return "ISS_WAIT_Y";
         case TC_ISS_LOADING:  return "ISS_LOADING";
+        case TC_ISS_PRESSING: return "ISS_PRESSING";
+        case TC_ISS_SYNCING:  return "ISS_SYNCING";
         case TC_ERROR: return "ERROR";
         default: return "?";
     }
@@ -1107,11 +1115,11 @@ static void tc_tick(uint32_t now_ms) {
                 set_active_lane(g_tc_ctx.target_lane);
                 lane_t *NL = lane_ptr(active_lane);
                 cmd_event("ISS:JOINING", lane_s);
-                // Drive at full feed speed — close the gap quickly.
-                // sync is NOT enabled here; buffer/SG detection in TC_ISS_LOADING
-                // triggers the handoff and then enables sync.
-                lane_start(NL, TASK_FEED, FEED_SPS, true, now_ms, 0);
+                // Fast approach — close the gap quickly.
+                // Sync is NOT enabled yet; junction detected in TC_ISS_LOADING.
+                lane_start(NL, TASK_FEED, ISS_JOIN_SPS, true, now_ms, 0);
                 NL->autoload_deadline_ms = now_ms + (uint32_t)TC_TIMEOUT_LOAD_MS;
+                g_tc_ctx.iss_sg_read_ms = 0;
                 g_tc_ctx.phase_start_ms = now_ms;
                 g_tc_ctx.state = TC_ISS_LOADING;
             } else if (age > (uint32_t)ISS_Y_TIMEOUT_MS) {
@@ -1121,24 +1129,95 @@ static void tc_tick(uint32_t now_ms) {
 
         case TC_ISS_LOADING: {
             // Junction detection — two signals:
-            //   TRAILING: buffer overfeed → new tip physically touching old tail.
-            //   stall:    SG resistance spike → tips meeting under load.
+            //   TRAILING: new tip physically touching old tail (buffer overfeed).
+            //   stall:    SG resistance spike as tips meet under load.
             bool stalled = (A->task == TASK_IDLE && A->fault == FAULT_STALL);
             bool joined  = (g_buf.state == BUF_TRAILING || stalled);
             if (joined) {
-                char lane_s[2] = { (char)('0' + active_lane), 0 };
                 if (stalled) A->fault = FAULT_NONE;
                 lane_stop(A);
-                // Hand off to normal sync: ramp up from 0.
-                sync_current_sps = 0;
-                set_toolhead_filament(true);
-                cmd_event("ISS:LOADED", lane_s);
-                g_tc_ctx.state = TC_IDLE;
+                g_tc_ctx.iss_sg_read_ms = 0;
+                g_tc_ctx.phase_start_ms = now_ms;
+                g_tc_ctx.state = TC_ISS_PRESSING;
             } else if (A->task == TASK_IDLE) {
-                // Motor stopped for an unexpected reason (runout on new lane).
                 tc_enter_error("ISS_LOAD_FAULT");
             } else if (age > (uint32_t)TC_TIMEOUT_LOAD_MS) {
                 tc_enter_error("ISS_LOAD_TIMEOUT");
+            }
+            break;
+        }
+
+        case TC_ISS_PRESSING: {
+            // Bang-bang pressure hold: keep tips in contact without jamming.
+            // SG path (SG_SYNC_THR > 0): motor on when g_sg_load above threshold
+            //   (no/light contact), motor off when load detected.
+            // Buffer fallback: motor on when MID/ADVANCE, off when TRAILING.
+            // Both paths: buffer TRAILING always overrides to motor-off regardless.
+
+            // Throttled SG poll (every SYNC_TICK_MS).
+            if (SG_SYNC_THR > 0 &&
+                (now_ms - g_tc_ctx.iss_sg_read_ms) >= (uint32_t)SYNC_TICK_MS) {
+                g_tc_ctx.iss_sg_read_ms = now_ms;
+                uint16_t sg_raw;
+                if (A && tmc_read_sg_result(A->tmc, &sg_raw)) {
+                    g_sg_load = SG_ALPHA * (float)sg_raw + (1.0f - SG_ALPHA) * g_sg_load;
+                }
+            }
+
+            bool motor_on;
+            if (SG_SYNC_THR > 0) {
+                motor_on = (g_sg_load > (float)SG_SYNC_THR);
+            } else {
+                motor_on = (g_buf.state != BUF_TRAILING);
+            }
+            // Buffer TRAILING always wins — never push when buffer is full.
+            if (g_buf.state == BUF_TRAILING) motor_on = false;
+
+            if (A) {
+                if (motor_on && A->task == TASK_IDLE) {
+                    lane_start(A, TASK_FEED, ISS_PRESS_SPS, true, now_ms, 0);
+                } else if (!motor_on && A->task == TASK_FEED) {
+                    lane_stop(A);
+                }
+            }
+
+            if (age >= (uint32_t)ISS_CONFIRM_MS) {
+                if (A) lane_stop(A);
+                // Enable sync but leave toolhead_has_filament false: TC_ISS_SYNCING
+                // will set it when extruder pickup is confirmed.
+                sync_current_sps = 0;
+                sync_enabled = true;
+                g_tc_ctx.phase_start_ms = now_ms;
+                g_tc_ctx.state = TC_ISS_SYNCING;
+            } else if (age > (uint32_t)TC_TIMEOUT_LOAD_MS) {
+                tc_enter_error("ISS_PRESS_TIMEOUT");
+            }
+            break;
+        }
+
+        case TC_ISS_SYNCING: {
+            // Sync drives the new lane (sync_enabled = true, allowed here).
+            // toolhead_has_filament is still false — we watch for extruder pickup.
+            if (toolhead_has_filament) {
+                // TS:1 received externally, or buffer fallback fired below.
+                char lane_s[2] = { (char)('0' + active_lane), 0 };
+                cmd_event("ISS:LOADED", lane_s);
+                g_tc_ctx.state = TC_IDLE;
+                break;
+            }
+            // Buffer TRAILING fallback: sustained overfeed = new tip at toolhead entry.
+            if (TS_BUF_FALLBACK_MS > 0 && A) {
+                if (g_buf.state == BUF_TRAILING) {
+                    if (A->buf_advance_since_ms == 0) A->buf_advance_since_ms = now_ms;
+                    else if ((int32_t)(now_ms - A->buf_advance_since_ms) >= TS_BUF_FALLBACK_MS)
+                        set_toolhead_filament(true);  // caught next tick
+                } else {
+                    A->buf_advance_since_ms = 0;
+                }
+            }
+            // Safety timeout: declare loaded anyway so printing can continue.
+            if (age > (uint32_t)TC_TIMEOUT_LOAD_MS) {
+                set_toolhead_filament(true);
             }
             break;
         }
@@ -1370,7 +1449,7 @@ static void buf_sensor_tick(uint32_t now_ms) {
 }
 
 static void sync_tick(uint32_t now_ms) {
-    if (!sync_enabled || tc_state() != TC_IDLE) return;
+    if (!sync_enabled || (tc_state() != TC_IDLE && tc_state() != TC_ISS_SYNCING)) return;
     if ((now_ms - sync_last_tick_ms) < (uint32_t)SYNC_TICK_MS) return;
 
     sync_last_tick_ms = now_ms;
@@ -1506,7 +1585,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 10u
+#define SETTINGS_VERSION 11u
 
 typedef struct {
     uint32_t magic;
@@ -1520,10 +1599,7 @@ typedef struct {
     float buf_half_travel_mm;
     int buf_hyst_ms, buf_predict_thr_ms;
     float baseline_alpha;
-    bool buf_invert;
-    bool auto_preload;
     int autoload_retract_mm;
-    bool enable_cutter;
 
     int motion_startup_ms;
     int sgt_l1, sgt_l2;
@@ -1531,7 +1607,6 @@ typedef struct {
 
     int run_current_ma[2], hold_current_ma[2];
     int microsteps;
-    bool spreadcycle;
 
     int servo_open_us, servo_close_us, servo_block_us;
     int servo_settle_ms;
@@ -1542,7 +1617,6 @@ typedef struct {
     int tc_timeout_y_ms;
 
     int low_delay_ms, swap_cooldown_ms, runout_cooldown_ms;
-    bool require_y_empty_swap;
 
     int ramp_step_sps, ramp_tick_ms;
 
@@ -1557,8 +1631,18 @@ typedef struct {
 
     float mm_per_step;
 
-    bool iss_mode;
     int iss_y_timeout_ms;
+    int iss_join_sps;
+    int iss_press_sps;
+    int iss_confirm_ms;
+
+    // Grouped booleans — packed together to avoid per-field padding.
+    bool buf_invert;
+    bool auto_preload;
+    bool enable_cutter;
+    bool spreadcycle;
+    bool require_y_empty_swap;
+    bool iss_mode;
 
     uint32_t crc32;
 } settings_t;
@@ -1649,6 +1733,9 @@ static void settings_defaults(void) {
 
     ISS_MODE = CONF_ISS_MODE;
     ISS_Y_TIMEOUT_MS = CONF_ISS_Y_TIMEOUT_MS;
+    ISS_JOIN_SPS = CONF_ISS_JOIN_SPS;
+    ISS_PRESS_SPS = CONF_ISS_PRESS_SPS;
+    ISS_CONFIRM_MS = CONF_ISS_CONFIRM_MS;
 }
 
 static void settings_save(void) {
@@ -1727,6 +1814,9 @@ static void settings_save(void) {
 
     s.iss_mode = (bool)ISS_MODE;
     s.iss_y_timeout_ms = ISS_Y_TIMEOUT_MS;
+    s.iss_join_sps = ISS_JOIN_SPS;
+    s.iss_press_sps = ISS_PRESS_SPS;
+    s.iss_confirm_ms = ISS_CONFIRM_MS;
 
     s.crc32 = crc32_buf((const uint8_t *)&s, offsetof(settings_t, crc32));
 
@@ -1849,6 +1939,9 @@ static void settings_load(void) {
 
     ISS_MODE = s->iss_mode ? 1 : 0;
     ISS_Y_TIMEOUT_MS = s->iss_y_timeout_ms;
+    ISS_JOIN_SPS = s->iss_join_sps;
+    ISS_PRESS_SPS = s->iss_press_sps;
+    ISS_CONFIRM_MS = s->iss_confirm_ms;
 
     // Motor parameters always come from compile-time config (tune.h / config.ini).
     // Flash values for these fields are ignored so reflashing always takes effect.
@@ -2154,6 +2247,9 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "CUTTER"))            ENABLE_CUTTER = (iv != 0);
             else if (!strcmp(param, "ISS_MODE"))         ISS_MODE = (iv != 0) ? 1 : 0;
             else if (!strcmp(param, "ISS_Y_MS"))         ISS_Y_TIMEOUT_MS = clamp_i(iv, 1000, 60000);
+            else if (!strcmp(param, "ISS_JOIN_SPS"))     ISS_JOIN_SPS = clamp_i(iv, 1000, 50000);
+            else if (!strcmp(param, "ISS_PRESS_SPS"))    ISS_PRESS_SPS = clamp_i(iv, 1000, 50000);
+            else if (!strcmp(param, "ISS_CONFIRM_MS"))   ISS_CONFIRM_MS = clamp_i(iv, 100, 5000);
             else if (!strcmp(param, "BASELINE"))         g_baseline_sps = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
             else if (!strcmp(param, "SG_SYNC_THR"))  SG_SYNC_THR = clamp_i(iv, 0, 511);
             else if (!strcmp(param, "SG_SYNC_TRIM")) SG_SYNC_TRIM_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
@@ -2206,8 +2302,11 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "AUTO_PRELOAD")) snprintf(out, sizeof(out), "AUTO_PRELOAD:%d", AUTO_PRELOAD ? 1 : 0);
         else if (!strcmp(param, "RETRACT_MM"))    snprintf(out, sizeof(out), "RETRACT_MM:%d", AUTOLOAD_RETRACT_MM);
         else if (!strcmp(param, "CUTTER"))         snprintf(out, sizeof(out), "CUTTER:%d", ENABLE_CUTTER ? 1 : 0);
-        else if (!strcmp(param, "ISS_MODE"))       snprintf(out, sizeof(out), "ISS_MODE:%d", ISS_MODE);
-        else if (!strcmp(param, "ISS_Y_MS"))       snprintf(out, sizeof(out), "ISS_Y_MS:%d", ISS_Y_TIMEOUT_MS);
+        else if (!strcmp(param, "ISS_MODE"))         snprintf(out, sizeof(out), "ISS_MODE:%d", ISS_MODE);
+        else if (!strcmp(param, "ISS_Y_MS"))         snprintf(out, sizeof(out), "ISS_Y_MS:%d", ISS_Y_TIMEOUT_MS);
+        else if (!strcmp(param, "ISS_JOIN_SPS"))     snprintf(out, sizeof(out), "ISS_JOIN_SPS:%d", ISS_JOIN_SPS);
+        else if (!strcmp(param, "ISS_PRESS_SPS"))    snprintf(out, sizeof(out), "ISS_PRESS_SPS:%d", ISS_PRESS_SPS);
+        else if (!strcmp(param, "ISS_CONFIRM_MS"))   snprintf(out, sizeof(out), "ISS_CONFIRM_MS:%d", ISS_CONFIRM_MS);
         else if (!strcmp(param, "BASELINE"))     snprintf(out, sizeof(out), "BASELINE:%.1f", (double)sps_to_mm_per_min(g_baseline_sps));
         else if (!strcmp(param, "SG_SYNC_THR"))  snprintf(out, sizeof(out), "SG_SYNC_THR:%d", SG_SYNC_THR);
         else if (!strcmp(param, "SG_SYNC_TRIM")) snprintf(out, sizeof(out), "SG_SYNC_TRIM:%.1f", (double)sps_to_mm_per_min(SG_SYNC_TRIM_SPS));

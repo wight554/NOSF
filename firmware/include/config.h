@@ -115,6 +115,15 @@
 // ----- ISS mode -----
 #define CONF_ISS_MODE           0       // 0 = MMU, 1 = Infinite Spool System
 #define CONF_ISS_Y_TIMEOUT_MS   10000   // max wait for Y-splitter to clear after runout (ms)
+// ISS_JOIN_SPS: fast approach speed used in TC_ISS_LOADING.
+#define CONF_ISS_JOIN_SPS       25000
+// ISS_PRESS_SPS: bang-bang speed during TC_ISS_PRESSING.
+// SG is in SpeedCycle (active) when TSTEP <= TCOOLTHRS, i.e. SPS >= CLK/TCOOLTHRS.
+// With CLK≈12.5 MHz and TCOOLTHRS=1000 that threshold is ~12500 SPS.
+// Keep ISS_PRESS_SPS above that to allow SG-based pressure control.
+#define CONF_ISS_PRESS_SPS      15000
+// ISS_CONFIRM_MS: how long to stay in the pressing phase before handing off to sync.
+#define CONF_ISS_CONFIRM_MS     500
 
 // ----- Firmware version -----
 #define CONF_FW_VERSION         "NOSF_ERB_0.2.0"
