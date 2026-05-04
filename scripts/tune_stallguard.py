@@ -140,7 +140,7 @@ def run_advance_profiling(ser, lane):
     print("Full SG_SYNC_TRIM is applied when SG_RESULT drops to SG_TENSION_MAX or below.")
 
 def main():
-    parser = argparse.ArgumentParser(description="StallGuard Tuning Script for NightOwl")
+    parser = argparse.ArgumentParser(description="StallGuard Tuning Script for NOSF")
     parser.add_argument("--port", help="Serial port to connect to")
     parser.add_argument("--lane", type=int, choices=[1, 2], default=1, help="Lane to tune (1 or 2)")
     parser.add_argument("--neutral", action="store_true", help="Run Phase 1: Neutral Profiling (free-spin SG → SG_SYNC_THR)")

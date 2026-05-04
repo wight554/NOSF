@@ -1,6 +1,6 @@
-# NightOwl Standalone Controller
+# NOSF
 
-NightOwl is a standalone dual-lane filament controller for ERB v2.0 (RP2040).
+NOSF is a standalone dual-lane filament controller for ERB v2.0 (RP2040).
 It can run without a host plugin and handles lane switching, buffer-driven feed,
 and TMC2209 register/config tuning over USB serial.
 
@@ -35,7 +35,7 @@ cmake --build build_local
 4. Flash firmware (auto-detect serial, trigger BOOTSEL when possible):
 
 ```bash
-bash scripts/flash_nightowl.sh
+bash scripts/flash_nosf.sh
 ```
 
 ## Configuration Model
@@ -89,22 +89,22 @@ Other runtime boolean state:
 Examples:
 
 ```bash
-python3 scripts/nightowl_test.py "SET:AUTO_PRELOAD:1" "GET:AUTO_PRELOAD"
-python3 scripts/nightowl_test.py "SET:SM:1" "GET:SM"
-python3 scripts/nightowl_test.py "SET:BI:0" "GET:BI"
+python3 scripts/nosf_test.py "SET:AUTO_PRELOAD:1" "GET:AUTO_PRELOAD"
+python3 scripts/nosf_test.py "SET:SM:1" "GET:SM"
+python3 scripts/nosf_test.py "SET:BI:0" "GET:BI"
 ```
 
 Persist runtime values to flash:
 
 ```bash
-python3 scripts/nightowl_test.py "SV:"
+python3 scripts/nosf_test.py "SV:"
 ```
 
 ## Tuning Scripts
 
 - `scripts/klipper_tune.py`: apply/read Klipper-style parameters
 - `scripts/tmc_chopconf.py`: direct CHOPCONF read/write utility
-- `scripts/nightowl_test.py`: send arbitrary serial commands quickly
+- `scripts/nosf_test.py`: send arbitrary serial commands quickly
 
 All scripts support `--port`; if omitted they auto-detect from available serial devices.
 
@@ -114,7 +114,7 @@ Examples:
 python3 scripts/klipper_tune.py --lane 1 read
 python3 scripts/klipper_tune.py --lane 2 apply config.ini
 python3 scripts/tmc_chopconf.py --lane 1 read
-python3 scripts/nightowl_test.py "VR:" "?:"
+python3 scripts/nosf_test.py "VR:" "?:"
 ```
 
 ## Build Notes

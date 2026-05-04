@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-nightowl_cmd.py — send one NightOwl command and wait for completion.
+nosf_cmd.py — send one NOSF command and wait for completion.
 
 Usage:
-    python3 scripts/nightowl_cmd.py [--port PORT] [--timeout S] CMD:PAYLOAD
+    python3 scripts/nosf_cmd.py [--port PORT] [--timeout S] CMD:PAYLOAD
 
 For simple commands (SET:, GET:, T:, SM:, TS:, SG:, FD:, ST:, ...):
     waits for the first OK:/ER: line, then exits.
@@ -34,20 +34,20 @@ COMPLETION_EVENTS = {
 def find_serial_port():
     ports = glob.glob('/dev/tty.usbmodem*') + glob.glob('/dev/ttyACM*')
     if not ports:
-        print("nightowl_cmd: no serial port found", file=sys.stderr)
+        print("nosf_cmd: no serial port found", file=sys.stderr)
         sys.exit(1)
     return ports[0]
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Send a NightOwl command and wait for completion.',
+        description='Send a NOSF command and wait for completion.',
         add_help=False,
     )
     parser.add_argument('--port',    help='Serial port (auto-detected if omitted)')
     parser.add_argument('--timeout', type=float, default=130.0,
                         help='Seconds before giving up (default: 130)')
     parser.add_argument('--help', '-h', action='store_true')
-    parser.add_argument('cmd', nargs='?', help='NightOwl command, e.g. TC:2 or SET:FEED:900')
+    parser.add_argument('cmd', nargs='?', help='NOSF command, e.g. TC:2 or SET:FEED:900')
     args = parser.parse_args()
 
     if args.help or not args.cmd:
@@ -61,7 +61,7 @@ def main():
     try:
         ser = serial.Serial(port, 115200, timeout=0.1)
     except Exception as e:
-        print(f"nightowl_cmd: {e}", file=sys.stderr)
+        print(f"nosf_cmd: {e}", file=sys.stderr)
         sys.exit(1)
 
     ser.write(f"{args.cmd}\n".encode())
@@ -93,7 +93,7 @@ def main():
     finally:
         ser.close()
 
-    print("nightowl_cmd: timeout", file=sys.stderr)
+    print("nosf_cmd: timeout", file=sys.stderr)
     sys.exit(1)
 
 if __name__ == '__main__':

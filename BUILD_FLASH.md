@@ -35,8 +35,8 @@ cmake --build build_local
 
 Outputs:
 
-- `build_local/nightowl_controller.elf`
-- `build_local/nightowl_controller.uf2`
+- `build_local/nosf_controller.elf`
+- `build_local/nosf_controller.uf2`
 
 ## 3) Flash (Recommended)
 
@@ -60,7 +60,7 @@ After first-time bring-up, the recommended flashing path is the repo script belo
 It performs the flashing flow automatically (build, optional reboot to boot mode, flash, verify):
 
 ```bash
-bash scripts/flash_nightowl.sh
+bash scripts/flash_nosf.sh
 ```
 
 What it does:
@@ -74,21 +74,21 @@ What it does:
 ## 4) Flash Manually with picotool
 
 ```bash
-picotool load build_local/nightowl_controller.uf2 -f
+picotool load build_local/nosf_controller.uf2 -f
 picotool reboot
 ```
 
 If UF2 is not available:
 
 ```bash
-picotool load build_local/nightowl_controller.elf -f
+picotool load build_local/nosf_controller.elf -f
 picotool reboot
 ```
 
 ## 5) Tuning and Validation Helpers
 
 ```bash
-python3 scripts/nightowl_test.py "VR:" "?:"
+python3 scripts/nosf_test.py "VR:" "?:"
 python3 scripts/klipper_tune.py --lane 1 read
 python3 scripts/tmc_chopconf.py --lane 1 read
 ```
@@ -106,14 +106,14 @@ Set `-DPICO_SDK_PATH=/abs/path/to/pico-sdk` on first configure.
 Install `picotool` or set environment variable:
 
 ```bash
-PICOTOOL=/path/to/picotool bash scripts/flash_nightowl.sh
+PICOTOOL=/path/to/picotool bash scripts/flash_nosf.sh
 ```
 
 ### Device does not show as serial after flash
 
 1. Replug USB cable.
 2. Ensure firmware built with USB stdio enabled.
-3. Run `python3 scripts/nightowl_test.py --port <port> "VR:"`.
+3. Run `python3 scripts/nosf_test.py --port <port> "VR:"`.
 
 ### BOOTSEL trigger fails
 

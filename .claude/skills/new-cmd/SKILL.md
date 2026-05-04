@@ -1,6 +1,6 @@
 ---
 name: new-cmd
-description: Scaffold a new USB serial command handler in main.c following the NightOwl CMD:PAYLOAD protocol pattern
+description: Scaffold a new USB serial command handler in main.c following the NOSF CMD:PAYLOAD protocol pattern
 ---
 
 The user provides a command name (e.g. "XY") and a description of what it should do.

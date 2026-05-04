@@ -1411,7 +1411,7 @@ static void stall_pump(void) {
 
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
-#define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NightOwl settings sentinel.
+#define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
 #define SETTINGS_VERSION 9u
 
 typedef struct {

@@ -9,7 +9,7 @@ from serial_utils import find_port
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Quick serial command tester for NightOwl firmware.")
+    parser = argparse.ArgumentParser(description="Quick serial command tester for NOSF firmware.")
     parser.add_argument("commands", nargs="*", default=["?:"], help="Commands to send (default: '?:')")
     parser.add_argument("--port", type=str, help="Serial port (auto-detected if omitted)")
     parser.add_argument("--baud", type=int, default=115200, help="Baud rate (default: 115200)")

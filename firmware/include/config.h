@@ -1,7 +1,7 @@
 #pragma once
 
 // =====================================================================
-// NightOwl ERB V2.0 — Compile-time configuration
+// NOSF ERB V2.0 — Compile-time configuration
 // Edit this file to tune hardware parameters before building.
 // Runtime tunables are available via SET:/GET: USB commands.
 // =====================================================================
@@ -113,5 +113,5 @@
 #define CONF_M2_DIR_INVERT      0   // VERIFY: check physically
 
 // ----- Firmware version -----
-#define CONF_FW_VERSION         "NIGHTOWL_ERB_0.2.0"
+#define CONF_FW_VERSION         "NOSF_ERB_0.2.0"
 

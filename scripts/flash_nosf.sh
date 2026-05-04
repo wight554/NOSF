@@ -3,8 +3,8 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$REPO/build_local}"
-UF2_PATH="$BUILD_DIR/nightowl_controller.uf2"
-ELF_PATH="$BUILD_DIR/nightowl_controller.elf"
+UF2_PATH="$BUILD_DIR/nosf_controller.uf2"
+ELF_PATH="$BUILD_DIR/nosf_controller.elf"
 
 find_pico_sdk_path() {
     local candidates=()
@@ -192,7 +192,7 @@ if [[ ! -f "$BUILD_DIR/build.ninja" ]]; then
     if [[ -z "$SDK_PATH" ]]; then
         echo "Error: Pico SDK not found."
         echo "Set PICO_SDK_PATH and rerun, for example:"
-        echo "  PICO_SDK_PATH=\$HOME/pico-sdk bash scripts/flash_nightowl.sh"
+        echo "  PICO_SDK_PATH=\$HOME/pico-sdk bash scripts/flash_nosf.sh"
         echo "or clone pico-sdk into one of:"
         echo "  $REPO/pico-sdk"
         echo "  $HOME/pico-sdk"

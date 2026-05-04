@@ -90,7 +90,7 @@ def decode_ihold_irun(val, rsense, vsense):
     return cs_to_irms(irun), cs_to_irms(ihold)
 
 def main():
-    parser = argparse.ArgumentParser(description="Klipper-style tuner for NightOwl standalone controller.")
+    parser = argparse.ArgumentParser(description="Klipper-style tuner for NOSF.")
     parser.add_argument("--port", type=str, help="Serial port (auto-detected if omitted)")
     parser.add_argument("--lane", type=int, choices=[1, 2], default=1, help="Motor lane (1 or 2, default: 1)")
     
@@ -271,7 +271,7 @@ def main():
         send_cmd(s, f"TW:{args.lane}:108:{chopconf}")
         
         # Write StealthChop (GCONF en_spreadcycle is bit 2. 0=StealthChop, 1=SpreadCycle)
-        # For simplicity, NightOwl hardcodes standard GCONF bits: bit 6 (pdn_disable) and bit 7 (mstep_reg_select)
+        # For simplicity, NOSF hardcodes standard GCONF bits: bit 6 (pdn_disable) and bit 7 (mstep_reg_select)
         gconf = (1 << 6) | (1 << 7)
         if stealthchop == 0:
             gconf |= (1 << 2) # SpreadCycle ON

@@ -1,4 +1,4 @@
-# NightOwl Controller – USB Serial Command Reference
+# NOSF – USB Serial Command Reference
 
 All communication is over USB CDC serial at 115200 baud (line-buffered, `\n` terminated).
 
@@ -203,26 +203,26 @@ Events are emitted without being requested. Format: `EV:<type>:<data>\n`.
 
 ```bash
 # Status
-python3 scripts/nightowl_test.py "?:"
+python3 scripts/nosf_test.py "?:"
 
 # Load lane 1
-python3 scripts/nightowl_test.py "T:1" "LO:"
+python3 scripts/nosf_test.py "T:1" "LO:"
 
 # Unload from extruder (tip past OUT sensor)
-python3 scripts/nightowl_test.py "UL:"
+python3 scripts/nosf_test.py "UL:"
 
 # Unload from MMU (tip inside MMU, before OUT sensor)
-python3 scripts/nightowl_test.py "UM:"
+python3 scripts/nosf_test.py "UM:"
 
 # Toolchange to lane 2
-python3 scripts/nightowl_test.py "TC:2"
+python3 scripts/nosf_test.py "TC:2"
 
 # Tune stall threshold
-python3 scripts/nightowl_test.py "SET:STARTUP_MS:500" "SG:1"
+python3 scripts/nosf_test.py "SET:STARTUP_MS:500" "SG:1"
 
 # Save settings
-python3 scripts/nightowl_test.py "SV:"
+python3 scripts/nosf_test.py "SV:"
 
 # Reboot to BOOTSEL
-python3 scripts/nightowl_test.py "BOOT:"
+python3 scripts/nosf_test.py "BOOT:"
 ```

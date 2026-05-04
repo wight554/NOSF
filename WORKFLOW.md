@@ -1,5 +1,5 @@
 
-# NightOwl Standalone Controller – Git Workflow
+# NOSF – Git Workflow
 
 This repo is firmware for real hardware. The goal of this workflow is simple:
 - `main` is always buildable/flashable
@@ -65,7 +65,7 @@ Examples of good commit messages:
 
 Clean build:
 ```bash
-cd ~/dev/nightowl-standalone-controller
+cd ~/dev/NOSF
 rm -rf build
 mkdir build && cd build
 export PICO_SDK_PATH=~/dev/pico-sdk
@@ -75,7 +75,7 @@ ninja
 
 Flash:
 ```bash
-sudo ~/dev/picotool/build/picotool load ~/dev/nightowl-standalone-controller/build/nightowl_controller.elf -f
+sudo ~/dev/picotool/build/picotool load ~/dev/NOSF/build/nosf_controller.elf -f
 sudo ~/dev/picotool/build/picotool reboot
 ```
 
