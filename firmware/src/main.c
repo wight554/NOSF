@@ -392,8 +392,7 @@ typedef enum {
     TC_LOAD_DONE,
     TC_ISS_WAIT_Y,    // ISS: old tail exited OUT, waiting for Y-splitter to clear
     TC_ISS_LOADING,   // ISS: fast approach — new tip racing to meet old tail
-    TC_ISS_PRESSING,  // ISS: bang-bang pressure hold — keep tips in contact
-    TC_ISS_SYNCING,   // ISS: sync running, waiting for extruder to pick up new filament
+    TC_ISS_PRESSING,  // ISS: bang-bang contact hold for the entire bowden journey
     TC_ERROR
 } tc_state_t;
 
@@ -402,7 +401,8 @@ typedef struct {
     int target_lane;
     int from_lane;
     uint32_t phase_start_ms;
-    uint32_t iss_sg_read_ms;  // throttle for SG reads during TC_ISS_PRESSING
+    uint32_t iss_sg_read_ms;       // throttle for SG reads during TC_ISS_PRESSING
+    uint32_t iss_trailing_since_ms; // motor-off + TRAILING start time; 0 = not timing
 } tc_ctx_t;
 
 typedef enum {
@@ -972,7 +972,6 @@ static const char *tc_state_name(tc_state_t s) {
         case TC_ISS_WAIT_Y:   return "ISS_WAIT_Y";
         case TC_ISS_LOADING:  return "ISS_LOADING";
         case TC_ISS_PRESSING: return "ISS_PRESSING";
-        case TC_ISS_SYNCING:  return "ISS_SYNCING";
         case TC_ERROR: return "ERROR";
         default: return "?";
     }
@@ -1148,11 +1147,21 @@ static void tc_tick(uint32_t now_ms) {
         }
 
         case TC_ISS_PRESSING: {
-            // Bang-bang pressure hold: keep tips in contact without jamming.
-            // SG path (SG_SYNC_THR > 0): motor on when g_sg_load above threshold
-            //   (no/light contact), motor off when load detected.
+            // Bang-bang pressure hold for the entire bowden journey (can be ~1 m).
+            // Motor runs at ISS_PRESS_SPS to push tips together; stops when contact
+            // is detected. This continues until the extruder picks up the new tip.
+            //
+            // SG path (SG_SYNC_THR > 0): motor on when g_sg_load > threshold
+            //   (free/light), motor off when load detected (contact).
             // Buffer fallback: motor on when MID/ADVANCE, off when TRAILING.
-            // Both paths: buffer TRAILING always overrides to motor-off regardless.
+            // TRAILING always overrides to motor-off regardless of path.
+            //
+            // Exit conditions (in priority order):
+            //   1. TS:1 received (toolhead_has_filament) — extruder confirmed pickup.
+            //   2. Motor off + TRAILING sustained for ISS_CONFIRM_MS — sensorless
+            //      pickup: buffer can't drain because extruder is consuming the new
+            //      filament and holding the buffer back.
+            //   3. TC_TIMEOUT_LOAD_MS elapsed — declare success anyway.
 
             // Throttled SG poll (every SYNC_TICK_MS).
             if (SG_SYNC_THR > 0 &&
@@ -1170,7 +1179,6 @@ static void tc_tick(uint32_t now_ms) {
             } else {
                 motor_on = (g_buf.state != BUF_TRAILING);
             }
-            // Buffer TRAILING always wins — never push when buffer is full.
             if (g_buf.state == BUF_TRAILING) motor_on = false;
 
             if (A) {
@@ -1181,43 +1189,27 @@ static void tc_tick(uint32_t now_ms) {
                 }
             }
 
-            if (age >= (uint32_t)ISS_CONFIRM_MS) {
-                if (A) lane_stop(A);
-                // Enable sync but leave toolhead_has_filament false: TC_ISS_SYNCING
-                // will set it when extruder pickup is confirmed.
-                sync_current_sps = 0;
-                sync_enabled = true;
-                g_tc_ctx.phase_start_ms = now_ms;
-                g_tc_ctx.state = TC_ISS_SYNCING;
-            } else if (age > (uint32_t)TC_TIMEOUT_LOAD_MS) {
-                tc_enter_error("ISS_PRESS_TIMEOUT");
+            // Sensorless extruder pickup detection: motor off + TRAILING sustained.
+            // When extruder grabs the new tip it pulls filament through, the buffer
+            // can no longer drain (extruder consumes it), so TRAILING persists even
+            // though the motor is stopped.
+            if (!motor_on && g_buf.state == BUF_TRAILING) {
+                if (g_tc_ctx.iss_trailing_since_ms == 0)
+                    g_tc_ctx.iss_trailing_since_ms = now_ms;
+            } else {
+                g_tc_ctx.iss_trailing_since_ms = 0;
             }
-            break;
-        }
 
-        case TC_ISS_SYNCING: {
-            // Sync drives the new lane (sync_enabled = true, allowed here).
-            // toolhead_has_filament is still false — we watch for extruder pickup.
-            if (toolhead_has_filament) {
-                // TS:1 received externally, or buffer fallback fired below.
+            bool pickup_detected = toolhead_has_filament ||
+                (g_tc_ctx.iss_trailing_since_ms != 0 &&
+                 (now_ms - g_tc_ctx.iss_trailing_since_ms) >= (uint32_t)ISS_CONFIRM_MS);
+
+            if (pickup_detected || age > (uint32_t)TC_TIMEOUT_LOAD_MS) {
+                if (A) lane_stop(A);
+                set_toolhead_filament(true);
                 char lane_s[2] = { (char)('0' + active_lane), 0 };
                 cmd_event("ISS:LOADED", lane_s);
                 g_tc_ctx.state = TC_IDLE;
-                break;
-            }
-            // Buffer TRAILING fallback: sustained overfeed = new tip at toolhead entry.
-            if (TS_BUF_FALLBACK_MS > 0 && A) {
-                if (g_buf.state == BUF_TRAILING) {
-                    if (A->buf_advance_since_ms == 0) A->buf_advance_since_ms = now_ms;
-                    else if ((int32_t)(now_ms - A->buf_advance_since_ms) >= TS_BUF_FALLBACK_MS)
-                        set_toolhead_filament(true);  // caught next tick
-                } else {
-                    A->buf_advance_since_ms = 0;
-                }
-            }
-            // Safety timeout: declare loaded anyway so printing can continue.
-            if (age > (uint32_t)TC_TIMEOUT_LOAD_MS) {
-                set_toolhead_filament(true);
             }
             break;
         }
@@ -1449,7 +1441,7 @@ static void buf_sensor_tick(uint32_t now_ms) {
 }
 
 static void sync_tick(uint32_t now_ms) {
-    if (!sync_enabled || (tc_state() != TC_IDLE && tc_state() != TC_ISS_SYNCING)) return;
+    if (!sync_enabled || tc_state() != TC_IDLE) return;
     if ((now_ms - sync_last_tick_ms) < (uint32_t)SYNC_TICK_MS) return;
 
     sync_last_tick_ms = now_ms;
