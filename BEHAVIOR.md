@@ -199,10 +199,11 @@ by sensor events (IN/OUT) as described in the load failure section above.
 - **Low value (~0–100)** → high load or stall.
 
 The chip asserts the DIAG pin (triggering `EV:STALL`) when
-`SG_RESULT ≤ 2 × SGTHRS`. `SGTHRS` is set per lane via `config.h`
-(`CONF_SGT_L1`, `CONF_SGT_L2`) and is written to the TMC on init.
-StallGuard is only active when motor speed is below `TCOOLTHRS` (steps/s);
-above that speed it is suppressed by the chip to avoid false triggers.
+`SG_RESULT ≤ 2 × SGTHRS`. `SGTHRS` is set per lane at runtime via
+`SET:SGT_L1:<value>` / `SET:SGT_L2:<value>` (writes to chip immediately)
+and defaults from `CONF_SGT_L1` / `CONF_SGT_L2` in `config.h`.
+StallGuard is only active above a minimum motor speed determined by
+`TCOOLTHRS` — see the TCOOLTHRS note below.
 
 ### Tuning for stall detection
 
@@ -211,40 +212,48 @@ above that speed it is suppressed by the chip to avoid false triggers.
    T:1
    FD:
    ```
-2. Read `SG_RESULT` repeatedly:
+2. Monitor `SG_RESULT` — either with the live script (recommended):
    ```
-   SG:1
-   SG:1
+   python3 scripts/sg_monitor.py --port /dev/ttyACM0 --speed <mm_min>
+   ```
+   or by polling manually:
+   ```
    SG:1
    ```
    Note the **minimum** value seen during normal, unobstructed run — call it `SG_RUN`.
 3. Stop the motor (`ST:`).
-4. Set `SGTHRS` so that `2 × SGTHRS` is roughly 50 % of `SG_RUN`.
-   Use the TMC register write command (register 0x40 on TMC2209):
+4. Set `SGTHRS` so that `2 × SGTHRS` is roughly 50 % of `SG_RUN`
+   (`SGTHRS = SG_RUN / 4`):
    ```
-   TW:1:0x40:<value>
+   SET:SGT_L1:<value>
    ```
-   Example: if `SG_RUN ≈ 160`, set `SGTHRS = 40` → threshold = 80 (50 % of 160):
+   Example: `SG_RUN ≈ 160` → `SGTHRS = 40` → DIAG threshold = 80 (50 % of 160):
    ```
-   TW:1:0x40:40
+   SET:SGT_L1:40
    ```
 5. Test: push filament against a hard stop by hand while the motor runs — confirm
-   `EV:STALL:1` fires. If it fires during normal run, increase `SGTHRS`; if it
+   `EV:STALL:1` fires. If it fires during normal run, increase `SGT_L1`; if it
    never fires on a real stall, decrease it.
-6. Persist the value by updating `CONF_SGT_L1` / `CONF_SGT_L2` in `config.h`.
+6. Persist to flash:
+   ```
+   SV:
+   ```
+   To also change the compile-time default, update `CONF_SGT_L1` / `CONF_SGT_L2`
+   in `config.h` and rebuild.
 
 `STARTUP_MS` (default 10 s) delays StallGuard arming after motion starts —
 keep it above your ramp + bowden stabilisation time to prevent false triggers
 at the beginning of a move.
 
-`TCOOLTHRS` is compared against `TSTEP` (clock cycles per step, so it
+`TCOOLTHRS` is compared against `TSTEP` (clock cycles per step, so TSTEP
 *decreases* as speed increases).  StallGuard is **active** when
-`TSTEP ≤ TCOOLTHRS`.  With the TMC2209 internal clock at ~12.5 MHz and a
-feed rate of 25 000 SPS, `TSTEP ≈ 500`.  The default `CONF_TCOOLTHRS = 1000`
-keeps StallGuard enabled across the full operating speed range whenever
-`SGTHRS > 0`.  Set `TCOOLTHRS` lower than your minimum TSTEP to disable
-StallGuard below a certain speed (useful to suppress false triggers during
-ramp-up, though `STARTUP_MS` already handles that in firmware).
+`TSTEP ≤ TCOOLTHRS`, i.e. when the motor is running **fast enough**.
+With the TMC2209 internal clock at ~12.5 MHz and a feed rate of 25 000 SPS,
+`TSTEP ≈ 500`.  The default `CONF_TCOOLTHRS = 1000` keeps StallGuard enabled
+across the full operating speed range whenever `SGTHRS > 0`.
+Set `TCOOLTHRS` lower than the TSTEP at your minimum operating speed to
+suppress StallGuard at low speeds (though `STARTUP_MS` already handles
+false triggers during ramp-up in firmware).
 
 ### Buffer sync speed control
 
