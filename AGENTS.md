@@ -3,6 +3,14 @@
 This file is for AI agents (Claude, Gemini, Codex, etc.). Read it first, then
 read `TASK.md` (gitignored) before touching anything.
 
+## Session Start Protocol
+
+Before doing anything else, post this in chat:
+
+> **AGENTS.md ✓ | TASK.md: [one-line summary of current task, or "no active task"]**
+
+This lets the user verify context was loaded before work begins.
+
 ---
 
 ## What This Project Is
