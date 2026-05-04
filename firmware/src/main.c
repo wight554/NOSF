@@ -387,7 +387,8 @@ typedef enum {
     TC_LOAD_WAIT_OUT,
     TC_LOAD_WAIT_TH,
     TC_LOAD_DONE,
-    TC_ISS_WAIT_Y,  // ISS: runout detected, waiting for Y-splitter to clear before loading standby lane
+    TC_ISS_WAIT_Y,   // ISS: old tail exited OUT, waiting for Y-splitter to clear
+    TC_ISS_LOADING,  // ISS: new lane syncing up to meet old filament tail
     TC_ERROR
 } tc_state_t;
 
@@ -396,7 +397,6 @@ typedef struct {
     int target_lane;
     int from_lane;
     uint32_t phase_start_ms;
-    bool iss;  // true when this TC run was triggered by ISS auto-switch
 } tc_ctx_t;
 
 typedef enum {
@@ -909,8 +909,6 @@ static void tc_start(int target_lane, uint32_t now_ms) {
     g_tc_ctx.target_lane = target_lane;
     g_tc_ctx.from_lane = active_lane;
     g_tc_ctx.phase_start_ms = now_ms;
-    g_tc_ctx.iss = false;
-
     set_toolhead_filament(false);
     if (target_lane == active_lane) {
         g_tc_ctx.state = TC_LOAD_START;
@@ -927,14 +925,13 @@ static void tc_abort(void) {
     stop_all();
     cutter_abort();
     set_toolhead_filament(false);
-    g_tc_ctx.iss = false;
     g_tc_ctx.state = TC_IDLE;
     cmd_event("TC:ERROR", "ABORTED");
 }
 
-// ISS auto-switch: called from the TASK_FEED runout handler when ISS_MODE is on.
-// Waits for the Y-splitter to clear (old filament tail has exited), then loads
-// the standby lane using the existing TC load sequence.
+// ISS auto-switch: called when the old lane's filament tail exits OUT.
+// Waits for the Y-splitter to clear, then starts the standby lane in sync mode
+// until TRAILING confirms the new tip has met the old tail.
 static void iss_trigger(int runout_lane, uint32_t now_ms) {
     int other = (runout_lane == 1) ? 2 : 1;
     lane_t *OL = lane_ptr(other);
@@ -945,11 +942,10 @@ static void iss_trigger(int runout_lane, uint32_t now_ms) {
     char ev[8];
     snprintf(ev, sizeof(ev), "%d->%d", runout_lane, other);
     cmd_event("ISS:SWITCHING", ev);
-    g_tc_ctx.target_lane = other;
-    g_tc_ctx.from_lane   = runout_lane;
+    g_tc_ctx.target_lane    = other;
+    g_tc_ctx.from_lane      = runout_lane;
     g_tc_ctx.phase_start_ms = now_ms;
-    g_tc_ctx.iss   = true;
-    g_tc_ctx.state = TC_ISS_WAIT_Y;
+    g_tc_ctx.state          = TC_ISS_WAIT_Y;
 }
 
 static const char *tc_state_name(tc_state_t s) {
@@ -967,7 +963,8 @@ static const char *tc_state_name(tc_state_t s) {
         case TC_LOAD_WAIT_OUT: return "LOAD_WAIT_OUT";
         case TC_LOAD_WAIT_TH: return "LOAD_WAIT_TH";
         case TC_LOAD_DONE: return "LOAD_DONE";
-        case TC_ISS_WAIT_Y: return "ISS_WAIT_Y";
+        case TC_ISS_WAIT_Y:   return "ISS_WAIT_Y";
+        case TC_ISS_LOADING:  return "ISS_LOADING";
         case TC_ERROR: return "ERROR";
         default: return "?";
     }
@@ -1103,24 +1100,38 @@ static void tc_tick(uint32_t now_ms) {
             break;
 
         case TC_ISS_WAIT_Y:
-            // Wait for the old filament tail to exit the Y-splitter before loading
-            // the standby lane.  The extruder is still pulling — no motor help needed.
+            // Old filament tail exited OUT; wait for it to clear the Y-splitter
+            // before starting the standby lane.
             if (!on_al(&g_y_split)) {
+                char lane_s[2] = { (char)('0' + g_tc_ctx.target_lane), 0 };
+                set_active_lane(g_tc_ctx.target_lane);
+                cmd_event("ISS:JOINING", lane_s);
+                // Seed sync at current baseline so the motor starts immediately
+                // without waiting for the first ADVANCE kick.
+                sync_current_sps = g_baseline_sps;
+                set_toolhead_filament(true);   // enables sync_enabled
                 g_tc_ctx.phase_start_ms = now_ms;
-                g_tc_ctx.state = TC_SWAP;
+                g_tc_ctx.state = TC_ISS_LOADING;
             } else if (age > (uint32_t)ISS_Y_TIMEOUT_MS) {
                 tc_enter_error("ISS_Y_TIMEOUT");
             }
             break;
 
+        case TC_ISS_LOADING:
+            // sync_tick drives the new lane (allowed during TC_ISS_LOADING).
+            // TRAILING = new tip has physically met the old tail — junction done.
+            if (g_buf.state == BUF_TRAILING) {
+                char lane_s[2] = { (char)('0' + active_lane), 0 };
+                cmd_event("ISS:LOADED", lane_s);
+                g_tc_ctx.state = TC_IDLE;
+            } else if (age > (uint32_t)TC_TIMEOUT_LOAD_MS) {
+                tc_enter_error("ISS_LOAD_TIMEOUT");
+            }
+            break;
+
         case TC_LOAD_DONE: {
             char lane_s[2] = { (char)('0' + active_lane), 0 };
-            if (g_tc_ctx.iss) {
-                cmd_event("ISS:LOADED", lane_s);
-                g_tc_ctx.iss = false;
-            } else {
-                cmd_event("TC:DONE", lane_s);
-            }
+            cmd_event("TC:DONE", lane_s);
             // toolhead_has_filament was set to true when load completed; sync is
             // already enabled via set_toolhead_filament — nothing extra needed here.
             g_tc_ctx.state = TC_IDLE;
@@ -1345,7 +1356,7 @@ static void buf_sensor_tick(uint32_t now_ms) {
 }
 
 static void sync_tick(uint32_t now_ms) {
-    if (!sync_enabled || tc_state() != TC_IDLE) return;
+    if (!sync_enabled || (tc_state() != TC_IDLE && tc_state() != TC_ISS_LOADING)) return;
     if ((now_ms - sync_last_tick_ms) < (uint32_t)SYNC_TICK_MS) return;
 
     sync_last_tick_ms = now_ms;
