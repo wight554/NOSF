@@ -112,6 +112,10 @@
 #define CONF_M1_DIR_INVERT      0   // VERIFY: check physically
 #define CONF_M2_DIR_INVERT      0   // VERIFY: check physically
 
+// ----- ISS mode -----
+#define CONF_ISS_MODE           0       // 0 = MMU, 1 = Infinite Spool System
+#define CONF_ISS_Y_TIMEOUT_MS   10000   // max wait for Y-splitter to clear after runout (ms)
+
 // ----- Firmware version -----
 #define CONF_FW_VERSION         "NOSF_ERB_0.2.0"
 

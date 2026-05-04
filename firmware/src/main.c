@@ -65,6 +65,9 @@ static int SWAP_COOLDOWN_MS = CONF_SWAP_COOLDOWN_MS;
 static int RUNOUT_COOLDOWN_MS = CONF_RUNOUT_COOLDOWN_MS;
 static bool REQUIRE_Y_EMPTY_SWAP = CONF_REQUIRE_Y_EMPTY_SWAP;
 
+static int ISS_MODE = CONF_ISS_MODE;
+static int ISS_Y_TIMEOUT_MS = CONF_ISS_Y_TIMEOUT_MS;
+
 static int RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
 static int RAMP_TICK_MS = CONF_RAMP_TICK_MS;
 
@@ -383,6 +386,7 @@ typedef enum {
     TC_LOAD_WAIT_OUT,
     TC_LOAD_WAIT_TH,
     TC_LOAD_DONE,
+    TC_ISS_WAIT_Y,  // ISS: runout detected, waiting for Y-splitter to clear before loading standby lane
     TC_ERROR
 } tc_state_t;
 
@@ -391,6 +395,7 @@ typedef struct {
     int target_lane;
     int from_lane;
     uint32_t phase_start_ms;
+    bool iss;  // true when this TC run was triggered by ISS auto-switch
 } tc_ctx_t;
 
 typedef enum {
@@ -685,10 +690,11 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
             char lane_s[2] = { (char)('0' + L->lane_id), 0 };
             cmd_event("RUNOUT", lane_s);
             L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
-            if (L->task == TASK_FEED) {
-                set_toolhead_filament(false);
-            }
+            bool was_feed = (L->task == TASK_FEED);
+            if (was_feed) set_toolhead_filament(false);
             lane_stop(L);
+            if (ISS_MODE && was_feed && tc_state() == TC_IDLE)
+                iss_trigger(L->lane_id, now_ms);
         }
     }
 }
@@ -879,6 +885,7 @@ static void tc_start(int target_lane, uint32_t now_ms) {
     g_tc_ctx.target_lane = target_lane;
     g_tc_ctx.from_lane = active_lane;
     g_tc_ctx.phase_start_ms = now_ms;
+    g_tc_ctx.iss = false;
 
     set_toolhead_filament(false);
     if (target_lane == active_lane) {
@@ -896,8 +903,29 @@ static void tc_abort(void) {
     stop_all();
     cutter_abort();
     set_toolhead_filament(false);
+    g_tc_ctx.iss = false;
     g_tc_ctx.state = TC_IDLE;
     cmd_event("TC:ERROR", "ABORTED");
+}
+
+// ISS auto-switch: called from the TASK_FEED runout handler when ISS_MODE is on.
+// Waits for the Y-splitter to clear (old filament tail has exited), then loads
+// the standby lane using the existing TC load sequence.
+static void iss_trigger(int runout_lane, uint32_t now_ms) {
+    int other = (runout_lane == 1) ? 2 : 1;
+    lane_t *OL = lane_ptr(other);
+    if (!OL || !lane_in_present(OL)) {
+        cmd_event("ISS:FAULT", "NO_FILAMENT");
+        return;
+    }
+    char ev[8];
+    snprintf(ev, sizeof(ev), "%d->%d", runout_lane, other);
+    cmd_event("ISS:SWITCHING", ev);
+    g_tc_ctx.target_lane = other;
+    g_tc_ctx.from_lane   = runout_lane;
+    g_tc_ctx.phase_start_ms = now_ms;
+    g_tc_ctx.iss   = true;
+    g_tc_ctx.state = TC_ISS_WAIT_Y;
 }
 
 static const char *tc_state_name(tc_state_t s) {
@@ -915,6 +943,7 @@ static const char *tc_state_name(tc_state_t s) {
         case TC_LOAD_WAIT_OUT: return "LOAD_WAIT_OUT";
         case TC_LOAD_WAIT_TH: return "LOAD_WAIT_TH";
         case TC_LOAD_DONE: return "LOAD_DONE";
+        case TC_ISS_WAIT_Y: return "ISS_WAIT_Y";
         case TC_ERROR: return "ERROR";
         default: return "?";
     }
@@ -1049,9 +1078,25 @@ static void tc_tick(uint32_t now_ms) {
             }
             break;
 
+        case TC_ISS_WAIT_Y:
+            // Wait for the old filament tail to exit the Y-splitter before loading
+            // the standby lane.  The extruder is still pulling — no motor help needed.
+            if (!on_al(&g_y_split)) {
+                g_tc_ctx.phase_start_ms = now_ms;
+                g_tc_ctx.state = TC_SWAP;
+            } else if (age > (uint32_t)ISS_Y_TIMEOUT_MS) {
+                tc_enter_error("ISS_Y_TIMEOUT");
+            }
+            break;
+
         case TC_LOAD_DONE: {
             char lane_s[2] = { (char)('0' + active_lane), 0 };
-            cmd_event("TC:DONE", lane_s);
+            if (g_tc_ctx.iss) {
+                cmd_event("ISS:LOADED", lane_s);
+                g_tc_ctx.iss = false;
+            } else {
+                cmd_event("TC:DONE", lane_s);
+            }
             // toolhead_has_filament was set to true when load completed; sync is
             // already enabled via set_toolhead_filament — nothing extra needed here.
             g_tc_ctx.state = TC_IDLE;
@@ -1412,7 +1457,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 9u
+#define SETTINGS_VERSION 10u
 
 typedef struct {
     uint32_t magic;
@@ -1462,6 +1507,9 @@ typedef struct {
     int ts_buf_fallback_ms;
 
     float mm_per_step;
+
+    bool iss_mode;
+    int iss_y_timeout_ms;
 
     uint32_t crc32;
 } settings_t;
@@ -1549,6 +1597,9 @@ static void settings_defaults(void) {
     TS_BUF_FALLBACK_MS = CONF_TS_BUF_FALLBACK_MS;
 
     MM_PER_STEP = CONF_MM_PER_STEP;
+
+    ISS_MODE = CONF_ISS_MODE;
+    ISS_Y_TIMEOUT_MS = CONF_ISS_Y_TIMEOUT_MS;
 }
 
 static void settings_save(void) {
@@ -1624,6 +1675,9 @@ static void settings_save(void) {
     s.ts_buf_fallback_ms = TS_BUF_FALLBACK_MS;
 
     s.mm_per_step = MM_PER_STEP;
+
+    s.iss_mode = (bool)ISS_MODE;
+    s.iss_y_timeout_ms = ISS_Y_TIMEOUT_MS;
 
     s.crc32 = crc32_buf((const uint8_t *)&s, offsetof(settings_t, crc32));
 
@@ -1744,6 +1798,9 @@ static void settings_load(void) {
     SYNC_KP_SPS = s->sync_kp_sps;
     TS_BUF_FALLBACK_MS = s->ts_buf_fallback_ms;
 
+    ISS_MODE = s->iss_mode ? 1 : 0;
+    ISS_Y_TIMEOUT_MS = s->iss_y_timeout_ms;
+
     // Motor parameters always come from compile-time config (tune.h / config.ini).
     // Flash values for these fields are ignored so reflashing always takes effect.
     TMC_RUN_CURRENT_MA[0] = CONF_RUN_CURRENT_MA;
@@ -1785,7 +1842,7 @@ static void status_dump(void) {
     snprintf(b, sizeof(b),
         "LN:%d,TC:%s,L1T:%s,L2T:%s,"
         "I1:%d,O1:%d,I2:%d,O2:%d,"
-        "TH:%d,YS:%d,BUF:%s,SPS:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,"
+        "TH:%d,YS:%d,BUF:%s,SPS:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,ISS:%d,"
         "SG1:%u,SG2:%u,SGF:%d",
         active_lane, tc_state_name(g_tc_ctx.state),
         task_name(g_lane1.task), task_name(g_lane2.task),
@@ -1803,6 +1860,7 @@ static void status_dump(void) {
         BUF_INVERT ? 1 : 0,
         AUTO_PRELOAD ? 1 : 0,
         ENABLE_CUTTER ? 1 : 0,
+        ISS_MODE,
         sg1,
         sg2,
         (int)g_sg_load);
@@ -2045,6 +2103,8 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "AUTO_PRELOAD"))    AUTO_PRELOAD = (iv != 0);
             else if (!strcmp(param, "RETRACT_MM"))       AUTOLOAD_RETRACT_MM = clamp_i(iv, 0, 50);
             else if (!strcmp(param, "CUTTER"))            ENABLE_CUTTER = (iv != 0);
+            else if (!strcmp(param, "ISS_MODE"))         ISS_MODE = (iv != 0) ? 1 : 0;
+            else if (!strcmp(param, "ISS_Y_MS"))         ISS_Y_TIMEOUT_MS = clamp_i(iv, 1000, 60000);
             else if (!strcmp(param, "BASELINE"))         g_baseline_sps = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
             else if (!strcmp(param, "SG_SYNC_THR"))  SG_SYNC_THR = clamp_i(iv, 0, 511);
             else if (!strcmp(param, "SG_SYNC_TRIM")) SG_SYNC_TRIM_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
@@ -2097,6 +2157,8 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "AUTO_PRELOAD")) snprintf(out, sizeof(out), "AUTO_PRELOAD:%d", AUTO_PRELOAD ? 1 : 0);
         else if (!strcmp(param, "RETRACT_MM"))    snprintf(out, sizeof(out), "RETRACT_MM:%d", AUTOLOAD_RETRACT_MM);
         else if (!strcmp(param, "CUTTER"))         snprintf(out, sizeof(out), "CUTTER:%d", ENABLE_CUTTER ? 1 : 0);
+        else if (!strcmp(param, "ISS_MODE"))       snprintf(out, sizeof(out), "ISS_MODE:%d", ISS_MODE);
+        else if (!strcmp(param, "ISS_Y_MS"))       snprintf(out, sizeof(out), "ISS_Y_MS:%d", ISS_Y_TIMEOUT_MS);
         else if (!strcmp(param, "BASELINE"))     snprintf(out, sizeof(out), "BASELINE:%.1f", (double)sps_to_mm_per_min(g_baseline_sps));
         else if (!strcmp(param, "SG_SYNC_THR"))  snprintf(out, sizeof(out), "SG_SYNC_THR:%d", SG_SYNC_THR);
         else if (!strcmp(param, "SG_SYNC_TRIM")) snprintf(out, sizeof(out), "SG_SYNC_TRIM:%.1f", (double)sps_to_mm_per_min(SG_SYNC_TRIM_SPS));
