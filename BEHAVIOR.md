@@ -340,7 +340,7 @@ free (not touching anything).
 
 ```bash
 # Step 0 — observe free-air SG and verify StallGuard is active:
-python3 scripts/sg_monitor.py --lane 1 --speed 2120
+python3 scripts/sg_monitor.py --lane 1 --iss
 # Then manually press filament against the tip to see the SG drop live.
 # If SG stays at 0 across all speeds, check TCOOLTHRS covers operating speed.
 
@@ -379,31 +379,67 @@ Set it too low and real jams go undetected.
 
 **Step 1 — Observe free-air SG at approach speed**
 
-Run `sg_monitor.py` on the lane with filament loaded and tip free:
+Run `sg_monitor.py` with `--iss` to automatically use the ISS approach speed
+stored on the device.  Filament must be loaded with the tip free — not touching
+anything:
 
 ```bash
-python3 scripts/sg_monitor.py --lane 1 --speed 2120
+python3 scripts/sg_monitor.py --lane 1 --iss
 ```
 
-Let the motor settle for 2–3 s.  Note the stable free-air SG reading — call it
-`SG_FREE`.  A typical value is 80–300 depending on RUN_CURRENT_MA and bowden
-friction.
+The script reads `ISS_JOIN_SPS` from the device, converts to mm/min, and prints
+the computed speed before starting.  If the device is not connected, use
+`--speed` with the value from `GET:ISS_JOIN_SPS × MM_PER_STEP × 60`.
+
+Let the motor settle for 3–5 s before touching anything.  Note the stable SG
+reading — call it `SG_FREE`.  Typical values are 80–300 depending on
+`RUN_CURRENT_MA` and bowden friction.
 
 **Step 2 — Observe hard-contact (jam/wall) SG floor**
 
-With the motor still running, push the filament tip firmly into a solid surface
-(Y-splitter, printed jig, or a spare piece of filament held rigidly).  Apply
-hard, sustained pressure — this simulates a real jam.  Watch `sg_monitor.py`:
+Keep `sg_monitor.py` running from Step 1.  You want to simulate the hardest
+contact the filament will ever see during an ISS approach — equivalent to the
+new tip crashing into the old tail at full approach speed and the motor being
+unable to push further.
+
+*What to use as the hard stop:*
+
+- **Best:** grip the moving filament firmly between thumb and index finger about
+  10–20 cm from the NOSF exit and squeeze hard enough to stall the motor.
+  Hold for 3–5 s.  This directly replicates a jam at approach speed.
+- **Alternative:** press the filament tip against the metal frame of the printer
+  or a solid fixed object (vice, table edge) while it is running.
+- **Do not use** a rubber surface or anything compressible — it absorbs force and
+  gives a higher SG floor than a real plastic-on-plastic jam.
+
+*How to interpret the output:*
 
 ```
-  12.3s    212   100%   [########################################]  ← free air
-  13.1s    150    70%   [████████████████████████████............]  ← soft touch
-  13.5s     28    13%   [█████.....................................]  ← hard jam
-  13.6s      4     2%   [▏.........................................]  ← full stall
+  3.2s    198   100%   [########################################]  ← free air
+  6.1s    155    78%   [███████████████████████████████.........]  ← light finger pressure
+  6.8s     62    31%   [████████████............................]  ← firmer grip
+  7.1s     18     9%   [███▌...................................]  ← hard jam floor
+  7.3s      4     2%   [▌.......................................]  ← motor nearly stalled
 ```
 
-Note the lowest stable SG reading at hard contact — call it `SG_JAM`.  Ctrl+C
-to stop; the session summary prints the floor automatically.
+The SG reading stabilises for 2–3 s at the hard-jam level before dropping
+further toward zero as the motor stalls completely.  **Use the stable plateau
+value** (~18 in the example above) as `SG_JAM`, not the absolute minimum (which
+is the motor fully stalled and not what you want DIAG to fire at).
+
+Press Ctrl+C.  The session summary prints `SG floor` and a `Suggested SGT_L{N}`
+recommendation automatically:
+
+```
+Session summary  (lane 1, 2120 mm/min):
+  SG peak  (free-air estimate) : 198
+  SG floor (min observed)      : 4
+  Observed drop                : 194  (97%)
+  Suggested SGT_L1             : 9  (DIAG fires at SG ≤ 18)
+```
+
+If you want to target the stable jam plateau instead of the absolute floor,
+calculate `SGT_L1 = SG_JAM / 2` manually (e.g. `18 / 2 = 9`).
 
 **Step 3 — Calculate and set SGTHRS**
 
