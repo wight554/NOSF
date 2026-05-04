@@ -1105,11 +1105,13 @@ static void tc_tick(uint32_t now_ms) {
             if (!on_al(&g_y_split)) {
                 char lane_s[2] = { (char)('0' + g_tc_ctx.target_lane), 0 };
                 set_active_lane(g_tc_ctx.target_lane);
+                lane_t *NL = lane_ptr(active_lane);
                 cmd_event("ISS:JOINING", lane_s);
-                // Seed sync at current baseline so the motor starts immediately
-                // without waiting for the first ADVANCE kick.
-                sync_current_sps = g_baseline_sps;
-                set_toolhead_filament(true);   // enables sync_enabled
+                // Drive at full feed speed — close the gap quickly.
+                // sync is NOT enabled here; buffer/SG detection in TC_ISS_LOADING
+                // triggers the handoff and then enables sync.
+                lane_start(NL, TASK_FEED, FEED_SPS, true, now_ms, 0);
+                NL->autoload_deadline_ms = now_ms + (uint32_t)TC_TIMEOUT_LOAD_MS;
                 g_tc_ctx.phase_start_ms = now_ms;
                 g_tc_ctx.state = TC_ISS_LOADING;
             } else if (age > (uint32_t)ISS_Y_TIMEOUT_MS) {
@@ -1117,17 +1119,29 @@ static void tc_tick(uint32_t now_ms) {
             }
             break;
 
-        case TC_ISS_LOADING:
-            // sync_tick drives the new lane (allowed during TC_ISS_LOADING).
-            // TRAILING = new tip has physically met the old tail — junction done.
-            if (g_buf.state == BUF_TRAILING) {
+        case TC_ISS_LOADING: {
+            // Junction detection — two signals:
+            //   TRAILING: buffer overfeed → new tip physically touching old tail.
+            //   stall:    SG resistance spike → tips meeting under load.
+            bool stalled = (A->task == TASK_IDLE && A->fault == FAULT_STALL);
+            bool joined  = (g_buf.state == BUF_TRAILING || stalled);
+            if (joined) {
                 char lane_s[2] = { (char)('0' + active_lane), 0 };
+                if (stalled) A->fault = FAULT_NONE;
+                lane_stop(A);
+                // Hand off to normal sync: ramp up from 0.
+                sync_current_sps = 0;
+                set_toolhead_filament(true);
                 cmd_event("ISS:LOADED", lane_s);
                 g_tc_ctx.state = TC_IDLE;
+            } else if (A->task == TASK_IDLE) {
+                // Motor stopped for an unexpected reason (runout on new lane).
+                tc_enter_error("ISS_LOAD_FAULT");
             } else if (age > (uint32_t)TC_TIMEOUT_LOAD_MS) {
                 tc_enter_error("ISS_LOAD_TIMEOUT");
             }
             break;
+        }
 
         case TC_LOAD_DONE: {
             char lane_s[2] = { (char)('0' + active_lane), 0 };
@@ -1356,7 +1370,7 @@ static void buf_sensor_tick(uint32_t now_ms) {
 }
 
 static void sync_tick(uint32_t now_ms) {
-    if (!sync_enabled || (tc_state() != TC_IDLE && tc_state() != TC_ISS_LOADING)) return;
+    if (!sync_enabled || tc_state() != TC_IDLE) return;
     if ((now_ms - sync_last_tick_ms) < (uint32_t)SYNC_TICK_MS) return;
 
     sync_last_tick_ms = now_ms;
