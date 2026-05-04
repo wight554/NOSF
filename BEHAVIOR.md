@@ -370,6 +370,92 @@ TMC fires DIAG when `SG_RESULT ≤ 2 × SGTHRS`.  Setting `SGTHRS = contact_floo
 means DIAG fires exactly at the hard-contact floor — the point where filament is
 already jammed, not just lightly touching.
 
+#### Tuning `SGT_L1` / `SGT_L2` (SGTHRS) in detail
+
+**Goal:** DIAG should fire when filament is hard-jammed or crashed into a wall,
+*not* on gentle tip-to-tail contact (that is the SG derivative's job).  Set
+SGTHRS too high and DIAG fires on soft contacts, competing with the derivative.
+Set it too low and real jams go undetected.
+
+**Step 1 — Observe free-air SG at approach speed**
+
+Run `sg_monitor.py` on the lane with filament loaded and tip free:
+
+```bash
+python3 scripts/sg_monitor.py --lane 1 --speed 2120
+```
+
+Let the motor settle for 2–3 s.  Note the stable free-air SG reading — call it
+`SG_FREE`.  A typical value is 80–300 depending on RUN_CURRENT_MA and bowden
+friction.
+
+**Step 2 — Observe hard-contact (jam/wall) SG floor**
+
+With the motor still running, push the filament tip firmly into a solid surface
+(Y-splitter, printed jig, or a spare piece of filament held rigidly).  Apply
+hard, sustained pressure — this simulates a real jam.  Watch `sg_monitor.py`:
+
+```
+  12.3s    212   100%   [########################################]  ← free air
+  13.1s    150    70%   [████████████████████████████............]  ← soft touch
+  13.5s     28    13%   [█████.....................................]  ← hard jam
+  13.6s      4     2%   [▏.........................................]  ← full stall
+```
+
+Note the lowest stable SG reading at hard contact — call it `SG_JAM`.  Ctrl+C
+to stop; the session summary prints the floor automatically.
+
+**Step 3 — Calculate and set SGTHRS**
+
+```
+SGTHRS = SG_JAM / 2
+```
+
+DIAG fires when `SG_RESULT ≤ 2 × SGTHRS = SG_JAM`.
+
+Example: `SG_JAM = 28` → `SGTHRS = 14`.
+
+```
+SET:SGT_L1:14
+SV:
+```
+
+**Step 4 — Verify**
+
+Run the motor again at approach speed, then press the tip into the same surface:
+
+```bash
+python3 scripts/sg_monitor.py --lane 1 --speed 2120
+```
+
+While pressing hard, watch for the motor to stop abruptly.  From the NOSF
+serial console you should see `EV:STALL:1` fired and the motor halted.  If
+`EV:STALL` fires on light contact, increase `SGT_L1`; if it never fires on a
+hard jam, decrease it.
+
+**Interaction with the SG derivative**
+
+The derivative and SGTHRS are complementary, not competing:
+
+- **Derivative fires first** on any contact that drops SG at a rate greater than
+  `ISS_SG_DERIV_THR` per tick.  The motor transitions to follow sync *before*
+  SG reaches the SGTHRS level — DIAG never fires.
+- **DIAG fires** only when SG drops below `2 × SGTHRS` without the derivative
+  catching it first — slow/gradual contact, very noisy SG, or a derivative
+  threshold set too high.
+
+As long as `SG_JAM < SG_SOFT_CONTACT` (hard jams produce lower SG than soft
+touches — which is always true), there is no conflict between the two
+mechanisms.  Setting `SGTHRS = SG_JAM / 2` ensures DIAG stays well below the
+soft-contact SG level.
+
+**Per-lane note**
+
+`SGT_L1` and `SGT_L2` are independent.  If the two lanes have different
+bowden friction or run at different currents, repeat Steps 1–4 for each lane
+separately.  A lane with higher friction shows a lower free-air SG; its SGTHRS
+should be proportionally lower.
+
 **Manual adjustment after tuning:**
 
 | Symptom | Fix |
