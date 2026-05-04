@@ -184,60 +184,6 @@ gcode:
 
 ---
 
-## ISS StallGuard tuning (`ISS_SG_TARGET`, `ISS_SG_DERIV_THR`)
-
-StallGuard is used **only in ISS (Endless Spool) mode** — it is not involved in
-normal buffer sync.  Two parameters control it:
-
-| Parameter | Role |
-|-----------|------|
-| `ISS_SG_DERIV_THR` | Approach contact sensitivity: SG drop per tick that fires the handoff from fast approach to follow sync |
-| `ISS_SG_TARGET` | Follow sync setpoint: motor speed scales from `ISS_PRESS_SPS` (SG ≥ target) down to 0 (SG = 0) |
-
-Both `ISS_SG_TARGET` and `ISS_SG_DERIV_THR` are global — they apply to both
-lanes.  If your lanes have different bowden lengths or SGTHRS values, run
-tuning for each lane separately and use the more conservative result:
-lower `ISS_SG_TARGET` and lower `ISS_SG_DERIV_THR`.
-
-### Step 0 — Observe free-air SG with `sg_monitor.py`
-
-Before running the tuning script, use the SG monitor to characterise each
-lane and verify StallGuard is active:
-
-```bash
-# Feed lane 1 at ISS approach speed and watch SG values
-python3 ~/NOSF/scripts/sg_monitor.py --lane 1 --speed 2120
-
-# Then manually press a filament tip against the moving filament
-# and observe the SG drop in real time (Ctrl+C to stop)
-```
-
-The bar scales to the peak SG seen since start.  A healthy free-air reading
-shows values in the 10–30 range; pressing filament should cause a clear drop.
-If SG stays at 0 across all speeds, `CONF_SGT_L1` / `CONF_SGT_L2` is 0 in
-`config.h` — set it to a non-zero value and rebuild.
-
-### Step 1–3 — Run the tuning script
-
-```bash
-# Minimum: free-air baseline only
-python3 ~/NOSF/scripts/tune_iss_sg.py --lane 1
-
-# Recommended: include contact calibration
-python3 ~/NOSF/scripts/tune_iss_sg.py --lane 1 --contact
-
-# Apply settings automatically
-python3 ~/NOSF/scripts/tune_iss_sg.py --lane 1 --contact --apply
-
-# Repeat for lane 2; apply the more conservative values if they differ
-python3 ~/NOSF/scripts/tune_iss_sg.py --lane 2 --contact
-```
-
-See `BEHAVIOR.md` → *Tuning ISS StallGuard* for the full procedure and
-fine-tuning table.
-
----
-
 ## Buffer sync tuning
 
 ### SYNC_KP — proportional buffer correction
@@ -298,6 +244,6 @@ oscillates.
 | `TS:1` not reaching NOSF | Sensor wiring or config | Test: `RUN_SHELL_COMMAND CMD=nosf PARAMS="TS:1"` |
 | `TC:` times out | Bowden too long / jam | Increase `TC_LOAD_MS` / `TC_UNLOAD_MS` |
 | Sync not enabling after load | No `TS:1` sent | Check sensor or enable `TS_BUF_MS` fallback |
-| ISS approach never detects contact | `ISS_SG_DERIV_THR` too high or SG disabled | Run `tune_iss_sg.py --lane N --contact`; verify `CONF_SGT_L1/L2 > 0` in config.h |
+| ISS approach never detects contact | `ISS_SG_DERIV_THR` too high or TCOOLTHRS too low | Run `tune_iss_sg.py --lane N --contact`; verify `CONF_TCOOLTHRS` covers operating speed |
 | ISS approach fires immediately (false trigger) | `ISS_SG_DERIV_THR` too low | Increase `ISS_SG_DERIV_THR`; or increase `CONF_ISS_SG_MA_LEN` to smooth noise |
 | ISS follow sync motor stops mid-bowden | SG dropping to 0 (hard friction) | Check PTFE routing; reduce `ISS_PRESS_SPS` |

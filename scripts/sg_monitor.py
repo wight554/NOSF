@@ -65,6 +65,11 @@ Examples:
 Tip: the bar scales to the highest SG seen since start.  Let the motor settle
 for a few seconds before touching the filament so the bar is calibrated to
 the free-air baseline.
+
+Note: SG_RESULT is computed by the TMC2209 whenever TSTEP ≤ TCOOLTHRS —
+independent of SGTHRS.  If values are stuck at 0, verify TCOOLTHRS is high
+enough for your operating speed (default CONF_TCOOLTHRS=1000 covers the
+full speed range at typical SPS values).
 """)
     parser.add_argument("--port",     help="Serial port (auto-detected if omitted)")
     parser.add_argument("--lane",     type=int, choices=[1, 2], default=1,
