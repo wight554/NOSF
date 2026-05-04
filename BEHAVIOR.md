@@ -207,11 +207,16 @@ StallGuard is only active above a minimum motor speed determined by
 
 ### Tuning for stall detection
 
-1. Run the motor at printing speed with filament loaded:
+1. Load filament through the full bowden path on the lane you are tuning
+   (IN sensor must be triggered; filament tip at or past the toolhead).
+   Select the lane and start the feed motor at `FEED_SPS`:
    ```
    T:1
    FD:
    ```
+   `FD:` runs at the current `FEED_SPS` value. Verify it matches your
+   normal print speed with `GET:FEED` (shown in mm/min); adjust with
+   `SET:FEED:<mm_min>` if needed before reading SG.
 2. Monitor `SG_RESULT` — either with the live script (recommended):
    ```
    python3 scripts/sg_monitor.py --port /dev/ttyACM0 --speed <mm_min>
