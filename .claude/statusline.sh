@@ -33,6 +33,7 @@ OUT="${CC}ctx [${BAR}] ${PCT}%  ${USED}/${TOTAL_K}k  r:${CACHE_R} w:${CACHE_W}${
 RL5_PCT=$(echo  "$input" | jq -r '.rate_limits.five_hour.used_percentage  // empty')
 RL5_RST=$(echo  "$input" | jq -r '.rate_limits.five_hour.resets_at        // empty')
 RL7_PCT=$(echo  "$input" | jq -r '.rate_limits.seven_day.used_percentage  // empty')
+RL7_RST=$(echo  "$input" | jq -r '.rate_limits.seven_day.resets_at        // empty')
 
 if [ -n "$RL5_PCT" ]; then
   RL5=$(printf "%.0f" "$RL5_PCT")
@@ -55,7 +56,11 @@ if [ -n "$RL5_PCT" ]; then
   if [ -n "$RL7_PCT" ]; then
     RL7=$(printf "%.0f" "$RL7_PCT")
     RC7=$(pct_color "$RL7")
-    OUT="${OUT}  ${RC7}7d:${RL7}%${X}"
+    RL7_RST_STR=""
+    if [ -n "$RL7_RST" ]; then
+      RL7_RST_STR=" ($(date -r "$RL7_RST" "+%a %H:%M" 2>/dev/null || date -d "@$RL7_RST" "+%a %H:%M" 2>/dev/null))"
+    fi
+    OUT="${OUT}  ${RC7}7d:${RL7}%${RL7_RST_STR}${X}"
   fi
 fi
 
