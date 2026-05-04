@@ -81,14 +81,6 @@
 // active across the full speed range when SGTHRS > 0.
 #define CONF_TCOOLTHRS          1000
 
-// ----- StallGuard buffer sync -----
-// SG_SYNC_THR: SG_RESULT below this = under tension → apply speed trim.
-// 0 disables SG-based sync trim (safe default; calibrate before enabling).
-// Typical starting point: read SG: during steady sync, set to ~80% of that.
-#define CONF_SG_SYNC_THR        0
-#define CONF_SG_SYNC_TRIM_SPS   200     // extra SPS added when under tension
-#define CONF_SG_ALPHA           0.20f   // EMA weight for SG filter (higher = faster response)
-
 // ----- Analog buffer sensor (PSF / Hall-effect) -----
 // Set BUF_SENSOR_TYPE=1 to enable; wire signal pin to GP26–GP29.
 #define CONF_BUF_SENSOR_TYPE    0       // 0=dual-endstop, 1=analog PSF

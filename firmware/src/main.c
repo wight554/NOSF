@@ -84,11 +84,7 @@ static int TMC_SGT_L1 = CONF_SGT_L1;
 static int TMC_SGT_L2 = CONF_SGT_L2;
 static int TMC_TCOOLTHRS = CONF_TCOOLTHRS;
 
-static int SG_SYNC_THR = CONF_SG_SYNC_THR;
-static int SG_SYNC_TRIM_SPS = CONF_SG_SYNC_TRIM_SPS;
-static float SG_ALPHA = CONF_SG_ALPHA;
-static int SG_TENSION_MAX = 0;
-static float g_sg_load = 255.0f;   // EMA-filtered SG_RESULT (255 = neutral/unknown)
+static float g_sg_load = 0.0f;   // MA-filtered SG_RESULT; updated only during ISS states
 static int STALL_RECOVERY_MS = CONF_STALL_RECOVERY_MS;
 
 static int BUF_SENSOR_TYPE = CONF_BUF_SENSOR_TYPE;
@@ -1155,9 +1151,12 @@ static void tc_tick(uint32_t now_ms) {
                 break;
             }
 
-            // Tick-rate-limited SG sampling.
+            // SG derivative contact detection — 2-endstop mode only.
+            // For analog the buffer position already changes continuously on contact;
+            // the BUF_TRAILING fallback below is sufficient.
             bool contacted = false;
-            if ((now_ms - g_tc_ctx.iss_tick_ms) >= (uint32_t)SYNC_TICK_MS) {
+            if (BUF_SENSOR_TYPE == 0 &&
+                (now_ms - g_tc_ctx.iss_tick_ms) >= (uint32_t)SYNC_TICK_MS) {
                 g_tc_ctx.iss_tick_ms = now_ms;
 
                 if (A && A->task == TASK_FEED) {
@@ -1168,15 +1167,14 @@ static void tc_tick(uint32_t now_ms) {
                         g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_ISS_SG_MA_LEN;
                         if (g_tc_ctx.sg_ma_fill < CONF_ISS_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
 
-                        // Compute MA.
+                        // Compute MA and derivative.
                         if (g_tc_ctx.sg_ma_fill == CONF_ISS_SG_MA_LEN) {
                             float sum = 0.0f;
                             for (int i = 0; i < CONF_ISS_SG_MA_LEN; i++)
                                 sum += g_tc_ctx.sg_ma_buf[i];
                             float sg_ma = sum / (float)CONF_ISS_SG_MA_LEN;
-                            g_sg_load = sg_ma;  // expose for diagnostics
+                            g_sg_load = sg_ma;
 
-                            // Derivative: negative drop = contact.
                             float deriv = sg_ma - g_tc_ctx.sg_ma_prev;
                             g_tc_ctx.sg_ma_prev = sg_ma;
                             if (ISS_SG_DERIV_THR > 0 && deriv < -(float)ISS_SG_DERIV_THR)
@@ -1188,7 +1186,7 @@ static void tc_tick(uint32_t now_ms) {
                 }
             }
 
-            // Buffer/stall fallbacks (slower but reliable without SG calibration).
+            // Buffer/stall fallbacks — always active regardless of sensor type.
             bool stalled = (A && A->task == TASK_IDLE && A->fault == FAULT_STALL);
             if (g_buf.state == BUF_TRAILING || stalled)
                 contacted = true;
@@ -1253,35 +1251,39 @@ static void tc_tick(uint32_t now_ms) {
             if ((now_ms - g_tc_ctx.iss_tick_ms) < (uint32_t)SYNC_TICK_MS) break;
             g_tc_ctx.iss_tick_ms = now_ms;
 
-            // SG moving-average update.
-            if (A && A->task == TASK_FEED) {
-                uint16_t sg_raw;
-                if (tmc_read_sg_result(A->tmc, &sg_raw)) {
-                    g_tc_ctx.sg_ma_buf[g_tc_ctx.sg_ma_idx] = (float)sg_raw;
-                    g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_ISS_SG_MA_LEN;
-                    if (g_tc_ctx.sg_ma_fill < CONF_ISS_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
-
-                    float sum = 0.0f;
-                    for (int i = 0; i < CONF_ISS_SG_MA_LEN; i++)
-                        sum += g_tc_ctx.sg_ma_buf[i];
-                    g_sg_load = sum / (float)CONF_ISS_SG_MA_LEN;
-                }
-            }
-
-            // Speed target from SG interpolation.
-            // sg_frac ∈ [0, 1]: 0 when SG=0 (hard contact → stop), 1 when SG≥target (free).
+            // Speed target — three paths depending on sensor type and SG config.
             int target_sps;
-            if (ISS_SG_TARGET > 0.0f && g_tc_ctx.sg_ma_fill == CONF_ISS_SG_MA_LEN) {
+            if (BUF_SENSOR_TYPE == 1) {
+                // Analog buffer: continuous arm position drives speed proportionally.
+                // Maps g_buf_pos ∈ [-1 (TRAILING), +1 (ADVANCE)] →
+                //   [ISS_TRAILING_SPS, ISS_PRESS_SPS].
+                // No SG needed — the arm already reflects contact pressure.
+                target_sps = (int)(ISS_TRAILING_SPS +
+                    (float)(ISS_PRESS_SPS - ISS_TRAILING_SPS) *
+                    clamp_f((g_buf_pos + 1.0f) * 0.5f, 0.0f, 1.0f));
+            } else if (ISS_SG_TARGET > 0.0f) {
+                // 2-endstop + SG: update MA and interpolate speed from filtered SG.
+                // sg_frac ∈ [0, 1]: 0 when SG=0 (hard contact), 1 when SG≥target (free).
+                if (A && A->task == TASK_FEED) {
+                    uint16_t sg_raw;
+                    if (tmc_read_sg_result(A->tmc, &sg_raw)) {
+                        g_tc_ctx.sg_ma_buf[g_tc_ctx.sg_ma_idx] = (float)sg_raw;
+                        g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_ISS_SG_MA_LEN;
+                        if (g_tc_ctx.sg_ma_fill < CONF_ISS_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
+                        float sum = 0.0f;
+                        for (int i = 0; i < CONF_ISS_SG_MA_LEN; i++)
+                            sum += g_tc_ctx.sg_ma_buf[i];
+                        g_sg_load = sum / (float)CONF_ISS_SG_MA_LEN;
+                    }
+                }
                 float sg_frac = clamp_f(g_sg_load / ISS_SG_TARGET, 0.0f, 1.0f);
                 target_sps = (int)((float)ISS_PRESS_SPS * sg_frac);
+                if (g_buf.state == BUF_TRAILING)
+                    target_sps = MIN(target_sps, ISS_TRAILING_SPS);
             } else {
-                // SG not calibrated — full speed unless buffer says otherwise.
-                target_sps = ISS_PRESS_SPS;
+                // 2-endstop, no SG: bang-bang on buffer state alone.
+                target_sps = (g_buf.state == BUF_TRAILING) ? ISS_TRAILING_SPS : ISS_PRESS_SPS;
             }
-
-            // Buffer state cap: TRAILING → clamp to coasting speed.
-            if (g_buf.state == BUF_TRAILING)
-                target_sps = MIN(target_sps, ISS_TRAILING_SPS);
 
             // Ramp toward target.
             if (g_tc_ctx.iss_current_sps > target_sps)
@@ -1541,18 +1543,6 @@ static void sync_tick(uint32_t now_ms) {
 
     sync_last_tick_ms = now_ms;
 
-    // Poll SG_RESULT every sync tick (20 ms) for fast tension feedback.
-    // SG responds before the buffer arm moves, giving an inner-loop lead signal.
-    if (SG_SYNC_THR > 0) {
-        lane_t *AL = lane_ptr(active_lane);
-        if (AL && AL->task == TASK_FEED) {
-            uint16_t sg_raw;
-            if (tmc_read_sg_result(AL->tmc, &sg_raw)) {
-                g_sg_load = SG_ALPHA * (float)sg_raw + (1.0f - SG_ALPHA) * g_sg_load;
-            }
-        }
-    }
-
     buf_state_t s = g_buf.state;  // kept current by buf_sensor_tick()
 
     if (s == BUF_FAULT) {
@@ -1574,17 +1564,6 @@ static void sync_tick(uint32_t now_ms) {
     } else {
         float correction = (float)SYNC_KP_SPS * buf_pos;
         if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
-        // Proportional SG correction: scales from 0 (SG at/above THR = normal tension)
-        // to SG_SYNC_TRIM_SPS (SG=0 = maximum tension / near stall).
-        // SG reacts before the buffer arm moves, providing a fast inner-loop lead.
-        if (SG_SYNC_THR > 0 && (int)g_sg_load < SG_SYNC_THR) {
-            float tension_range = (float)(SG_SYNC_THR - SG_TENSION_MAX);
-            if (tension_range < 1.0f) tension_range = 1.0f;
-            float sg_frac = clamp_f(
-                (float)(SG_SYNC_THR - (int)g_sg_load) / tension_range,
-                0.0f, 1.0f);
-            correction += sg_frac * (float)SG_SYNC_TRIM_SPS;
-        }
 
         int target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, SYNC_MAX_SPS);
 
@@ -1672,7 +1651,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 12u
+#define SETTINGS_VERSION 13u
 
 typedef struct {
     uint32_t magic;
@@ -1707,9 +1686,6 @@ typedef struct {
 
     int ramp_step_sps, ramp_tick_ms;
 
-    int sg_sync_thr, sg_sync_trim_sps;
-    float sg_alpha;
-    int sg_tension_max;
 
     int buf_sensor_type;
     float buf_neutral, buf_range, buf_thr, buf_analog_alpha;
@@ -1805,10 +1781,6 @@ static void settings_defaults(void) {
     RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
     RAMP_TICK_MS = CONF_RAMP_TICK_MS;
 
-    SG_SYNC_THR = CONF_SG_SYNC_THR;
-    SG_SYNC_TRIM_SPS = CONF_SG_SYNC_TRIM_SPS;
-    SG_ALPHA = CONF_SG_ALPHA;
-    SG_TENSION_MAX = 0;
 
     BUF_SENSOR_TYPE = CONF_BUF_SENSOR_TYPE;
     BUF_NEUTRAL = CONF_BUF_NEUTRAL;
@@ -1888,10 +1860,6 @@ static void settings_save(void) {
     s.ramp_step_sps = RAMP_STEP_SPS;
     s.ramp_tick_ms = RAMP_TICK_MS;
 
-    s.sg_sync_thr = SG_SYNC_THR;
-    s.sg_sync_trim_sps = SG_SYNC_TRIM_SPS;
-    s.sg_alpha = SG_ALPHA;
-    s.sg_tension_max = SG_TENSION_MAX;
 
     s.buf_sensor_type = BUF_SENSOR_TYPE;
     s.buf_neutral = BUF_NEUTRAL;
@@ -2017,10 +1985,6 @@ static void settings_load(void) {
     RAMP_STEP_SPS = s->ramp_step_sps;
     RAMP_TICK_MS = s->ramp_tick_ms;
 
-    SG_SYNC_THR = s->sg_sync_thr;
-    SG_SYNC_TRIM_SPS = s->sg_sync_trim_sps;
-    SG_ALPHA = s->sg_alpha;
-    SG_TENSION_MAX = s->sg_tension_max;
 
     BUF_SENSOR_TYPE = s->buf_sensor_type;
     BUF_NEUTRAL = s->buf_neutral;
@@ -2348,10 +2312,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "ISS_SG_DERIV_THR")) ISS_SG_DERIV_THR = clamp_i(iv, 0, 500);
             else if (!strcmp(param, "ISS_SG_TARGET"))    ISS_SG_TARGET = clamp_f(fv, 0.0f, 1023.0f);
             else if (!strcmp(param, "BASELINE"))         g_baseline_sps = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
-            else if (!strcmp(param, "SG_SYNC_THR"))  SG_SYNC_THR = clamp_i(iv, 0, 511);
-            else if (!strcmp(param, "SG_SYNC_TRIM")) SG_SYNC_TRIM_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
-            else if (!strcmp(param, "SG_ALPHA"))     { SG_ALPHA = fv < 0.01f ? 0.01f : fv > 1.0f ? 1.0f : fv; }
-            else if (!strcmp(param, "SG_TENSION_MAX")) SG_TENSION_MAX = clamp_i(iv, 0, 511);
             else if (!strcmp(param, "BUF_SENSOR"))   BUF_SENSOR_TYPE = clamp_i(iv, 0, 1);
             else if (!strcmp(param, "BUF_NEUTRAL"))  BUF_NEUTRAL = clamp_f(fv, 0.0f, 1.0f);
             else if (!strcmp(param, "BUF_RANGE"))    BUF_RANGE = clamp_f(fv, 0.01f, 0.5f);
@@ -2407,10 +2367,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "ISS_SG_DERIV_THR")) snprintf(out, sizeof(out), "ISS_SG_DERIV_THR:%d", ISS_SG_DERIV_THR);
         else if (!strcmp(param, "ISS_SG_TARGET"))    snprintf(out, sizeof(out), "ISS_SG_TARGET:%.1f", (double)ISS_SG_TARGET);
         else if (!strcmp(param, "BASELINE"))     snprintf(out, sizeof(out), "BASELINE:%.1f", (double)sps_to_mm_per_min(g_baseline_sps));
-        else if (!strcmp(param, "SG_SYNC_THR"))  snprintf(out, sizeof(out), "SG_SYNC_THR:%d", SG_SYNC_THR);
-        else if (!strcmp(param, "SG_SYNC_TRIM")) snprintf(out, sizeof(out), "SG_SYNC_TRIM:%.1f", (double)sps_to_mm_per_min(SG_SYNC_TRIM_SPS));
-        else if (!strcmp(param, "SG_ALPHA"))     snprintf(out, sizeof(out), "SG_ALPHA:%.3f", (double)SG_ALPHA);
-        else if (!strcmp(param, "SG_TENSION_MAX")) snprintf(out, sizeof(out), "SG_TENSION_MAX:%d", SG_TENSION_MAX);
         else if (!strcmp(param, "BUF_SENSOR"))   snprintf(out, sizeof(out), "BUF_SENSOR:%d", BUF_SENSOR_TYPE);
         else if (!strcmp(param, "BUF_NEUTRAL"))  snprintf(out, sizeof(out), "BUF_NEUTRAL:%.3f", (double)BUF_NEUTRAL);
         else if (!strcmp(param, "BUF_RANGE"))    snprintf(out, sizeof(out), "BUF_RANGE:%.3f", (double)BUF_RANGE);
