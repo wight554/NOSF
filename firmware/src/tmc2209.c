@@ -112,10 +112,11 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
 
     tmc_uart_send_bytes(t, req, 4);
 
-    // TX has finished.
-    // Wait briefly to ensure the RX SM has completed pushing the final echo byte 
-    // into the FIFO. The TMC2209 waits ~200us before replying, so 10us is safe.
-    busy_wait_us_32(10);
+    // TX has finished its last instruction (but the stop bit delay is still counting down).
+    // Wait 40us (> 1 bit time) to guarantee the RX SM has completely finished 
+    // processing the stop bit and pushed the final echo byte. The TMC2209 waits 
+    // ~200us before replying, so this is perfectly safe.
+    busy_wait_us_32(40);
     
     // Completely drain the RX FIFO of all echo bytes and any preceding garbage
     while (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
@@ -170,8 +171,8 @@ int tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t *buf_out) {
     pio_sm_clear_fifos(t->pio, t->sm_rx);
     tmc_uart_send_bytes(t, req, 4);
     
-    // Wait briefly to ensure the RX SM has completed pushing the final echo byte
-    busy_wait_us_32(10);
+    // Wait 40us to ensure the RX SM has completed pushing the final echo byte
+    busy_wait_us_32(40);
     
     // Completely drain the RX FIFO of all echo bytes and any preceding garbage
     while (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
