@@ -123,12 +123,15 @@ static int tmc_read_bytes(tmc_t *t, uint8_t reg, uint8_t *buf) {
     req[2] = reg & 0x7Fu;
     req[3] = tmc_crc8(req, 3);
 
-    // Clear RX FIFO before starting to remove any old junk
+    // Force-restart the RX SM so it is cleanly waiting for a start bit.
+    // The RX SM runs permanently and may have been triggered by noise or
+    // DIAG glitches on the shared pin, leaving it stuck mid-frame in bitloop
+    // or wait_high.  A simple FIFO clear doesn't fix a stuck PC.
+    pio_sm_set_enabled(t->pio, t->sm_rx, false);
     pio_sm_clear_fifos(t->pio, t->sm_rx);
-    // Also force-reset the ISR to zero. If the RX SM was mid-frame receiving noise
-    // when clear_fifos was called, the ISR could have stale bits that would corrupt
-    // the MSB of the first received byte. MOV ISR, NULL zeroes it cleanly.
     pio_sm_exec(t->pio, t->sm_rx, pio_encode_mov(pio_isr, pio_null));
+    pio_sm_exec(t->pio, t->sm_rx, pio_encode_jmp(t->offset_rx));
+    pio_sm_set_enabled(t->pio, t->sm_rx, true);
 
     tmc_uart_send_bytes(t, req, 4);
 
