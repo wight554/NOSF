@@ -406,6 +406,7 @@ typedef struct {
     int      iss_current_sps;                   // current ramped speed in TC_ISS_FOLLOW
     int      iss_stall_count;                   // consecutive stalls in State 2
     uint32_t last_iss_stall_ms;                 // for stall frequency tracking
+    uint32_t last_trailing_ms;                  // for trailing timeout in follow
 } tc_ctx_t;
 
 typedef enum {
@@ -929,6 +930,7 @@ static void tc_enter_error(const char *reason) {
 
 static void tc_start(int target_lane, uint32_t now_ms) {
     if (g_tc_ctx.state != TC_IDLE) return;
+    memset(&g_tc_ctx, 0, sizeof(g_tc_ctx));
     if (target_lane != 1 && target_lane != 2) return;
     if (active_lane != 1 && active_lane != 2) return;
 
@@ -959,6 +961,7 @@ static void tc_abort(void) {
 // Waits for the Y-splitter to clear, then starts the standby lane in sync mode
 // until TRAILING confirms the new tip has met the old tail.
 static void iss_trigger(int runout_lane, uint32_t now_ms) {
+    memset(&g_tc_ctx, 0, sizeof(g_tc_ctx));
     int other = (runout_lane == 1) ? 2 : 1;
     lane_t *OL = lane_ptr(other);
     if (!OL || !lane_in_present(OL)) {
@@ -1338,6 +1341,18 @@ static void tc_tick(uint32_t now_ms) {
                         break;
                     }
                 }
+            }
+
+            // Safety timeout: if buffer stays in TRAILING for > 10s, abort.
+            if (g_buf.state == BUF_TRAILING) {
+                if (g_tc_ctx.last_trailing_ms == 0) g_tc_ctx.last_trailing_ms = now_ms;
+                if ((now_ms - g_tc_ctx.last_trailing_ms) > 10000u) {
+                    tc_enter_error("FOLLOW_TIMEOUT");
+                    lane_stop(A);
+                    break;
+                }
+            } else {
+                g_tc_ctx.last_trailing_ms = 0;
             }
 
             // Reporting for interpolation debugging
