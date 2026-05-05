@@ -3,11 +3,11 @@
 # This regenerates firmware/include/tune.h which is compiled into the firmware.
 
 # --- Required ---
-microsteps: 16
-rotation_distance: 22.6789511
-run_current: 0.8
+microsteps:
+rotation_distance:
+run_current:
 
-# --- Optional (Klipper defaults shown) ---
+# --- Optional (defaults shown) ---
 # full_steps_per_rotation: 200
 # gear_ratio: 1:1
 # hold_current:                  # defaults to run_current / 2 if omitted
