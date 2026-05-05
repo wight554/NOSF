@@ -22,17 +22,17 @@ run_current:
 # m2_dir_invert: 0
 # tcoolthrs: 0xFFFFF
 
-# --- Speeds (SPS) ---
-# feed_sps: 25000
-# rev_sps: 25000
-# auto_sps: 25000
-# sync_max_sps: 30000
-# sync_min_sps: 0
-# pre_ramp_sps: 400
+# --- Speeds (mm/min) ---
+# feed_rate: 2100
+# rev_rate: 2100
+# auto_rate: 2100
+# sync_max_rate: 2500
+# sync_min_rate: 0
+# pre_ramp_rate: 35
 
 # --- Motion / Ramp ---
 # motion_startup_ms: 1000
-# ramp_step_sps: 200
+# ramp_step_rate: 17
 # ramp_tick_ms: 5
 # stall_recovery_ms: 3000
 
@@ -40,12 +40,12 @@ run_current:
 # buf_half_travel_mm: 5.0
 # buf_hyst_ms: 30
 # sync_ratio: 1.0
-# sync_ramp_up_sps: 300
-# sync_ramp_dn_sps: 150
+# sync_ramp_up_rate: 25
+# sync_ramp_dn_rate: 13
 # sync_tick_ms: 20
 # baseline_alpha: 0.15
 # buf_predict_thr_ms: 250
-# sync_kp_sps: 10000
+# sync_kp_rate: 850
 
 # --- Cutter / Servo ---
 # servo_open_us: 500
@@ -85,8 +85,8 @@ run_current:
 # iss_sg_target: 320             # target SG value for follow-sync (G36HSY4405-6D-1200 @ 800mA)
 # iss_sg_deriv_thr: 0            # derivative threshold for approach contact (0 = disabled)
 # iss_current_ma: 800            # high-torque current for ISS/Sync tasks
-# iss_trailing_sps: 500          # coasting speed when buffer is stalled (trailing)
+# iss_trailing_rate: 42          # coasting speed when buffer is stalled (trailing)
 # iss_sg_ma_len: 5               # MA window for SG filtering
-# iss_join_sps: 25000            # fast approach speed
-# iss_press_sps: 15000           # top speed in follow-sync
+# iss_join_rate: 2100            # fast approach speed
+# iss_press_rate: 1275           # top speed in follow-sync
 # iss_follow_timeout_ms: 10000   # max time in trailing before error

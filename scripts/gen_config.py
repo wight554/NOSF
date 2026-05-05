@@ -2,9 +2,7 @@
 """
 Generate firmware/include/tune.h from config.ini.
 Includes all user-tunable firmware parameters.
-
-Usage:
-  python3 scripts/gen_config.py [config_path [output_path]]
+Speeds are specified in mm/min.
 """
 
 import configparser
@@ -38,17 +36,17 @@ DEFAULTS = {
     "sgt_l1": "0",
     "sgt_l2": "0",
 
-    # Speeds (SPS)
-    "feed_sps": "25000",
-    "rev_sps": "25000",
-    "auto_sps": "25000",
-    "sync_max_sps": "30000",
-    "sync_min_sps": "0",
-    "pre_ramp_sps": "400",
+    # Speeds (mm/min)
+    "feed_rate": "2100",
+    "rev_rate": "2100",
+    "auto_rate": "2100",
+    "sync_max_rate": "2500",
+    "sync_min_rate": "0",
+    "pre_ramp_rate": "35",
 
     # Motion / Ramp
     "motion_startup_ms": "1000",
-    "ramp_step_sps": "200",
+    "ramp_step_rate": "17",
     "ramp_tick_ms": "5",
     "stall_recovery_ms": "3000",
 
@@ -56,12 +54,12 @@ DEFAULTS = {
     "buf_half_travel_mm": "5.0",
     "buf_hyst_ms": "30",
     "sync_ratio": "1.0",
-    "sync_ramp_up_sps": "300",
-    "sync_ramp_dn_sps": "150",
+    "sync_ramp_up_rate": "25",
+    "sync_ramp_dn_rate": "13",
     "sync_tick_ms": "20",
     "baseline_alpha": "0.15",
     "buf_predict_thr_ms": "250",
-    "sync_kp_sps": "10000",
+    "sync_kp_rate": "850",
 
     # Cutter / Servo
     "servo_open_us": "500",
@@ -101,9 +99,9 @@ DEFAULTS = {
     "iss_sg_target": "0.0",
     "iss_sg_deriv_thr": "0",
     "iss_current_ma": "400",
-    "iss_trailing_sps": "1000",
-    "iss_join_sps": "25000",
-    "iss_press_sps": "15000",
+    "iss_trailing_rate": "42",
+    "iss_join_rate": "2100",
+    "iss_press_rate": "1275",
     "iss_sg_ma_len": "5",
     "iss_follow_timeout_ms": "10000",
 }
@@ -176,6 +174,11 @@ def main():
     run_ma = int(round(run_current * 1000))
     hold_ma = int(round(hold_current * 1000))
 
+    def mm_min_to_sps(mm_min_str):
+        mm_min = float(mm_min_str)
+        if mm_min <= 0: return 0
+        return int(round(mm_min / 60.0 / mm_per_step))
+
     rel_config = os.path.relpath(config_path, REPO_ROOT)
     lines = [
         "#pragma once",
@@ -199,30 +202,30 @@ def main():
         f"#define CONF_SGT_L1             {get('sgt_l1')}",
         f"#define CONF_SGT_L2             {get('sgt_l2')}",
         "",
-        "// --- Speeds (SPS) ---",
-        f"#define CONF_FEED_SPS           {get('feed_sps')}",
-        f"#define CONF_REV_SPS            {get('rev_sps')}",
-        f"#define CONF_AUTO_SPS           {get('auto_sps')}",
-        f"#define CONF_SYNC_MAX_SPS       {get('sync_max_sps')}",
-        f"#define CONF_SYNC_MIN_SPS       {get('sync_min_sps')}",
-        f"#define CONF_PRE_RAMP_SPS       {get('pre_ramp_sps')}",
+        "// --- Speeds (converted to SPS) ---",
+        f"#define CONF_FEED_SPS           {mm_min_to_sps(get('feed_rate'))}",
+        f"#define CONF_REV_SPS            {mm_min_to_sps(get('rev_rate'))}",
+        f"#define CONF_AUTO_SPS           {mm_min_to_sps(get('auto_rate'))}",
+        f"#define CONF_SYNC_MAX_SPS       {mm_min_to_sps(get('sync_max_rate'))}",
+        f"#define CONF_SYNC_MIN_SPS       {mm_min_to_sps(get('sync_min_rate'))}",
+        f"#define CONF_PRE_RAMP_SPS       {mm_min_to_sps(get('pre_ramp_rate'))}",
         "",
         "// --- Motion / Ramp ---",
         f"#define CONF_MOTION_STARTUP_MS  {get('motion_startup_ms')}",
-        f"#define CONF_RAMP_STEP_SPS      {get('ramp_step_sps')}",
+        f"#define CONF_RAMP_STEP_SPS      {mm_min_to_sps(get('ramp_step_rate'))}",
         f"#define CONF_RAMP_TICK_MS       {get('ramp_tick_ms')}",
         f"#define CONF_STALL_RECOVERY_MS  {get('stall_recovery_ms')}",
         "",
         "// --- Buffer Sync ---",
-        f"#define CONF_BUF_HALF_TRAVEL_MM {get_float('buf_half_travel_mm'):.3f}f",
+        f"#define CONF_BUF_HALF_TRAVEL_MM {get_float('buf_half_travel_mm')}f",
         f"#define CONF_BUF_HYST_MS        {get('buf_hyst_ms')}",
-        f"#define CONF_SYNC_RATIO         {get_float('sync_ratio'):.3f}f",
-        f"#define CONF_SYNC_RAMP_UP_SPS   {get('sync_ramp_up_sps')}",
-        f"#define CONF_SYNC_RAMP_DN_SPS   {get('sync_ramp_dn_sps')}",
+        f"#define CONF_SYNC_RATIO         {get_float('sync_ratio')}f",
+        f"#define CONF_SYNC_RAMP_UP_SPS   {mm_min_to_sps(get('sync_ramp_up_rate'))}",
+        f"#define CONF_SYNC_RAMP_DN_SPS   {mm_min_to_sps(get('sync_ramp_dn_rate'))}",
         f"#define CONF_SYNC_TICK_MS       {get('sync_tick_ms')}",
-        f"#define CONF_BASELINE_ALPHA     {get_float('baseline_alpha'):.3f}f",
+        f"#define CONF_BASELINE_ALPHA     {get_float('baseline_alpha')}f",
         f"#define CONF_BUF_PREDICT_THR_MS {get('buf_predict_thr_ms')}",
-        f"#define CONF_SYNC_KP_SPS        {get('sync_kp_sps')}",
+        f"#define CONF_SYNC_KP_SPS        {mm_min_to_sps(get('sync_kp_rate'))}",
         "",
         "// --- Cutter / Servo ---",
         f"#define CONF_SERVO_OPEN_US      {get('servo_open_us')}",
@@ -260,11 +263,11 @@ def main():
         f"#define CONF_ISS_MODE           {get('iss_mode')}",
         f"#define CONF_ISS_Y_TIMEOUT_MS   {get('iss_y_timeout_ms')}",
         f"#define CONF_ISS_CURRENT_MA     {get('iss_current_ma')}",
-        f"#define CONF_ISS_JOIN_SPS       {get('iss_join_sps')}",
-        f"#define CONF_ISS_PRESS_SPS      {get('iss_press_sps')}",
+        f"#define CONF_ISS_JOIN_SPS       {mm_min_to_sps(get('iss_join_rate'))}",
+        f"#define CONF_ISS_PRESS_SPS      {mm_min_to_sps(get('iss_press_rate'))}",
         f"#define CONF_ISS_SG_TARGET      {get_float('iss_sg_target'):.1f}f",
         f"#define CONF_ISS_SG_DERIV_THR   {get('iss_sg_deriv_thr')}",
-        f"#define CONF_ISS_TRAILING_SPS   {get('iss_trailing_sps')}",
+        f"#define CONF_ISS_TRAILING_SPS   {mm_min_to_sps(get('iss_trailing_rate'))}",
         f"#define CONF_ISS_SG_MA_LEN      {get('iss_sg_ma_len')}",
         f"#define CONF_ISS_FOLLOW_TIMEOUT_MS {get('iss_follow_timeout_ms')}",
         "",
