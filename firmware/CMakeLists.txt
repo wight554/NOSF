@@ -33,6 +33,7 @@ target_include_directories(nosf_controller PRIVATE
 
 pico_generate_pio_header(nosf_controller
   ${CMAKE_CURRENT_LIST_DIR}/third_party/ws2812.pio
+  ${CMAKE_CURRENT_LIST_DIR}/src/tmc_uart.pio
 )
 
 add_dependencies(nosf_controller motor_config)

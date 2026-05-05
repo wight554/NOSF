@@ -1,0 +1,78 @@
+.program tmc_uart_tx
+.side_set 1 opt pindirs
+
+; TX encoding: 1 start bit, 8 data bits, 1 stop bit
+; Pin direction is controlled by side-set to allow high-Z for RX mode
+; When side-set is 1, pin is OUTPUT.
+
+pull       side 1 [7]  ; Assert stop bit, or stall with line in output mode
+set x, 7   side 1 [7]  ; Preload bit counter, then delay until next bit
+
+; start bit
+set pins, 0 side 1 [7]
+
+bitloop:
+out pins, 1 side 1 [5]
+jmp x-- bitloop   [1]
+
+; stop bit
+set pins, 1 side 1 [7]
+
+
+.program tmc_uart_rx
+
+; RX encoding: 1 start bit, 8 data bits, 1 stop bit
+; Pin is configured as input outside of this program.
+
+start:
+wait 0 pin 0        ; Wait for start bit (falling edge)
+set x, 7    [10]    ; Preload bit counter, delay to center of start bit + half a bit to get to center of bit 0
+
+bitloop:
+in pins, 1          ; Sample data
+jmp x-- bitloop [6] ; Delay 8 cycles per bit (1 sampling + 1 jmp + 6 delay)
+
+wait 1 pin 0        ; Wait for stop bit (line goes idle HIGH)
+push                ; Push data to FIFO
+
+% c-sdk {
+#include "hardware/clocks.h"
+#include "hardware/gpio.h"
+
+static inline void tmc_uart_tx_program_init(PIO pio, uint sm, uint offset, uint pin, uint baud) {
+    pio_sm_set_pins_with_mask(pio, sm, 1u << pin, 1u << pin);
+    pio_sm_set_pindirs_with_mask(pio, sm, 1u << pin, 1u << pin);
+    pio_gpio_init(pio, pin);
+
+    pio_sm_config c = tmc_uart_tx_program_get_default_config(offset);
+    sm_config_set_out_shift(&c, true, false, 32); // shift right, no autopull
+    sm_config_set_out_pins(&c, pin, 1);
+    sm_config_set_set_pins(&c, pin, 1);
+    sm_config_set_sideset_pins(&c, pin);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+
+    float div = (float)clock_get_hz(clk_sys) / (8 * baud);
+    sm_config_set_clkdiv(&c, div);
+
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, false);
+}
+
+static inline void tmc_uart_rx_program_init(PIO pio, uint sm, uint offset, uint pin, uint baud) {
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, false);
+    pio_gpio_init(pio, pin);
+    gpio_pull_up(pin);
+
+    pio_sm_config c = tmc_uart_rx_program_get_default_config(offset);
+    sm_config_set_in_pins(&c, pin);
+    sm_config_set_jmp_pin(&c, pin);
+    sm_config_set_in_shift(&c, true, false, 32); // shift right, no autopush
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+
+    float div = (float)clock_get_hz(clk_sys) / (8 * baud);
+    sm_config_set_clkdiv(&c, div);
+
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, false);
+}
+%}

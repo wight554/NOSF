@@ -2,10 +2,16 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "pico/types.h"
+#include "hardware/pio.h"
 typedef struct {
     uint tx_pin;
     uint rx_pin;
     uint8_t addr;
+    PIO pio;
+    uint sm_tx;
+    uint sm_rx;
+    uint offset_tx;
+    uint offset_rx;
 } tmc_t;
 #define TMC_REG_GCONF       0x00
 #define TMC_REG_GSTAT       0x01
