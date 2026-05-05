@@ -569,11 +569,13 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     motor_set_dir(&L->m, forward);
     motor_set_rate_sps(&L->m, L->current_sps);
 
-    // Hybrid mode: Use StealthChop and ISS_CURRENT_MA ONLY for automatic ISS/Sync tasks.
-    // Manual moves (FD:/RV: in TC_IDLE) use full RUN_CURRENT_MA and SpreadCycle.
-    bool is_iss_task = (t == TASK_FEED && g_tc_ctx.state != TC_IDLE);
-    bool run_spreadcycle = TMC_SPREADCYCLE && !is_iss_task;
-    int current_ma = is_iss_task ? TMC_ISS_CURRENT_MA : TMC_RUN_CURRENT_MA[L->lane_id-1];
+    // Hybrid mode: Use StealthChop and ISS_CURRENT_MA ONLY for automatic ISS/Sync tasks
+    // AND only if StallGuard is actually enabled.
+    bool sg_active = (ISS_SG_TARGET > 0.0f || ISS_SG_DERIV_THR > 0 || TMC_SGT_L1 > 0 || TMC_SGT_L2 > 0);
+    bool is_iss_sensitive = (t == TASK_FEED && g_tc_ctx.state != TC_IDLE && sg_active);
+
+    bool run_spreadcycle = TMC_SPREADCYCLE && !is_iss_sensitive;
+    int current_ma = is_iss_sensitive ? TMC_ISS_CURRENT_MA : TMC_RUN_CURRENT_MA[L->lane_id-1];
 
     tmc_set_spreadcycle(L->tmc, run_spreadcycle);
     tmc_set_run_current_ma(L->tmc, current_ma, TMC_HOLD_CURRENT_MA[L->lane_id-1]);
