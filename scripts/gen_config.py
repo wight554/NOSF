@@ -172,13 +172,20 @@ def main():
             # 1. Check for prefixed override (e.g. m1_run_current)
             v = get(f"{prefix}{key}")
             if v: return v
-            # 2. Check for global list (e.g. run_current: 0.8, 0.9)
+            # 2. Check for global comma-separated list (e.g. run_current: 0.8, 0.9)
+            #    Resolution order:
+            #      a) parts[lane_idx]          — exact lane entry
+            #      b) parts[0]                 — short list: first value covers all remaining lanes
+            #      c) g_val (single value)     — no comma: value applies to every lane
+            #      d) default
             g_val = get(key)
             if "," in g_val:
                 parts = [p.strip() for p in g_val.split(",")]
                 if lane_idx < len(parts):
                     return parts[lane_idx]
-            # 3. Fallback to global single value or default
+                # Fewer list entries than lanes → reuse first value for any extra lane
+                return parts[0]
+            # 3. Single value — apply to all lanes
             return g_val or default
 
         microsteps = int(gm("microsteps", "16"))
