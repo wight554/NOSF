@@ -124,7 +124,7 @@ def main():
         # Read CHOPCONF
         resp = send_cmd(s, f"TR:{args.lane}:108")  # 0x6C = 108
         if not resp.startswith("OK:"):
-            print("Failed to read CHOPCONF: " + repr(resp))
+            print("Failed to read CHOPCONF")
             sys.exit(1)
         val_hex = resp.split(":")[3]
         chopconf_val = int(val_hex, 16)
