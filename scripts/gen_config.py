@@ -96,9 +96,9 @@ DEFAULTS = {
     # ISS Mode
     "iss_mode": "0",
     "iss_y_timeout_ms": "10000",
-    "iss_sg_target": "0.0",
-    "iss_sg_deriv": "0",
-    "iss_current_ma": "400",
+    "iss_sg_target": "320.0",
+    "iss_sg_deriv": "3",
+    "iss_current_ma": "800",
     "iss_trailing_rate": "42",
     "iss_join_rate": "2100",
     "iss_press_rate": "1275",

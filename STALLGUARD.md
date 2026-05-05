@@ -35,7 +35,13 @@ When the buffer arm is fully deflected (trailing), the motor slows to this speed
 *   Higher current (800mA+) makes the motor stronger but can make the StallGuard signal "noisier."
 *   We recommend **800mA** for a good balance of force and sensing reliability.
 
-### 4. `SGT_L1 / SGT_L2` (The Hard Safety Net)
+### 4. `ISS_SG_DERIV` (The "Soft Contact" Sensor)
+This watches the *rate of change* of the StallGuard signal.
+*   When the new filament tip hits the old tail during a fast approach (`ISS_JOIN_RATE`), the load jumps instantly.
+*   `ISS_SG_DERIV` catches this jump *before* the motor grinds or stalls.
+*   **Tuning Rule**: Use `scripts/tune_iss_sg.py` to calibrate this. A typical value is **3 to 10**.
+
+### 5. `SGT_L1 / SGT_L2` (The Hard Safety Net)
 This sets the sensitivity of the `DIAG` pin (the hard-stop).
 *   **Tuning Rule**: We found **50** to be a robust "Golden State" for NEMA 14 motors. It prevents false-positives while still catching real jams.
 
@@ -76,6 +82,7 @@ python3 scripts/nosf_cmd.py "SET:ISS_TRAILING_RATE:42"
 python3 scripts/nosf_cmd.py "SET:ISS_CURRENT_MA:800"
 python3 scripts/nosf_cmd.py "SET:SGT_L1:50"
 python3 scripts/nosf_cmd.py "SET:SGT_L2:50"
+python3 scripts/nosf_cmd.py "SET:ISS_SG_DERIV:3"
 
 # Safety timeout (10s)
 python3 scripts/nosf_cmd.py "SET:ISS_FOLLOW_MS:10000"

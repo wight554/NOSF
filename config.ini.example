@@ -82,8 +82,8 @@ run_current:
 # --- ISS StallGuard Tuning ---
 # iss_mode: 0
 # iss_y_timeout_ms: 10000
-# iss_sg_target: 320             # target SG value for follow-sync (G36HSY4405-6D-1200 @ 800mA)
-# iss_sg_deriv: 0              # derivative threshold for approach contact (0 = disabled)
+# iss_sg_target: 320.0           # target SG value for follow-sync (G36HSY4405-6D-1200 @ 800mA)
+# iss_sg_deriv: 3              # derivative threshold for approach contact (0 = disabled)
 # iss_current_ma: 800            # high-torque current for ISS/Sync tasks
 # iss_trailing_rate: 42          # coasting speed when buffer is stalled (trailing)
 # iss_sg_ma_len: 5               # MA window for SG filtering
