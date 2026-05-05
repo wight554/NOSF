@@ -1275,8 +1275,10 @@ static void tc_tick(uint32_t now_ms) {
             g_tc_ctx.iss_tick_ms = now_ms;
 
             // Speed target — common calculation.
+            // SYNC_SG=1 enables pseudo-analog interpolation.
+            // SYNC_SG=0 falls back to digital bang-bang (TRAILING_SPS / PRESS_SPS).
             sg_ma_update(A);
-            int target_sps = sync_apply_scaling(PRESS_SPS, SG_TARGET > 0.1f);
+            int target_sps = sync_apply_scaling(PRESS_SPS, SYNC_SG);
 
             // Ramp toward target.
             if (g_tc_ctx.iss_current_sps > target_sps)
