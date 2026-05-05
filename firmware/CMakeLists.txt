@@ -10,7 +10,7 @@ pico_sdk_init()
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-set(GEN_SCRIPT ${CMAKE_CURRENT_LIST_DIR}/../scripts/gen_motor_config.py)
+set(GEN_SCRIPT ${CMAKE_CURRENT_LIST_DIR}/../scripts/gen_config.py)
 set(USER_CONFIG_INI ${CMAKE_CURRENT_LIST_DIR}/../config.ini)
 set(TUNE_H ${CMAKE_CURRENT_LIST_DIR}/include/tune.h)
 

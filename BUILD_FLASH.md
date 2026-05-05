@@ -17,7 +17,7 @@ This repo targets RP2040 (ERB v2.0) using the Pico SDK.
 
 ```bash
 cp config.ini.example config.ini   # first time only
-python3 scripts/gen_motor_config.py
+python3 scripts/gen_config.py
 ```
 
 Generated file:

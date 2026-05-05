@@ -1,21 +1,11 @@
 # NOSF config - copy this file to config.ini and fill in your values.
-# Section headers are optional and ignored; all keys are read regardless of section.
-# After editing run: python3 scripts/gen_motor_config.py
+# After editing run: python3 scripts/gen_config.py
 # This regenerates firmware/include/tune.h which is compiled into the firmware.
 
 # --- Required ---
-microsteps:
-rotation_distance:
-run_current:
-
-# --- ISS StallGuard Tuning ---
-# iss_sg_target: 320             # target SG value for follow-sync (G36HSY4405-6D-1200 @ 800mA)
-# iss_sg_deriv_thr: 0            # derivative threshold for approach contact (0 = disabled)
-# iss_current_ma: 800            # high-torque current for ISS/Sync tasks
-# iss_trailing_sps: 500          # coasting speed when buffer is stalled (trailing)
-# iss_join_sps: 25000            # fast approach speed
-# iss_press_sps: 15000           # top speed in follow-sync
-# iss_follow_timeout_ms: 10000   # max time in trailing before error
+microsteps: 16
+rotation_distance: 22.6789511
+run_current: 0.8
 
 # --- Optional (Klipper defaults shown) ---
 # full_steps_per_rotation: 200
@@ -28,3 +18,74 @@ run_current:
 # driver_HSTRT: 5
 # driver_HEND: 0
 # stealthchop_threshold: 0       # 0 = SpreadCycle always on (recommended for MMU)
+# m1_dir_invert: 0
+# m2_dir_invert: 0
+# tcoolthrs: 0xFFFFF
+
+# --- Speeds (SPS) ---
+# feed_sps: 25000
+# rev_sps: 25000
+# auto_sps: 25000
+# sync_max_sps: 30000
+# sync_min_sps: 0
+# pre_ramp_sps: 400
+
+# --- Motion / Ramp ---
+# motion_startup_ms: 1000
+# ramp_step_sps: 200
+# ramp_tick_ms: 5
+# stall_recovery_ms: 3000
+
+# --- Buffer Sync ---
+# buf_half_travel_mm: 5.0
+# buf_hyst_ms: 30
+# sync_ratio: 1.0
+# sync_ramp_up_sps: 300
+# sync_ramp_dn_sps: 150
+# sync_tick_ms: 20
+# baseline_alpha: 0.15
+# buf_predict_thr_ms: 250
+# sync_kp_sps: 10000
+
+# --- Cutter / Servo ---
+# servo_open_us: 500
+# servo_close_us: 1400
+# servo_block_us: 950
+# servo_settle_ms: 500
+# cut_feed_mm: 48
+# cut_length_mm: 10
+# cut_amount: 1
+
+# --- Toolchange Timeouts ---
+# tc_timeout_cut_ms: 5000
+# tc_timeout_unload_ms: 60000
+# tc_timeout_th_ms: 3000
+# tc_timeout_load_ms: 60000
+# tc_timeout_y_ms: 5000
+
+# --- Safety / Swap ---
+# low_delay_ms: 400
+# swap_cooldown_ms: 500
+# runout_cooldown_ms: 12000
+# require_y_empty_swap: True
+
+# --- Analog Buffer Sensor ---
+# buf_sensor_type: 0
+# buf_neutral: 0.5
+# buf_range: 0.45
+# buf_thr: 0.30
+# buf_analog_alpha: 0.20
+
+# --- TS Fallback ---
+# ts_buf_fallback_ms: 2000
+
+# --- ISS StallGuard Tuning ---
+# iss_mode: 0
+# iss_y_timeout_ms: 10000
+# iss_sg_target: 320             # target SG value for follow-sync (G36HSY4405-6D-1200 @ 800mA)
+# iss_sg_deriv_thr: 0            # derivative threshold for approach contact (0 = disabled)
+# iss_current_ma: 800            # high-torque current for ISS/Sync tasks
+# iss_trailing_sps: 500          # coasting speed when buffer is stalled (trailing)
+# iss_join_sps: 25000            # fast approach speed
+# iss_press_sps: 15000           # top speed in follow-sync
+# iss_follow_timeout_ms: 10000   # max time in trailing before error

@@ -1,113 +1,48 @@
 #pragma once
 
 // =====================================================================
-// NOSF ERB V2.0 — Compile-time configuration
-// Edit this file to tune hardware parameters before building.
-// Runtime tunables are available via SET:/GET: USB commands.
+// NOSF ERB V2.0 — Hardware/Board Configuration
+// Parameters in this file are board-specific and usually fixed.
+// All user-tunable parameters are in config.ini (via tune.h).
 // =====================================================================
 
-// Motor parameters are generated from config.ini.
-// Run: python3 scripts/gen_motor_config.py
+// User/Motor parameters generated from config.ini
 #include "tune.h"
 
 // ----- Sense resistor -----
-// ERB V2.0 onboard Rsense (R46/R47, R48/R49) — hardware constant, not user-tunable
-#define CONF_RSENSE_OHM         0.110f  // Ohms — confirmed from schematic
+// ERB V2.0 onboard Rsense (R46/R47, R48/R49) — hardware constant
+#define CONF_RSENSE_OHM         0.110f
 
-// ----- Speeds (steps per second) -----
-// At MM_PER_STEP=0.001417: 25000 SPS ≈ 35 mm/s, 50000 SPS ≈ 71 mm/s
-#define CONF_FEED_SPS           25000
-#define CONF_REV_SPS            25000
-#define CONF_AUTO_SPS           25000
-#define CONF_SYNC_MAX_SPS       30000
-#define CONF_SYNC_MIN_SPS       0
-
-// ----- Motion -----
-#define CONF_MOTION_STARTUP_MS  1000   // TUNE: delay before stall/runout detection active
-
-// ----- Ramp -----
-#define CONF_RAMP_STEP_SPS      200
-#define CONF_RAMP_TICK_MS       5
-
-// ----- Buffer sync -----
-#define CONF_BUF_HALF_TRAVEL_MM 5.0f    // TUNE: measure from printed TN-Pro/QuattroSync
-#define CONF_BUF_HYST_MS        30
-#define CONF_SYNC_RATIO         1.0f    // TUNE: MMU gear / extruder gear ratio
-#define CONF_SYNC_RAMP_UP_SPS   300
-#define CONF_SYNC_RAMP_DN_SPS   150
-#define CONF_SYNC_TICK_MS       20
-#define CONF_PRE_RAMP_SPS       400
-#define CONF_BASELINE_ALPHA     0.15f
-#define CONF_BUF_PREDICT_THR_MS 250
-
-// ----- Cutter / servo -----
-// TUNE: calibrate by jogging servo manually
-#define CONF_SERVO_OPEN_US      500
-#define CONF_SERVO_CLOSE_US     1400
-#define CONF_SERVO_BLOCK_US     950
-#define CONF_SERVO_SETTLE_MS    500
-#define CONF_CUT_FEED_MM        48      // TUNE: distance from park to encoder exit
-#define CONF_CUT_LENGTH_MM      10
-#define CONF_CUT_AMOUNT         1
-
-// ----- Toolchange timeouts -----
-#define CONF_TC_TIMEOUT_CUT_MS      5000
-#define CONF_TC_TIMEOUT_UNLOAD_MS   60000
-#define CONF_TC_TIMEOUT_TH_MS       3000  // 0 = don't wait for TS: from host
-#define CONF_TC_TIMEOUT_LOAD_MS     60000
-#define CONF_TC_TIMEOUT_Y_MS        5000  // 0 = skip Y-splitter wait on unload
-
-// ----- Stall recovery (sync mode) -----
-// During buffer sync, a stall most likely means high filament tension rather
-// than a jam. The firmware lets sync_tick ramp back up and clears the state
-// after this window. If the motor stalls again within the window it's a real
-// jam and a hard stop is issued. Set to 0 to hard-stop on first stall always.
-#define CONF_STALL_RECOVERY_MS      3000
-
-// ----- Safety / swap -----
-#define CONF_LOW_DELAY_MS           400
-#define CONF_SWAP_COOLDOWN_MS       500
-#define CONF_RUNOUT_COOLDOWN_MS     12000
-#define CONF_REQUIRE_Y_EMPTY_SWAP   true
-
-// ----- StallGuard -----
-// SGTHRS=0 disables stall detection (DIAG never fires). Tune before enabling:
-// run motor loaded, read SG: value, set SGTHRS ≈ SG_RESULT/2.
-// See BEHAVIOR.md for full procedure.
-#define CONF_SGT_L1             0
-#define CONF_SGT_L2             0
-// TCOOLTHRS: StallGuard active when TSTEP <= TCOOLTHRS. TSTEP = CLK/SPS
-// (~12.5 MHz / SPS). Default 0xFFFFF (max) ensures StallGuard is active
-// at all operating speeds, which is required for ISS follow-sync.
-#define CONF_TCOOLTHRS          0xFFFFF
-
-// ----- Analog buffer sensor (PSF / Hall-effect) -----
-// Set BUF_SENSOR_TYPE=1 to enable; wire signal pin to GP26–GP29.
-#define CONF_BUF_SENSOR_TYPE    0       // 0=dual-endstop, 1=analog PSF
-#define CONF_BUF_NEUTRAL        0.5f    // TUNE: ADC fraction at mechanical neutral
-#define CONF_BUF_RANGE          0.45f   // TUNE: ADC fraction from neutral to full deflection
-#define CONF_BUF_THR            0.30f   // TUNE: normalised threshold for ADVANCE/TRAILING
-#define CONF_BUF_ANALOG_ALPHA   0.20f   // EMA weight for analog pos filter
-
-// ----- Sync proportional gain -----
-// Total speed offset (SPS) applied when buffer is at full deflection (±1).
-// In mm/min ≈ CONF_SYNC_KP_SPS * MM_PER_STEP * 60.
-#define CONF_SYNC_KP_SPS        10000
-
-// ----- TS:1 buffer fallback -----
-// During FL:/TC load: if buffer holds TRAILING for this many ms after OUT seen,
-// treat as filament-at-toolhead (tip pressed against extruder gears). 0 = disabled.
-#define CONF_TS_BUF_FALLBACK_MS 2000
-
-// ----- Direction invert -----
-// Set to 1 if motor runs backward on LO: command
-#define CONF_M1_DIR_INVERT      0   // VERIFY: check physically
-#define CONF_M2_DIR_INVERT      0   // VERIFY: check physically
-
-// ----- ISS mode -----
-#define CONF_ISS_MODE           0       // 0 = MMU, 1 = Infinite Spool System
-#define CONF_ISS_Y_TIMEOUT_MS   10000   // max wait for Y-splitter to clear after runout (ms)
+// ----- ISS Internal -----
 #define CONF_ISS_SG_MA_LEN      5
 
-#define CONF_FW_VERSION         "NOSF_ERB_0.2.0"
+// ----- Firmware version -----
+#define CONF_FW_VERSION         "NOSF_0.2.0"
 
+// ----- Hardware pins (Board specific - ERB V2.0) -----
+#define PIN_L1_IN        2
+#define PIN_L1_OUT       3
+#define PIN_L2_IN        4
+#define PIN_L2_OUT       5
+#define PIN_Y_SPLIT      6
+
+#define PIN_BUF_ADVANCE  18
+#define PIN_BUF_TRAILING 12
+#define PIN_BUF_ANALOG   26  // GP26 = ADC0; change to 27/28/29 if needed
+
+#define PIN_M1_EN        8
+#define PIN_M1_DIR       9
+#define PIN_M1_STEP      10
+#define PIN_M1_UART_TX   11
+#define PIN_M1_UART_RX   13
+#define PIN_M1_DIAG      13  // same as UART_RX on ERB
+
+#define PIN_M2_EN        14
+#define PIN_M2_DIR       15
+#define PIN_M2_STEP      16
+#define PIN_M2_UART_TX   17
+#define PIN_M2_UART_RX   19
+#define PIN_M2_DIAG      19  // same as UART_RX on ERB
+
+#define PIN_SERVO        23
+#define PIN_NEOPIXEL     21

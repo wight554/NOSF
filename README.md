@@ -26,7 +26,7 @@ cp config.ini.example config.ini
 2. Generate compile-time tuning header from `config.ini`:
 
 ```bash
-python3 scripts/gen_motor_config.py
+python3 scripts/gen_config.py
 ```
 
 3. Build firmware:
@@ -45,7 +45,7 @@ bash scripts/flash_nosf.sh
 ## Configuration Model
 
 `config.ini` is the source of compile-time motor/TMC defaults.
-`scripts/gen_motor_config.py` generates `firmware/include/tune.h`.
+`scripts/gen_config.py` generates `firmware/include/tune.h`.
 
 Mandatory keys:
 
@@ -56,7 +56,7 @@ Mandatory keys:
 Typical workflow:
 
 ```bash
-python3 scripts/gen_motor_config.py
+python3 scripts/gen_config.py
 cmake --build build_local
 ```
 
