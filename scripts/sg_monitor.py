@@ -27,7 +27,7 @@ def send_wait(ser, cmd, timeout=3.0):
     while time.time() < deadline:
         if ser.in_waiting:
             line = ser.readline().decode(errors='ignore').strip()
-            if line.startswith("OK:") or line.startswith("ER:"):
+            if line == "OK" or line.startswith("OK:") or line == "ER" or line.startswith("ER:"):
                 return line
     return "timeout"
 
@@ -131,6 +131,9 @@ range at typical SPS values).
         print(f"  SET:FEED:{speed:.0f} → {resp}")
         resp = send_wait(ser, "FD:")
         print(f"  FD:        → {resp}")
+        if resp == "timeout" or resp.startswith("ER:"):
+            print("Error: Could not start motor. Check active lane and filament sensors.")
+            sys.exit(1)
         time.sleep(0.5)  # let ramp settle
 
         BAR = 40
