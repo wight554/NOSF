@@ -162,25 +162,29 @@ if (NOT PICO_CLIB)
     endforeach()
 endif ()
 
+
+
+# On Linux/Pi, Clang often needs help finding the C++ machine-specific headers
+# (like bits/c++config.h) which are buried in a subdirectory.
+# Also use compiler-rt instead of libgcc on system builds.
+if (NOT PICO_COMPILER_SYSROOT_IS_ATFE AND PICO_COMPILER_SYSROOT)
+    set(_pico_extra_flags "${_pico_extra_flags} --rtlib=compiler-rt")
+    file(GLOB _cpp_headers "/usr/lib/arm-none-eabi/include/c++/*")
+    if (_cpp_headers)
+        list(GET _cpp_headers 0 _cpp_base)
+        if (EXISTS "${_cpp_base}/arm-none-eabi")
+            set(_pico_extra_cpp_include "-isystem ${_cpp_base}/arm-none-eabi")
+        endif()
+    endif()
+endif()
+
 # --- Compiler flags ---
 # --target              : exact triple expected by clang + multilib.yaml
 # -mfloat-abi=soft      : software FP ABI (no FPU on Cortex-M0+)
 # -march=armv6m         : ARMv6-M ISA (Thumb-only, matches the RP2040)
 # -mfpu=none            : explicit for ATfE multilib matching (set in _pico_extra_flags)
 # --sysroot             : headers/libs; for ATfE this is the clang-runtimes parent
-set(_common_flags "--target=${_pico_target_triple} -mfloat-abi=soft -march=armv6m ${_pico_extra_flags} --sysroot=${PICO_COMPILER_SYSROOT} -fno-exceptions -fno-rtti")
-
-# On Linux/Pi, Clang often needs help finding the C++ machine-specific headers
-# (like bits/c++config.h) which are buried in a subdirectory.
-if (NOT PICO_COMPILER_SYSROOT_IS_ATFE AND PICO_COMPILER_SYSROOT)
-    file(GLOB _cpp_headers "/usr/lib/arm-none-eabi/include/c++/*")
-    if (_cpp_headers)
-        list(GET _cpp_headers 0 _cpp_base)
-        if (EXISTS "${_cpp_base}/arm-none-eabi")
-            string(APPEND _common_flags " -isystem ${_cpp_base}/arm-none-eabi")
-        endif()
-    endif()
-endif()
+set(_common_flags "--target=${_pico_target_triple} -mfloat-abi=soft -march=armv6m ${_pico_extra_flags} --sysroot=${PICO_COMPILER_SYSROOT} -fno-exceptions -fno-rtti ${_pico_extra_cpp_include}")
 
 # Inject include_patches/ before the SDK include search path so that our
 # hardware/sync.h wrapper (which uses #include_next) is found first.  The
