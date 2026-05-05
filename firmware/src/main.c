@@ -556,6 +556,36 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     tmc_set_run_current_ma(L->tmc, current_ma, TMC_HOLD_CURRENT_MA[L->lane_id-1]);
 }
 
+static void sg_ma_update(lane_t *A) {
+    if (!A || A->task != TASK_FEED) return;
+    uint16_t sg_raw;
+    if (tmc_read_sg_result(A->tmc, &sg_raw)) {
+        g_tc_ctx.sg_ma_buf[g_tc_ctx.sg_ma_idx] = (float)sg_raw;
+        g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_SG_MA_LEN;
+        if (g_tc_ctx.sg_ma_fill < CONF_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
+        float sum = 0.0f;
+        for (int i = 0; i < (int)g_tc_ctx.sg_ma_fill; i++) sum += g_tc_ctx.sg_ma_buf[i];
+        g_sg_load = sum / (float)g_tc_ctx.sg_ma_fill;
+    }
+}
+
+static int sync_apply_scaling(int base_sps, bool use_sg) {
+    if (BUF_SENSOR_TYPE == 1) {
+        // Analog: scale between TRAILING_SPS and base_sps based on g_buf_pos [-1, +1]
+        float frac = clamp_f((g_buf_pos + 1.0f) * 0.5f, 0.0f, 1.0f);
+        return (int)(TRAILING_SPS + (float)(base_sps - TRAILING_SPS) * frac);
+    }
+    if (use_sg && SG_TARGET > 0.1f) {
+        float sg_frac = clamp_f(g_sg_load / SG_TARGET, 0.0f, 1.0f);
+        int target = (int)((float)base_sps * sg_frac);
+        if (g_buf.state == BUF_TRAILING) return MIN(target, TRAILING_SPS);
+        return target;
+    }
+    // Digital bang-bang
+    if (g_buf.state == BUF_TRAILING) return TRAILING_SPS;
+    return base_sps;
+}
+
 static void lane_tick(lane_t *L, uint32_t now_ms) {
     // Acceleration ramp: step current_sps toward target_sps every RAMP_TICK_MS.
     if (L->task != TASK_IDLE && L->current_sps < L->target_sps) {
@@ -1036,7 +1066,6 @@ static void tc_tick(uint32_t now_ms) {
                 tc_enter_error("UNLOAD_TIMEOUT");
             }
             break;
-
         case TC_UNLOAD_WAIT_Y:
             if (!on_al(&g_y_split)) {
                 g_tc_ctx.phase_start_ms = now_ms;
@@ -1245,39 +1274,9 @@ static void tc_tick(uint32_t now_ms) {
             if ((now_ms - g_tc_ctx.iss_tick_ms) < (uint32_t)SYNC_TICK_MS) break;
             g_tc_ctx.iss_tick_ms = now_ms;
 
-            // Speed target — three paths depending on sensor type and SG config.
-            int target_sps;
-            if (BUF_SENSOR_TYPE == 1) {
-                // Analog buffer: continuous arm position drives speed proportionally.
-                // Maps g_buf_pos ∈ [-1 (TRAILING), +1 (ADVANCE)] →
-                //   [TRAILING_SPS, PRESS_SPS].
-                // No SG needed — the arm already reflects contact pressure.
-                target_sps = (int)(TRAILING_SPS +
-                    (float)(PRESS_SPS - TRAILING_SPS) *
-                    clamp_f((g_buf_pos + 1.0f) * 0.5f, 0.0f, 1.0f));
-            } else if (SG_TARGET > 0.0f) {
-                // 2-endstop + SG: update MA and interpolate speed from filtered SG.
-                // sg_frac ∈ [0, 1]: 0 when SG=0 (hard contact), 1 when SG≥target (free).
-                if (A && A->task == TASK_FEED) {
-                    uint16_t sg_raw;
-                    if (tmc_read_sg_result(A->tmc, &sg_raw)) {
-                        g_tc_ctx.sg_ma_buf[g_tc_ctx.sg_ma_idx] = (float)sg_raw;
-                        g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_SG_MA_LEN;
-                        if (g_tc_ctx.sg_ma_fill < CONF_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
-                        float sum = 0.0f;
-                        for (int i = 0; i < CONF_SG_MA_LEN; i++)
-                            sum += g_tc_ctx.sg_ma_buf[i];
-                        g_sg_load = sum / (float)CONF_SG_MA_LEN;
-                    }
-                }
-                float sg_frac = clamp_f(g_sg_load / SG_TARGET, 0.0f, 1.0f);
-                target_sps = (int)((float)PRESS_SPS * sg_frac);
-                if (g_buf.state == BUF_TRAILING)
-                    target_sps = MIN(target_sps, TRAILING_SPS);
-            } else {
-                // 2-endstop, no SG: bang-bang on buffer state alone.
-                target_sps = (g_buf.state == BUF_TRAILING) ? TRAILING_SPS : PRESS_SPS;
-            }
+            // Speed target — common calculation.
+            sg_ma_update(A);
+            int target_sps = sync_apply_scaling(PRESS_SPS, SG_TARGET > 0.1f);
 
             // Ramp toward target.
             if (g_tc_ctx.iss_current_sps > target_sps)
@@ -1591,31 +1590,18 @@ static void sync_tick(uint32_t now_ms) {
     float buf_pos = g_buf_pos;
 
     if (s == BUF_TRAILING) {
-        // Pause syncing when pushing against the wall, wait for neutral
+        // Pause syncing when pushing against the wall, wait for neutral.
+        // MMU sync differs from ISS follow here: we prefer a full stop to maintain position.
         sync_current_sps = 0;
     } else {
         float correction = (float)SYNC_KP_SPS * buf_pos;
         if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
 
-        int target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, SYNC_MAX_SPS);
+        int base_target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, SYNC_MAX_SPS);
 
-        // Experimental: StallGuard scaling for normal sync.
-        if (SYNC_SG && SG_TARGET > 0.1f) {
-            if (A && A->task == TASK_FEED) {
-                uint16_t sg_raw;
-                if (tmc_read_sg_result(A->tmc, &sg_raw)) {
-                    g_tc_ctx.sg_ma_buf[g_tc_ctx.sg_ma_idx] = (float)sg_raw;
-                    g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_SG_MA_LEN;
-                    if (g_tc_ctx.sg_ma_fill < CONF_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
-                    float sum = 0.0f;
-                    for (int i = 0; i < CONF_SG_MA_LEN; i++)
-                        sum += g_tc_ctx.sg_ma_buf[i];
-                    g_sg_load = sum / (float)CONF_SG_MA_LEN;
-                }
-            }
-            float sg_frac = clamp_f(g_sg_load / SG_TARGET, 0.0f, 1.0f);
-            target = (int)((float)target * sg_frac);
-        }
+        // Common scaling (Analog or SG)
+        sg_ma_update(A);
+        int target = sync_apply_scaling(base_target, SYNC_SG);
 
         if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
         else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
