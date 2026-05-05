@@ -13,6 +13,9 @@
 // ERB V2.0 onboard Rsense (R46/R47, R48/R49) — hardware constant
 #define CONF_RSENSE_OHM         0.110f
 
+// ----- Hardware constants -----
+#define NUM_LANES               2
+
 // ----- Firmware version -----
 #define CONF_FW_VERSION         "NOSF_0.2.0"
 

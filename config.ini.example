@@ -8,6 +8,10 @@ rotation_distance:
 run_current:
 
 # --- Optional (defaults shown) ---
+# Parameters can be single values (apply to all lanes) 
+# or comma-separated lists (e.g. 16, 32 for Lane 1 and Lane 2).
+# Lane-prefixed overrides (m1_..., m2_...) take priority.
+
 # full_steps_per_rotation: 200
 # gear_ratio: 1:1
 # hold_current:                  # defaults to run_current / 2 if omitted
@@ -21,6 +25,7 @@ run_current:
 # m1_dir_invert: 0
 # m2_dir_invert: 0
 # tcoolthrs: 0xFFFFF
+# sgt: 0                         # StallGuard threshold (-64 to 63)
 
 # --- Speeds (mm/min) ---
 # feed_rate: 2100

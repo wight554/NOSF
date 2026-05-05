@@ -162,9 +162,24 @@ def main():
         print(f"Error: mandatory fields not set in {config_path}: {', '.join(missing)}")
         sys.exit(1)
 
-    def get_motor_params(lane_prefix):
+    def get_list(key, default_val=""):
+        val = get(key) or default_val
+        return [p.strip() for p in val.split(",")]
+
+    def get_motor_params(lane_idx):
+        prefix = f"m{lane_idx+1}_"
         def gm(key, default=None):
-            return get(f"{lane_prefix}{key}") or get(key) or default
+            # 1. Check for prefixed override (e.g. m1_run_current)
+            v = get(f"{prefix}{key}")
+            if v: return v
+            # 2. Check for global list (e.g. run_current: 0.8, 0.9)
+            g_val = get(key)
+            if "," in g_val:
+                parts = [p.strip() for p in g_val.split(",")]
+                if lane_idx < len(parts):
+                    return parts[lane_idx]
+            # 3. Fallback to global single value or default
+            return g_val or default
 
         microsteps = int(gm("microsteps", "16"))
         rotation_distance = float(gm("rotation_distance", "0"))
@@ -178,7 +193,14 @@ def main():
         tbl = int(gm("driver_tbl", "2"))
         hstrt = int(gm("driver_hstrt", "5"))
         hend = int(gm("driver_hend", "0"))
+        # stealthchop_threshold == 0 means SpreadCycle is disabled (StealthChop enabled)
+        # BUT our internal logic uses TMC_SPREADCYCLE=true for SpreadCycle.
         spreadcycle = (gm("stealthchop_threshold", "0") == "0")
+        
+        # StallGuard / CoolStep
+        sgt = int(gm("sgt", "0"))
+        tcoolthrs = int(gm("tcoolthrs", "0xFFFFF"), 0)
+        sg_current_ma = int(gm("sg_current_ma", "800"))
 
         mm_per_step = rotation_distance / (full_steps * microsteps * gear_ratio) if rotation_distance > 0 else 0.0125
         run_ma = int(round(run_current * 1000))
@@ -197,11 +219,15 @@ def main():
             "hstrt": hstrt,
             "hend": hend,
             "mm_per_step": mm_per_step,
-            "spreadcycle": spreadcycle
+            "spreadcycle": spreadcycle,
+            "sgt": sgt,
+            "tcoolthrs": tcoolthrs,
+            "sg_current_ma": sg_current_ma
         }
 
-    m1 = get_motor_params("m1_")
-    m2 = get_motor_params("m2_")
+    # Generate for 2 lanes (can be expanded later by changing this loop)
+    lanes = [get_motor_params(i) for i in range(2)]
+    m1, m2 = lanes[0], lanes[1]
 
     def mm_min_to_sps(mm_min_str, m_params):
         mm_min = float(mm_min_str)
@@ -228,6 +254,9 @@ def main():
         f"#define CONF_M1_HEND               {m1['hend']}",
         f"#define CONF_M1_INTPOL             {'true' if m1['interpolate'] else 'false'}",
         f"#define CONF_M1_SPREADCYCLE        {'true' if m1['spreadcycle'] else 'false'}",
+        f"#define CONF_M1_SGT                {m1['sgt']}",
+        f"#define CONF_M1_TCOOLTHRS          {m1['tcoolthrs']}",
+        f"#define CONF_M1_SG_CURRENT_MA      {m1['sg_current_ma']}",
         "",
         "// --- Motor / TMC (Lane 2) ---",
         f"#define CONF_M2_RUN_CURRENT_MA     {m2['run_ma']}",
@@ -243,13 +272,13 @@ def main():
         f"#define CONF_M2_HEND               {m2['hend']}",
         f"#define CONF_M2_INTPOL             {'true' if m2['interpolate'] else 'false'}",
         f"#define CONF_M2_SPREADCYCLE        {'true' if m2['spreadcycle'] else 'false'}",
+        f"#define CONF_M2_SGT                {m2['sgt']}",
+        f"#define CONF_M2_TCOOLTHRS          {m2['tcoolthrs']}",
+        f"#define CONF_M2_SG_CURRENT_MA      {m2['sg_current_ma']}",
         "",
         "// --- Global Motor Settings ---",
         f"#define CONF_M1_DIR_INVERT      {get('m1_dir_invert')}",
         f"#define CONF_M2_DIR_INVERT      {get('m2_dir_invert')}",
-        f"#define CONF_TCOOLTHRS          {get('tcoolthrs')}",
-        f"#define CONF_SGT_L1             {get('sgt_l1')}",
-        f"#define CONF_SGT_L2             {get('sgt_l2')}",
         "",
         "// --- Speeds (converted to SPS using Lane 1 baseline) ---",
         f"#define CONF_FEED_SPS           {mm_min_to_sps(get('feed_rate'), m1)}",

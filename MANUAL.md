@@ -101,7 +101,7 @@ These settings must be defined in `config.ini` and require a reflash to change.
 | `m2_dir_invert` | Invert rotation for lane 2 (`0`/`1`) | 0 |
 
 ### Tunables (Runtime & config.ini)
-These can be set in `config.ini` (compile-time defaults) **and** updated at runtime via `SET:<cmd>:<val>`.
+These can be set in `config.ini` (as single values or comma-separated lists) **and** updated at runtime via `SET:<cmd>:<val>`. Use `_L1` or `_L2` suffixes to target specific lanes (e.g. `SET:SGT_L1:10`).
 
 | Serial Cmd | config.ini Key | Description | Default |
 |------------|----------------|-------------|---------|
@@ -164,8 +164,7 @@ These can be set in `config.ini` (compile-time defaults) **and** updated at runt
 | `SG_TARGET` | `sg_target` | SG follow-sync setpoint | 320.0 |
 | `SG_MA_LEN` | `sg_ma_len` | SG moving average window | 5 |
 | `FOLLOW_MS` | `follow_timeout_ms` | RELOAD follow timeout (ms) | 10000 |
-| `SGT_L1` | `sgt_l1` | Lane 1 DIAG threshold (0-255) | 0 |
-| `SGT_L2` | `sgt_l2` | Lane 2 DIAG threshold (0-255) | 0 |
+| `SGT` | `sgt` | Lane DIAG threshold (-64 to 63) | 0 |
 | `TCOOLTHRS` | `tcoolthrs` | SG activation threshold (TSTEP) | 0xFFFFF |
 | `MM_PER_STEP` | | (Read-only) Actual mm per step | from tune.h |
 
@@ -180,6 +179,11 @@ GET:<param>:<lane>
 |-----------|-------------|
 | `RUN_CURRENT_MA` | Run current for lane N (mA, 0–2000) |
 | `HOLD_CURRENT_MA` | Hold current for lane N (mA, 0–2000) |
+| `SGT` | StallGuard threshold for lane N (-64 to 63) |
+| `TCOOLTHRS` | CoolStep/SG threshold for lane N (TSTEP) |
+| `SG_CURRENT_MA` | High-torque current for lane N (mA, 0–2000) |
+| `MICROSTEPS` | Microstepping for lane N (1–256) |
+| `ROTATION_DIST` | Rotation distance for lane N (mm) |
 
 ---
 
