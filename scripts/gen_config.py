@@ -162,24 +162,51 @@ def main():
         print(f"Error: mandatory fields not set in {config_path}: {', '.join(missing)}")
         sys.exit(1)
 
-    # Derived
-    microsteps = int(get("microsteps"))
-    rotation_distance = float(get("rotation_distance"))
-    run_current = float(get("run_current"))
-    full_steps = int(get("full_steps_per_rotation"))
-    gear_ratio = parse_gear_ratio(get("gear_ratio"))
-    hold_str = get("hold_current")
-    hold_current = float(hold_str) if hold_str else run_current / 2.0
-    interpolate = get_bool("interpolate")
-    
-    mm_per_step = rotation_distance / (full_steps * microsteps * gear_ratio)
-    run_ma = int(round(run_current * 1000))
-    hold_ma = int(round(hold_current * 1000))
+    def get_motor_params(lane_prefix):
+        def gm(key, default=None):
+            return get(f"{lane_prefix}{key}") or get(key) or default
 
-    def mm_min_to_sps(mm_min_str):
+        microsteps = int(gm("microsteps", "16"))
+        rotation_distance = float(gm("rotation_distance", "0"))
+        run_current = float(gm("run_current", "0.8"))
+        full_steps = int(gm("full_steps_per_rotation", "200"))
+        gear_ratio = parse_gear_ratio(gm("gear_ratio", "1:1"))
+        hold_str = gm("hold_current")
+        hold_current = float(hold_str) if hold_str else run_current / 2.0
+        interpolate = (gm("interpolate", "True").lower() in ("true", "1", "yes", "on"))
+        toff = int(gm("driver_toff", "3"))
+        tbl = int(gm("driver_tbl", "2"))
+        hstrt = int(gm("driver_hstrt", "5"))
+        hend = int(gm("driver_hend", "0"))
+        spreadcycle = (gm("stealthchop_threshold", "0") == "0")
+
+        mm_per_step = rotation_distance / (full_steps * microsteps * gear_ratio) if rotation_distance > 0 else 0.0125
+        run_ma = int(round(run_current * 1000))
+        hold_ma = int(round(hold_current * 1000))
+
+        return {
+            "microsteps": microsteps,
+            "rotation_distance": rotation_distance,
+            "full_steps": full_steps,
+            "gear_ratio": gear_ratio,
+            "run_ma": run_ma,
+            "hold_ma": hold_ma,
+            "interpolate": interpolate,
+            "toff": toff,
+            "tbl": tbl,
+            "hstrt": hstrt,
+            "hend": hend,
+            "mm_per_step": mm_per_step,
+            "spreadcycle": spreadcycle
+        }
+
+    m1 = get_motor_params("m1_")
+    m2 = get_motor_params("m2_")
+
+    def mm_min_to_sps(mm_min_str, m_params):
         mm_min = float(mm_min_str)
         if mm_min <= 0: return 0
-        return int(round(mm_min / 60.0 / mm_per_step))
+        return int(round(mm_min / 60.0 / m_params["mm_per_step"]))
 
     rel_config = os.path.relpath(config_path, REPO_ROOT)
     lines = [
@@ -187,49 +214,66 @@ def main():
         "// AUTO-GENERATED — do not edit. Re-run: python3 scripts/gen_config.py",
         f"// Source: {rel_config}",
         "",
-        "// --- Motor / TMC ---",
-        f"#define CONF_RUN_CURRENT_MA     {run_ma}",
-        f"#define CONF_HOLD_CURRENT_MA    {hold_ma}",
-        f"#define CONF_MICROSTEPS         {microsteps}",
-        f"#define CONF_ROTATION_DISTANCE  {rotation_distance:.7f}f",
-        f"#define CONF_GEAR_RATIO         {gear_ratio:.7f}f",
-        f"#define CONF_FULL_STEPS         {full_steps}",
-        f"#define CONF_MM_PER_STEP        {mm_per_step:.7f}f",
-        f"#define CONF_TOFF               {get('driver_toff')}",
-        f"#define CONF_TBL                {get('driver_tbl')}",
-        f"#define CONF_HSTRT              {get('driver_hstrt')}",
-        f"#define CONF_HEND               {get('driver_hend')}",
-        f"#define CONF_INTPOL             {'true' if interpolate else 'false'}",
-        f"#define CONF_SPREADCYCLE        {'true' if int(get('stealthchop_threshold')) == 0 else 'false'}",
+        "// --- Motor / TMC (Lane 1) ---",
+        f"#define CONF_M1_RUN_CURRENT_MA     {m1['run_ma']}",
+        f"#define CONF_M1_HOLD_CURRENT_MA    {m1['hold_ma']}",
+        f"#define CONF_M1_MICROSTEPS         {m1['microsteps']}",
+        f"#define CONF_M1_ROTATION_DISTANCE  {m1['rotation_distance']:.7f}f",
+        f"#define CONF_M1_GEAR_RATIO         {m1['gear_ratio']:.7f}f",
+        f"#define CONF_M1_FULL_STEPS         {m1['full_steps']}",
+        f"#define CONF_M1_MM_PER_STEP        {m1['mm_per_step']:.7f}f",
+        f"#define CONF_M1_TOFF               {m1['toff']}",
+        f"#define CONF_M1_TBL                {m1['tbl']}",
+        f"#define CONF_M1_HSTRT              {m1['hstrt']}",
+        f"#define CONF_M1_HEND               {m1['hend']}",
+        f"#define CONF_M1_INTPOL             {'true' if m1['interpolate'] else 'false'}",
+        f"#define CONF_M1_SPREADCYCLE        {'true' if m1['spreadcycle'] else 'false'}",
+        "",
+        "// --- Motor / TMC (Lane 2) ---",
+        f"#define CONF_M2_RUN_CURRENT_MA     {m2['run_ma']}",
+        f"#define CONF_M2_HOLD_CURRENT_MA    {m2['hold_ma']}",
+        f"#define CONF_M2_MICROSTEPS         {m2['microsteps']}",
+        f"#define CONF_M2_ROTATION_DISTANCE  {m2['rotation_distance']:.7f}f",
+        f"#define CONF_M2_GEAR_RATIO         {m2['gear_ratio']:.7f}f",
+        f"#define CONF_M2_FULL_STEPS         {m2['full_steps']}",
+        f"#define CONF_M2_MM_PER_STEP        {m2['mm_per_step']:.7f}f",
+        f"#define CONF_M2_TOFF               {m2['toff']}",
+        f"#define CONF_M2_TBL                {m2['tbl']}",
+        f"#define CONF_M2_HSTRT              {m2['hstrt']}",
+        f"#define CONF_M2_HEND               {m2['hend']}",
+        f"#define CONF_M2_INTPOL             {'true' if m2['interpolate'] else 'false'}",
+        f"#define CONF_M2_SPREADCYCLE        {'true' if m2['spreadcycle'] else 'false'}",
+        "",
+        "// --- Global Motor Settings ---",
         f"#define CONF_M1_DIR_INVERT      {get('m1_dir_invert')}",
         f"#define CONF_M2_DIR_INVERT      {get('m2_dir_invert')}",
         f"#define CONF_TCOOLTHRS          {get('tcoolthrs')}",
         f"#define CONF_SGT_L1             {get('sgt_l1')}",
         f"#define CONF_SGT_L2             {get('sgt_l2')}",
         "",
-        "// --- Speeds (converted to SPS) ---",
-        f"#define CONF_FEED_SPS           {mm_min_to_sps(get('feed_rate'))}",
-        f"#define CONF_REV_SPS            {mm_min_to_sps(get('rev_rate'))}",
-        f"#define CONF_AUTO_SPS           {mm_min_to_sps(get('auto_rate'))}",
-        f"#define CONF_SYNC_MAX_SPS       {mm_min_to_sps(get('sync_max_rate'))}",
-        f"#define CONF_SYNC_MIN_SPS       {mm_min_to_sps(get('sync_min_rate'))}",
-        f"#define CONF_PRE_RAMP_SPS       {mm_min_to_sps(get('pre_ramp_rate'))}",
+        "// --- Speeds (converted to SPS using Lane 1 baseline) ---",
+        f"#define CONF_FEED_SPS           {mm_min_to_sps(get('feed_rate'), m1)}",
+        f"#define CONF_REV_SPS            {mm_min_to_sps(get('rev_rate'), m1)}",
+        f"#define CONF_AUTO_SPS           {mm_min_to_sps(get('auto_rate'), m1)}",
+        f"#define CONF_SYNC_MAX_SPS       {mm_min_to_sps(get('sync_max_rate'), m1)}",
+        f"#define CONF_SYNC_MIN_SPS       {mm_min_to_sps(get('sync_min_rate'), m1)}",
+        f"#define CONF_PRE_RAMP_SPS       {mm_min_to_sps(get('pre_ramp_rate'), m1)}",
         "",
         "// --- Motion / Ramp ---",
         f"#define CONF_MOTION_STARTUP_MS  {get('motion_startup_ms')}",
-        f"#define CONF_RAMP_STEP_SPS      {mm_min_to_sps(get('ramp_step_rate'))}",
+        f"#define CONF_RAMP_STEP_SPS      {mm_min_to_sps(get('ramp_step_rate'), m1)}",
         f"#define CONF_RAMP_TICK_MS       {get('ramp_tick_ms')}",
         f"#define CONF_STALL_RECOVERY_MS  {get('stall_recovery_ms')}",
         "",
         "// --- Buffer Sync ---",
         f"#define CONF_BUF_HALF_TRAVEL_MM {get_float('buf_half_travel_mm')}f",
         f"#define CONF_BUF_HYST_MS        {get('buf_hyst_ms')}",
-        f"#define CONF_SYNC_RAMP_UP_SPS   {mm_min_to_sps(get('sync_ramp_up_rate'))}",
-        f"#define CONF_SYNC_RAMP_DN_SPS   {mm_min_to_sps(get('sync_ramp_dn_rate'))}",
+        f"#define CONF_SYNC_RAMP_UP_SPS   {mm_min_to_sps(get('sync_ramp_up_rate'), m1)}",
+        f"#define CONF_SYNC_RAMP_DN_SPS   {mm_min_to_sps(get('sync_ramp_dn_rate'), m1)}",
         f"#define CONF_SYNC_TICK_MS       {get('sync_tick_ms')}",
         f"#define CONF_BASELINE_ALPHA     {get_float('baseline_alpha')}f",
         f"#define CONF_BUF_PREDICT_THR_MS {get('buf_predict_thr_ms')}",
-        f"#define CONF_SYNC_KP_SPS        {mm_min_to_sps(get('sync_kp_rate'))}",
+        f"#define CONF_SYNC_KP_SPS        {mm_min_to_sps(get('sync_kp_rate'), m1)}",
         "",
         "// --- Cutter / Servo ---",
         f"#define CONF_SERVO_OPEN_US      {get('servo_open_us')}",
@@ -267,11 +311,11 @@ def main():
         f"#define CONF_RELOAD_MODE           {get('reload_mode')}",
         f"#define CONF_RELOAD_Y_TIMEOUT_MS   {get('reload_y_timeout_ms')}",
         f"#define CONF_SG_CURRENT_MA     {get('sg_current_ma')}",
-        f"#define CONF_JOIN_SPS           {mm_min_to_sps(get('join_rate'))}",
-        f"#define CONF_PRESS_SPS          {mm_min_to_sps(get('press_rate'))}",
+        f"#define CONF_JOIN_SPS           {mm_min_to_sps(get('join_rate'), m1)}",
+        f"#define CONF_PRESS_SPS          {mm_min_to_sps(get('press_rate'), m1)}",
         f"#define CONF_SG_TARGET          {get_float('sg_target'):.1f}f",
         f"#define CONF_SG_DERIV           {get('sg_deriv')}",
-        f"#define CONF_TRAILING_SPS       {mm_min_to_sps(get('trailing_rate'))}",
+        f"#define CONF_TRAILING_SPS       {mm_min_to_sps(get('trailing_rate'), m1)}",
         f"#define CONF_SG_MA_LEN          {get('sg_ma_len')}",
         f"#define CONF_FOLLOW_TIMEOUT_MS  {get('follow_timeout_ms')}",
         f"#define CONF_SYNC_SG_INTERP                {'true' if get_bool('sync_sg_interp') else 'false'}",

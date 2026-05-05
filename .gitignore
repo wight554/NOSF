@@ -4,6 +4,7 @@ build/
 build_local/
 build_clang/
 **/build/
+**/__pycache__/
 *.elf
 *.uf2
 *.hex
