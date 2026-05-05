@@ -39,7 +39,7 @@ When the buffer arm is fully deflected (trailing), the motor slows to this speed
 This watches the *rate of change* of the StallGuard signal.
 *   When the new filament tip hits the old tail during a fast approach (`JOIN_RATE`), the load jumps instantly.
 *   `SG_DERIV` catches this jump *before* the motor grinds or stalls.
-*   **Tuning Rule**: Use `scripts/tune_reload_sg.py` to calibrate this. A typical value is **3 to 10**.
+*   **Tuning Rule**: Use `scripts/tune_reload_sg_interp.py` to calibrate this. A typical value is **3 to 10**.
 
 ### 5. `SGT_L1 / SGT_L2` (The Hard Safety Net)
 This sets the sensitivity of the `DIAG` pin (the hard-stop).

@@ -106,7 +106,7 @@ python3 scripts/nosf_cmd.py "SV:"
 
 ## Tuning Scripts
 
-- `scripts/tune_reload_sg.py`: RELOAD StallGuard tuning wizard (contact detection)
+- `scripts/tune_reload_sg_interp.py`: RELOAD StallGuard tuning wizard (contact detection)
 - `scripts/sg_monitor.py`: Real-time StallGuard monitor
 - `scripts/klipper_tune.py`: Apply/read Klipper-style parameters
 - `scripts/tmc_chopconf.py`: Direct CHOPCONF read/write utility

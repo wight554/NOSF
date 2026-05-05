@@ -63,8 +63,8 @@ static float BUF_THR = CONF_BUF_THR;
 static float BUF_ANALOG_ALPHA = CONF_BUF_ANALOG_ALPHA;
 static int SYNC_KP_SPS = CONF_SYNC_KP_SPS;
 static int TS_BUF_FALLBACK_MS = CONF_TS_BUF_FALLBACK_MS;
-static bool SYNC_SG = CONF_SYNC_SG;
-static bool RELOAD_SG = CONF_RELOAD_SG;
+static bool SYNC_SG_INTERP = CONF_SYNC_SG_INTERP;
+static bool RELOAD_SG_INTERP = CONF_RELOAD_SG_INTERP;
 
 static int SERVO_OPEN_US = CONF_SERVO_OPEN_US;
 static int SERVO_CLOSE_US = CONF_SERVO_CLOSE_US;
@@ -547,14 +547,14 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
 
     // Hybrid mode logic:
     // 1. RELOAD_APPROACH always needs SG (for contact detection).
-    // 2. RELOAD_FOLLOW needs SG only if RELOAD_SG is enabled.
-    // 3. Normal sync (TC_IDLE) needs SG only if SYNC_SG is enabled.
+    // 2. RELOAD_FOLLOW needs SG only if RELOAD_SG_INTERP is enabled.
+    // 3. Normal sync (TC_IDLE) needs SG only if SYNC_SG_INTERP is enabled.
     bool is_sync = (t == TASK_FEED);
     bool is_reload_approach = (is_sync && g_tc_ctx.state == TC_RELOAD_APPROACH);
     bool is_reload_follow = (is_sync && g_tc_ctx.state == TC_RELOAD_FOLLOW);
     bool is_normal_sync = (is_sync && g_tc_ctx.state == TC_IDLE);
 
-    bool use_sg_interpolation = (is_reload_follow && RELOAD_SG) || (is_normal_sync && SYNC_SG);
+    bool use_sg_interpolation = (is_reload_follow && RELOAD_SG_INTERP) || (is_normal_sync && SYNC_SG_INTERP);
     bool use_stealth = is_reload_approach || use_sg_interpolation;
 
     bool run_spreadcycle = TMC_SPREADCYCLE && !use_stealth;
@@ -1283,10 +1283,10 @@ static void tc_tick(uint32_t now_ms) {
             g_tc_ctx.reload_tick_ms = now_ms;
 
             // Speed target — common calculation.
-            // RELOAD_SG=1 enables pseudo-analog interpolation.
-            // RELOAD_SG=0 falls back to digital bang-bang (TRAILING_SPS / PRESS_SPS).
+            // RELOAD_SG_INTERP=1 enables pseudo-analog interpolation.
+            // RELOAD_SG_INTERP=0 falls back to digital bang-bang (TRAILING_SPS / PRESS_SPS).
             sg_ma_update(A);
-            int target_sps = sync_apply_scaling(PRESS_SPS, RELOAD_SG);
+            int target_sps = sync_apply_scaling(PRESS_SPS, RELOAD_SG_INTERP);
 
             // Ramp toward target.
             if (g_tc_ctx.reload_current_sps > target_sps)
@@ -1611,7 +1611,7 @@ static void sync_tick(uint32_t now_ms) {
 
         // Common scaling (Analog or SG)
         sg_ma_update(A);
-        int target = sync_apply_scaling(base_target, SYNC_SG);
+        int target = sync_apply_scaling(base_target, SYNC_SG_INTERP);
 
         if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
         else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
@@ -1837,8 +1837,8 @@ static void settings_defaults(void) {
     SG_DERIV = CONF_SG_DERIV;
     SG_TARGET = CONF_SG_TARGET;
     FOLLOW_TIMEOUT_MS = CONF_FOLLOW_TIMEOUT_MS;
-    SYNC_SG = CONF_SYNC_SG;
-    RELOAD_SG = CONF_RELOAD_SG;
+    SYNC_SG_INTERP = CONF_SYNC_SG_INTERP;
+    RELOAD_SG_INTERP = CONF_RELOAD_SG_INTERP;
 }
 
 static void settings_save(void) {
@@ -1917,8 +1917,8 @@ static void settings_save(void) {
     s.sg_deriv = SG_DERIV;
     s.sg_target = SG_TARGET;
     s.follow_timeout_ms = FOLLOW_TIMEOUT_MS;
-    s.sync_sg = SYNC_SG;
-    s.reload_sg = RELOAD_SG;
+    s.sync_sg = SYNC_SG_INTERP;
+    s.reload_sg = RELOAD_SG_INTERP;
 
     s.crc32 = crc32_buf((const uint8_t *)&s, offsetof(settings_t, crc32));
 
@@ -2041,8 +2041,8 @@ static void settings_load(void) {
     SG_DERIV = s->sg_deriv;
     SG_TARGET = s->sg_target;
     FOLLOW_TIMEOUT_MS = s->follow_timeout_ms;
-    SYNC_SG = s->sync_sg;
-    RELOAD_SG = s->reload_sg;
+    SYNC_SG_INTERP = s->sync_sg;
+    RELOAD_SG_INTERP = s->reload_sg;
 
     // Motor parameters always come from compile-time config (tune.h / config.ini).
     // Flash values for these fields are ignored so reflashing always takes effect.
@@ -2370,8 +2370,8 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "TS_BUF_MS"))    TS_BUF_FALLBACK_MS = clamp_i(iv, 0, 30000);
             else if (!strcmp(param, "STARTUP_MS"))   MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
             else if (!strcmp(param, "STALL_MS"))     STALL_RECOVERY_MS = clamp_i(iv, 0, 10000);
-            else if (!strcmp(param, "SYNC_SG"))      SYNC_SG = (iv != 0);
-            else if (!strcmp(param, "RELOAD_SG"))    RELOAD_SG = (iv != 0);
+            else if (!strcmp(param, "SYNC_SG_INTERP"))      SYNC_SG_INTERP = (iv != 0);
+            else if (!strcmp(param, "RELOAD_SG_INTERP"))    RELOAD_SG_INTERP = (iv != 0);
             else if (!strcmp(param, "SGT_L1"))    { TMC_SGT_L1 = clamp_i(iv, 0, 255); tmc_set_sgthrs(&g_tmc1, (uint8_t)TMC_SGT_L1); }
             else if (!strcmp(param, "SGT_L2"))    { TMC_SGT_L2 = clamp_i(iv, 0, 255); tmc_set_sgthrs(&g_tmc2, (uint8_t)TMC_SGT_L2); }
             else if (!strcmp(param, "TCOOLTHRS")) { TMC_TCOOLTHRS = clamp_i(iv, 0, 0xFFFFF); tmc_set_tcoolthrs(&g_tmc1, (uint32_t)TMC_TCOOLTHRS); tmc_set_tcoolthrs(&g_tmc2, (uint32_t)TMC_TCOOLTHRS); }
@@ -2433,8 +2433,8 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "TS_BUF_MS"))    snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
         else if (!strcmp(param, "STARTUP_MS"))   snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
         else if (!strcmp(param, "STALL_MS"))     snprintf(out, sizeof(out), "STALL_MS:%d", STALL_RECOVERY_MS);
-        else if (!strcmp(param, "SYNC_SG"))      snprintf(out, sizeof(out), "SYNC_SG:%d", SYNC_SG ? 1 : 0);
-        else if (!strcmp(param, "RELOAD_SG"))    snprintf(out, sizeof(out), "RELOAD_SG:%d", RELOAD_SG ? 1 : 0);
+        else if (!strcmp(param, "SYNC_SG_INTERP"))      snprintf(out, sizeof(out), "SYNC_SG_INTERP:%d", SYNC_SG_INTERP ? 1 : 0);
+        else if (!strcmp(param, "RELOAD_SG_INTERP"))    snprintf(out, sizeof(out), "RELOAD_SG_INTERP:%d", RELOAD_SG_INTERP ? 1 : 0);
         else if (!strcmp(param, "SGT_L1"))    snprintf(out, sizeof(out), "SGT_L1:%d", TMC_SGT_L1);
         else if (!strcmp(param, "SGT_L2"))    snprintf(out, sizeof(out), "SGT_L2:%d", TMC_SGT_L2);
         else if (!strcmp(param, "TCOOLTHRS")) snprintf(out, sizeof(out), "TCOOLTHRS:%d", TMC_TCOOLTHRS);

@@ -87,7 +87,7 @@ picotool reboot
 
 ## 5) Tuning and Validation Helpers
 
-Please see `README.md` for the full list of tuning and validation helper scripts (like `scripts/tune_reload_sg.py` and `scripts/nosf_cmd.py`).
+Please see `README.md` for the full list of tuning and validation helper scripts (like `scripts/tune_reload_sg_interp.py` and `scripts/nosf_cmd.py`).
 
 ## Troubleshooting
 

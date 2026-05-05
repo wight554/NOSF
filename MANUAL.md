@@ -128,8 +128,8 @@ All speed parameters use **mm/min** (same as Klipper `F`).
 | `BUF_THR` | Analog sensor: normalised threshold to declare ADVANCE/TRAILING | 0.30 |
 | `BUF_ALPHA` | Analog sensor: EMA filter weight (higher = faster response) | 0.20 |
 | `TS_BUF_MS` | Buffer-based TS:1 fallback: ms buffer must hold TRAILING after OUT seen — tip pressed against extruder gears (0 = disabled) | 2000 |
-| `SYNC_SG` | Enable StallGuard-based speed scaling (pseudo-analog) for normal sync tasks (`0`/`1`). | 0 |
-| `RELOAD_SG` | Enable StallGuard-based speed scaling (pseudo-analog) for RELOAD follow tasks (`0`/`1`). | 1 |
+| `SYNC_SG_INTERP` | Enable StallGuard-based speed scaling (pseudo-analog) for normal sync tasks (`0`/`1`). | 0 |
+| `RELOAD_SG_INTERP` | Enable StallGuard-based speed scaling (pseudo-analog) for RELOAD follow tasks (`0`/`1`). | 1 |
 | `SG_CURRENT_MA` | Motor current used when StallGuard is active (RELOAD approach, or follow/sync with SG enabled) (mA, 0–2000) | 800 |
 | `JOIN_RATE` | Fast approach speed (mm/min); must exceed max print speed | 2100 |
 | `PRESS_RATE` | Follow sync top speed (mm/min) — used when buffer is MID/ADVANCE | 1275 |

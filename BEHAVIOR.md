@@ -176,7 +176,7 @@ the buffer surplus.
 ### StallGuard in Sync modes
 
 StallGuard provides tension-based speed feedback. It can be used in two ways:
-1. **Normal Sync (`SYNC_SG=1`)**: Interpolates speed based on `SG_TARGET` even before the buffer arm moves significantly.
+1. **Normal Sync (`SYNC_SG_INTERP=1`)**: Interpolates speed based on `SG_TARGET` even before the buffer arm moves significantly.
 2. **RELOAD Mode**: Uses both soft-contact detection and speed interpolation.
 
 | Layer | Mechanism | What it catches |
