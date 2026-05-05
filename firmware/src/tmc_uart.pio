@@ -1,24 +1,24 @@
 .program tmc_uart_tx
-.side_set 1 opt pindirs
 
 ; TX encoding: 1 start bit, 8 data bits, 1 stop bit
-; Pin direction is controlled by side-set to allow high-Z for RX mode
+; Pin is driven HIGH at all times during idle to satisfy TMC2209 single-wire requirements
+; without an external pull-up. The TMC2209 drives LOW to reply, overpowering the RP2040.
 
-    ; Start in INPUT mode. Wait for data.
-    pull       side 0 [7]  
+    ; Start in OUTPUT HIGH mode. Wait for data.
+    pull       block [7]  
     
-    ; Data received. Switch to OUTPUT mode (drive HIGH).
-    set x, 7   side 1 [7]  
+    ; Data received.
+    set x, 7   [7]  
 
     ; start bit
-    set pins, 0 side 1 [7]
+    set pins, 0 [7]
 
 bitloop:
-    out pins, 1 side 1 [5]
+    out pins, 1 [5]
     jmp x-- bitloop   [1]
 
     ; stop bit
-    set pins, 1 side 1 [7]
+    set pins, 1 [7]
 
 
 .program tmc_uart_rx
@@ -46,11 +46,13 @@ static inline void tmc_uart_tx_program_init(PIO pio, uint sm, uint offset, uint 
     pio_sm_set_pindirs_with_mask(pio, sm, 1u << pin, 1u << pin);
     pio_gpio_init(pio, pin);
 
+    // Set drive strength to 2mA so TMC2209 can easily overpower it when replying
+    gpio_set_drive_strength(pin, GPIO_DRIVE_STRENGTH_2MA);
+
     pio_sm_config c = tmc_uart_tx_program_get_default_config(offset);
     sm_config_set_out_shift(&c, true, false, 32); // shift right, no autopull
     sm_config_set_out_pins(&c, pin, 1);
     sm_config_set_set_pins(&c, pin, 1);
-    sm_config_set_sideset_pins(&c, pin);
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
 
     float div = (float)clock_get_hz(clk_sys) / (8 * baud);

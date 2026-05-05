@@ -53,11 +53,8 @@ bool tmc_init(tmc_t *t, uint tx_pin, uint rx_pin, uint8_t addr) {
     tmc_uart_tx_program_init(t->pio, t->sm_tx, t->offset_tx, t->tx_pin, TMC_BAUD);
     tmc_uart_rx_program_init(t->pio, t->sm_rx, t->offset_rx, t->tx_pin, TMC_BAUD);
 
-    pio_sm_set_enabled(t->pio, t->sm_tx, true); // Keep TX SM enabled permanently to manage pin direction
+    pio_sm_set_enabled(t->pio, t->sm_tx, true); // Keep TX SM enabled permanently to manage pin state
     pio_sm_set_enabled(t->pio, t->sm_rx, true); // Keep RX SM enabled permanently to autonomously track line state
-    
-    // Enable pull-up for the idle HIGH state
-    gpio_pull_up(t->tx_pin);
 
     return true;
 }
@@ -102,14 +99,21 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
     req[2] = reg & 0x7Fu;
     req[3] = tmc_crc8(req, 3);
 
-    // Clear RX FIFO before starting
+    // Clear RX FIFO before starting to remove any old junk
     pio_sm_clear_fifos(t->pio, t->sm_rx);
 
     tmc_uart_send_bytes(t, req, 4);
 
     // TX has finished. The RX SM has read the TX echo.
-    // Clear the RX FIFO to discard the echo and prepare for the reply.
-    pio_sm_clear_fifos(t->pio, t->sm_rx);
+    // Explicitly wait for and drain the 4 echo bytes to guarantee the RX SM 
+    // has finished processing the stop bit and is waiting for the reply.
+    for (int i = 0; i < 4; i++) {
+        uint64_t drain_timeout = time_us_64() + 2000;
+        while (pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx) && time_us_64() < drain_timeout) tight_loop_contents();
+        if (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
+            pio_sm_get(t->pio, t->sm_rx);
+        }
+    }
 
     uint64_t timeout_us = time_us_64() + 5000;
     int received = 0;
@@ -120,7 +124,7 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
         }
     }
 
-    if (received < 8) { printf("EV:DEBUG: received %d\n", received); return false; } else { printf("EV:DEBUG: %02X %02X %02X %02X %02X %02X %02X %02X\n", rep[0], rep[1], rep[2], rep[3], rep[4], rep[5], rep[6], rep[7]); }
+    if (received < 8) return false;
     
     if (rep[0] != 0x05 || rep[1] != 0xFF || (rep[2] & 0x7Fu) != reg) {
         return false;
@@ -144,12 +148,18 @@ int tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t *buf_out) {
     req[2] = reg & 0x7Fu;
     req[3] = tmc_crc8(req, 3);
 
+    // Clear RX FIFO before starting to remove any old junk
     pio_sm_clear_fifos(t->pio, t->sm_rx);
     tmc_uart_send_bytes(t, req, 4);
     
-    // TX has finished. The RX SM has read the TX echo.
-    // Clear the RX FIFO to discard the echo and prepare for the reply.
-    pio_sm_clear_fifos(t->pio, t->sm_rx);
+    // Explicitly wait for and drain the 4 echo bytes
+    for (int i = 0; i < 4; i++) {
+        uint64_t drain_timeout = time_us_64() + 2000;
+        while (pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx) && time_us_64() < drain_timeout) tight_loop_contents();
+        if (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
+            pio_sm_get(t->pio, t->sm_rx);
+        }
+    }
 
     uint64_t timeout_us = time_us_64() + 5000;
     int n = 0;
