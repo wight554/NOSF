@@ -82,13 +82,14 @@ the context budget for code reading instead.
 ## Non-Negotiable Rules
 
 1. **MANDATORY: Build must pass** before EVERY commit. Run `cmake --build build_clang` or `ninja -C build_local` (not needed if changes are purely documentation). Never skip this. A broken build is a failed task.
-2. **Commit and push after every change — automatically, without asking.**
+2. **MANDATORY: Python Validation** — Run `python3 -m py_compile scripts/*.py` before every commit that touches scripts to ensure no syntax errors.
+3. **Commit and push after every change — automatically, without asking.**
    Do not ask the user "should I commit?" — just do it.
-3. **Bump `SETTINGS_VERSION`** in `main.c` whenever a field is added to or
+4. **Bump `SETTINGS_VERSION`** in `main.c` whenever a field is added to or
    removed from `settings_t`. The current version is in that file; grep for it.
-4. **Do not mock or stub hardware** — all changes must compile against the real
+5. **Do not mock or stub hardware** — all changes must compile against the real
    Pico SDK target.
-5. **MANDATORY: Documentation Sync** — Every finished task must validate
+6. **MANDATORY: Documentation Sync** — Every finished task must validate
    against all project documentation (`MANUAL.md`, `BEHAVIOR.md`, etc.) to
    ensure that parameter names, units, and command formats remain perfectly
    synchronized. If you change a parameter name in code, you MUST update it
