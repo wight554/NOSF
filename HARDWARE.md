@@ -6,9 +6,9 @@ Schematic: ERB V2.0 Release SCH.pdf (in FYSETC-ERB/V2.0/hardware/)
 
 ---
 
-## Recommended Hardware
-*   **Motors**: [FYSETC G36HSY4405-6D-1200](https://github.com/FYSETC/FYSETC-MOTORS/blob/main/G36HSY4405-6D-1200/G36HSY4405-6D-1200.pdf). This motor is specifically recommended for its excellent back-EMF characteristics in StealthChop, which allows for highly sensitive StallGuard load sensing.
-*   **Buffer**: [QuattroSync](https://github.com/Batalhoti/QuattroSync). A dedicated dual-lane buffer optimized for Infinite Spool System (ISS) operation.
+## Tested Hardware Configuration
+*   **Motors**: [FYSETC G36HSY4405-6D-1200](https://github.com/FYSETC/FYSETC-MOTORS/blob/main/G36HSY4405-6D-1200/G36HSY4405-6D-1200.pdf). This motor is a common choice found in many kits and has been verified to work well with StallGuard at 800mA.
+*   **Buffer**: [QuattroSync](https://github.com/Batalhoti/QuattroSync). A dual-lane buffer that utilizes springs for tension management, offering more consistent performance for ISS than gravity-based designs like the TurtleNeck.
 
 ---
 

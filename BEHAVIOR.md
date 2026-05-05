@@ -302,9 +302,9 @@ error: the fault is cleared and speed drops to `ISS_TRAILING_SPS`.
 With an analog buffer sensor the arm position provides continuous pressure
 feedback; SG_RESULT is not sampled.  SGTHRS/DIAG still fires on hard jams.
 
-### ISS StallGuard Tuning Example (FYSETC G36HSY4405-6D-1200)
+### ISS StallGuard Tuning Example (Tested Setup)
 
-For the recommended **FYSETC G36HSY4405-6D-1200** motor at **800mA**, these "Golden State" tunables provide a highly sensitive, quiet, and responsive follow:
+The following parameters are a verified "Golden State" for the **FYSETC G36HSY4405-6D-1200** motor at **800mA**. This serves as a starting point for similar NEMA 14 (36mm) motors:
 
 ```bash
 # Target just below free-air SG value (approx 350 at 800mA)
