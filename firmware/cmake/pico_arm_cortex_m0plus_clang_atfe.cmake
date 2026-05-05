@@ -241,7 +241,7 @@ endforeach()
 #                 its own startup code (pico_crt0/crt0.S), so suppress the
 #                 default startup files from the C library.
 foreach(TYPE IN ITEMS EXE SHARED MODULE)
-    set(CMAKE_${TYPE}_LINKER_FLAGS_INIT "${_common_flags} -nostartfiles -nostdlib++")
+    set(CMAKE_${TYPE}_LINKER_FLAGS_INIT "-nostartfiles -nostdlib++ ${_pico_extra_link_flags}")
 endforeach()
 
 # try_compile needs -nostdlib to avoid undefined _exit symbols.
