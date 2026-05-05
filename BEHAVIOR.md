@@ -338,6 +338,32 @@ python3 scripts/tune_iss_sg.py --lane 2 --contact --apply
 | `ISS_SG_DERIV_THR` | Global | `40 % of drop / tick` | Soft contact sensitivity in approach |
 | `SGT_L{N}` (SGTHRS) | Per-lane | `contact_floor / 2` | Hard-contact DIAG fallback — fires when SG ≤ 2 × value |
 
+#### How to use `TCOOLTHRS` (StallGuard speed gating)
+
+`TCOOLTHRS` defines the **minimum speed** at which StallGuard is active. The TMC2209 computes `SG_RESULT` only when the motor is running fast enough that `TSTEP ≤ TCOOLTHRS`.
+
+- **`TSTEP`** is the time between steps, measured in clock cycles (~12.5 MHz).
+- **Faster speed** = Smaller `TSTEP`.
+- **Slower speed** = Larger `TSTEP`.
+
+**The Formula:**
+To calculate the minimum speed (in steps per second) for a given `TCOOLTHRS`:
+```
+Min SPS ≈ 12,500,000 / TCOOLTHRS
+```
+
+**Examples (assuming default 12.5MHz clock):**
+| `TCOOLTHRS` | Min Speed (SPS) | Min Speed (mm/min)* |
+|-------------|-----------------|---------------------|
+| 500         | 25,000          | ≈ 2,125             |
+| 1000 (def)  | 12,500          | ≈ 1,060             |
+| 2000        | 6,250           | ≈ 530               |
+| 4000        | 3,125           | ≈ 265               |
+*\*Assuming default MM_PER_STEP = 0.001417*
+
+**Tuning Tip:**
+If you run `sg_monitor.py` at a slow speed and the SG value is stuck at 0 or a fixed noise floor, your speed is likely below the `TCOOLTHRS` gate. Either increase the speed of the test or increase `TCOOLTHRS` (e.g., `SET:TCOOLTHRS:2000`).
+
 **Why `contact_floor / 2` for SGTHRS:**
 TMC fires DIAG when `SG_RESULT ≤ 2 × SGTHRS`.  Setting `SGTHRS = contact_floor / 2`
 means DIAG fires exactly at the hard-contact floor — the point where filament is
