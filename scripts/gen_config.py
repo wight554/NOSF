@@ -92,9 +92,9 @@ DEFAULTS = {
     # TS Fallback
     "ts_buf_fallback_ms": "2000",
 
-    # ISS Mode
-    "iss_mode": "0",
-    "iss_y_timeout_ms": "10000",
+    # Reload Mode
+    "reload_mode": "0",
+    "reload_y_timeout_ms": "10000",
     # Sync / StallGuard
     "sg_target": "320.0",
     "sg_deriv": "3",
@@ -259,9 +259,9 @@ def main():
         "// --- TS Fallback ---",
         f"#define CONF_TS_BUF_FALLBACK_MS {get('ts_buf_fallback_ms')}",
         "",
-        "// --- ISS Mode ---",
-        f"#define CONF_ISS_MODE           {get('iss_mode')}",
-        f"#define CONF_ISS_Y_TIMEOUT_MS   {get('iss_y_timeout_ms')}",
+        "// --- Reload Mode ---",
+        f"#define CONF_RELOAD_MODE           {get('reload_mode')}",
+        f"#define CONF_RELOAD_Y_TIMEOUT_MS   {get('reload_y_timeout_ms')}",
         f"#define CONF_SG_CURRENT_MA     {get('sg_current_ma')}",
         f"#define CONF_JOIN_SPS           {mm_min_to_sps(get('join_rate'))}",
         f"#define CONF_PRESS_SPS          {mm_min_to_sps(get('press_rate'))}",

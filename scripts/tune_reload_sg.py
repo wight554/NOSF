@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-ISS StallGuard Tuning — NOSF
+RELOAD StallGuard Tuning — NOSF
 Calibrates SG_TARGET and SG_DERIV for Endless Spool contact detection.
 
-StallGuard (SG) in NOSF is used ONLY in ISS (Endless Spool) mode:
-  - TC_ISS_APPROACH: SG moving-average derivative detects tip-to-tail contact at
+StallGuard (SG) in NOSF is used ONLY in RELOAD (Endless Spool) mode:
+  - TC_RELOAD_APPROACH: SG moving-average derivative detects tip-to-tail contact at
                      high approach speed, before the buffer arm moves.
-  - TC_ISS_FOLLOW:   SG interpolation maintains gentle contact pressure during
+  - TC_RELOAD_FOLLOW:   SG interpolation maintains gentle contact pressure during
                      the ~1 m bowden journey to the extruder (2-endstop mode only;
                      analog buffer uses arm position directly).
 
@@ -118,7 +118,7 @@ def phase_free_air(ser, lane, join_rate):
     if stdev_sg > mean_sg * 0.3:
         print("  WARNING: high variability (σ > 30% of mean).")
         print("           Noisy SG can cause false approach triggers.")
-        print("           Consider increasing iss_sg_ma_len in config.ini.")
+        print("           Consider increasing reload_sg_ma_len in config.ini.")
 
     return mean_sg, stdev_sg
 
@@ -176,7 +176,7 @@ def compute_recommendations(free_air_sg, contact_floor=None):
         # Without contact data: estimate using 25% floor assumption.
         deriv_thr = max(1, round(free_air_sg * 0.30))
 
-    # SGT (SGTHRS): hard-contact DIAG fallback in ISS approach.
+    # SGT (SGTHRS): hard-contact DIAG fallback in RELOAD approach.
     # TMC fires DIAG when SG_RESULT ≤ 2 × SGTHRS.
     if contact_floor is not None:
         sgt = max(1, round(contact_floor / 2))
@@ -226,7 +226,7 @@ def print_recommendations(recs, free_air_sg, contact_floor, lane):
     print("Fine-tuning:")
     print("  SG_TARGET too high → motor backs off too early (weak pressure)")
     print("  SG_TARGET too low  → motor pushes too hard    (jam risk)")
-    print("  SG_DERIV too high  → approach misses contacts (rare false-no)")
+    print("  SG_DERIV too high  → approach mreloades contacts (rare false-no)")
     print("  SG_DERIV too low   → approach triggers on noise (early handoff)")
 
 def apply_settings(ser, recs, lane):
@@ -242,20 +242,20 @@ def apply_settings(ser, recs, lane):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ISS StallGuard tuning — calibrates SG_TARGET and SG_DERIV",
+        description="RELOAD StallGuard tuning — calibrates SG_TARGET and SG_DERIV",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Workflow:
   Step 1 — free-air baseline (always required):
-    python3 scripts/tune_iss_sg.py --lane 1
+    python3 scripts/tune_reload_sg.py --lane 1
 
   Step 2 — contact calibration (improves SG_DERIV accuracy):
-    python3 scripts/tune_iss_sg.py --lane 1 --contact
+    python3 scripts/tune_reload_sg.py --lane 1 --contact
 
   Step 3 — apply and save:
-    python3 scripts/tune_iss_sg.py --lane 1 --contact --apply
+    python3 scripts/tune_reload_sg.py --lane 1 --contact --apply
 
-SG is only active in ISS mode.
+SG is only active in RELOAD mode.
 """)
     parser.add_argument("--port", help="Serial port (auto-detected if omitted)")
     parser.add_argument("--lane", type=int, choices=[1, 2], default=1,
@@ -279,7 +279,7 @@ SG is only active in ISS mode.
         join_rate = get_value(ser, "JOIN_RATE")
         if join_rate is None:
             # Fallback for old firmware key
-            join_rate = get_value(ser, "ISS_JOIN")
+            join_rate = get_value(ser, "RELOAD_JOIN")
             
         if join_rate is None:
             print("Could not read JOIN_RATE from device. Is NOSF firmware running?")

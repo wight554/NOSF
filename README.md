@@ -106,11 +106,11 @@ python3 scripts/nosf_cmd.py "SV:"
 
 ## Tuning Scripts
 
-- `scripts/tune_iss_sg.py`: ISS StallGuard tuning wizard (contact detection)
+- `scripts/tune_reload_sg.py`: RELOAD StallGuard tuning wizard (contact detection)
 - `scripts/sg_monitor.py`: Real-time StallGuard monitor
 - `scripts/klipper_tune.py`: Apply/read Klipper-style parameters
 - `scripts/tmc_chopconf.py`: Direct CHOPCONF read/write utility
-- `STALLGUARD.md`: Deep-dive guide on StallGuard & ISS tuning
+- `STALLGUARD.md`: Deep-dive guide on StallGuard & RELOAD tuning
 - `scripts/nosf_cmd.py`: Robust single-command serial helper for Klipper integration
 
 All scripts support `--port`; if omitted they auto-detect from available serial devices.

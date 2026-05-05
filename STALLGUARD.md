@@ -1,12 +1,12 @@
-# StallGuard & ISS Tuning Guide
+# StallGuard & RELOAD Tuning Guide
 
-This document provides a deep dive into tuning the **Infinite Spool System (ISS)** using StallGuard on the TMC2209. It is based on real-world calibration of the **FYSETC G36HSY4405-6D-1200** motor at **800mA**.
+This document provides a deep dive into tuning the **Automatic Reload System (RELOAD)** using StallGuard on the TMC2209. It is based on real-world calibration of the **FYSETC G36HSY4405-6D-1200** motor at **800mA**.
 
 ---
 
 ## The Core Concept: Interpolated Follow
 
-Unlike a standard MMU, the ISS must match the speed of the printer's extruder. We use StallGuard as a "pressure sensor" to achieve this.
+Unlike a standard MMU, the RELOAD must match the speed of the printer's extruder. We use StallGuard as a "pressure sensor" to achieve this.
 
 1.  **Free-Air Baseline**: When the motor is spinning with no resistance, StallGuard reports a high value (the `SG_RESULT`).
 2.  **Contact/Tension**: As the extruder pulls the filament, the `SG_RESULT` drops.
@@ -39,7 +39,7 @@ When the buffer arm is fully deflected (trailing), the motor slows to this speed
 This watches the *rate of change* of the StallGuard signal.
 *   When the new filament tip hits the old tail during a fast approach (`JOIN_RATE`), the load jumps instantly.
 *   `SG_DERIV` catches this jump *before* the motor grinds or stalls.
-*   **Tuning Rule**: Use `scripts/tune_iss_sg.py` to calibrate this. A typical value is **3 to 10**.
+*   **Tuning Rule**: Use `scripts/tune_reload_sg.py` to calibrate this. A typical value is **3 to 10**.
 
 ### 5. `SGT_L1 / SGT_L2` (The Hard Safety Net)
 This sets the sensitivity of the `DIAG` pin (the hard-stop).
@@ -49,7 +49,7 @@ This sets the sensitivity of the `DIAG` pin (the hard-stop).
 
 ## Debugging with `EV:BS`
 
-Use a serial monitor to watch the `BS` (Buffer Status) events during an ISS follow:
+Use a serial monitor to watch the `BS` (Buffer Status) events during an RELOAD follow:
 `EV:BS:MID,1275.0,1.10`
 
 *   **`MID`**: Buffer zone.

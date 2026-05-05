@@ -79,11 +79,11 @@ run_current:
 # ts_buf_fallback_ms: 2000
 
 # --- Sync / StallGuard Tuning ---
-# iss_mode: 0
-# iss_y_timeout_ms: 10000
+# reload_mode: 0
+# reload_y_timeout_ms: 10000
 # sg_target: 320.0               # target SG value for follow-sync (G36HSY4405-6D-1200 @ 800mA)
 # sg_deriv: 3                  # derivative threshold for approach contact (0 = disabled)
-# sg_current_ma: 800           # high-torque current for all sync/ISS tasks
+# sg_current_ma: 800           # high-torque current for all sync/RELOAD tasks
 # trailing_rate: 42            # coasting speed when buffer is stalled (trailing)
 # sg_ma_len: 5                  # MA window for SG filtering
 # join_rate: 2100               # fast approach speed (mm/min)

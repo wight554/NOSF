@@ -3,7 +3,7 @@
 NOSF — SG Monitor
 Feeds a lane at a fixed speed and continuously prints StallGuard values.
 Use this to characterise free-air SG, observe contact drops, and verify
-SG_TARGET / ISS_SG_DERIV / SGT_L1 / SGT_L2 before or after tuning.
+SG_TARGET / RELOAD_SG_DERIV / SGT_L1 / SGT_L2 before or after tuning.
 """
 import argparse
 import serial
@@ -64,14 +64,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Speed selection:
-  --iss       Read JOIN_RATE from device and use it as feed speed.
+  --reload       Read JOIN_RATE from device and use it as feed speed.
               This is the recommended mode for SGT calibration — it matches
-              the exact speed used during ISS approach.
+              the exact speed used during RELOAD approach.
   --speed S   Explicit feed speed in mm/min.
 
 Examples:
-  # SGT calibration at ISS approach speed (auto-read from device):
-  python3 scripts/sg_monitor.py --lane 1 --iss
+  # SGT calibration at RELOAD approach speed (auto-read from device):
+  python3 scripts/sg_monitor.py --lane 1 --reload
 
   # Free-air observation at explicit speed:
   python3 scripts/sg_monitor.py --lane 1 --speed 2100
@@ -92,7 +92,7 @@ the free-air baseline.
     speed_group = parser.add_mutually_exclusive_group(required=True)
     speed_group.add_argument("--speed", type=float,
                              help="Feed speed in mm/min")
-    speed_group.add_argument("--iss",   action="store_true",
+    speed_group.add_argument("--reload",   action="store_true",
                              help="Read JOIN_RATE from device")
     args = parser.parse_args()
 
@@ -106,7 +106,7 @@ the free-air baseline.
         sys.exit(1)
 
     try:
-        if args.iss:
+        if args.reload:
             speed_str = get_value(ser, "JOIN_RATE")
             if speed_str is None:
                 # Fallback for old firmware key

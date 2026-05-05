@@ -132,7 +132,7 @@ StallGuard is not armed until `STARTUP_MS` (default 1000 ms) after motion starts
 
 ## StallGuard
 
-StallGuard is used exclusively in **ISS mode** (dual-endstop buffer sensor)
+StallGuard is used exclusively in **RELOAD mode** (dual-endstop buffer sensor)
 to detect filament contact during the approach phase and to gate the DIAG
 hard-stop fallback during follow.
 
@@ -177,19 +177,19 @@ the buffer surplus.
 
 StallGuard provides tension-based speed feedback. It can be used in two ways:
 1. **Normal Sync (`SYNC_SG=1`)**: Interpolates speed based on `SG_TARGET` even before the buffer arm moves significantly.
-2. **ISS Mode**: Uses both soft-contact detection and speed interpolation.
+2. **RELOAD Mode**: Uses both soft-contact detection and speed interpolation.
 
 | Layer | Mechanism | What it catches |
 |-------|-----------|-----------------|
 | Soft contact | SG_RESULT MA derivative vs `SG_DERIV` | Gentle tip-to-tail touch |
 | Hard contact | DIAG interrupt via `SGTHRS` (`SGT_L1`/`SGT_L2`) | Jams, hard crashes |
 
-**`TC_ISS_APPROACH` — contact detection at approach speed**
+**`TC_RELOAD_APPROACH` — contact detection at approach speed**
 
 The motor runs at `JOIN_RATE`. The per-tick MA derivative is compared to
 `SG_DERIV`: a sharp negative drop triggers handoff to follow sync.
 
-**`TC_ISS_FOLLOW` — pressure maintenance during bowden journey**
+**`TC_RELOAD_FOLLOW` — pressure maintenance during bowden journey**
 
 Speed is interpolated linearly from the filtered SG:
 
@@ -227,5 +227,5 @@ Buffer sync is managed automatically based on toolhead filament state.
 | `TS:1` received | enabled |
 | `FL:`/`TC:` load completes | enabled |
 | `UL:`, `UM:`, or `TC:` unload starts | disabled |
-| `FL:` command issued | disabled |
+| `FL:` command reloadued | disabled |
 | `ST:` command | disabled |

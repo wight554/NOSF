@@ -105,8 +105,8 @@ All speed parameters use **mm/min** (same as Klipper `F`).
 | `CUT_FEED` | Feed distance before cut (mm) | 48 |
 | `CUT_LEN` | Cut stroke length (mm) | 10 |
 | `CUT_AMT` | Number of cut repetitions | 1 |
-| `ISS_MODE` | Operating mode: `0` = MMU (manual/Klipper), `1` = ISS (auto-switch) | 0 |
-| `ISS_Y_MS` | Wait for Y-splitter to clear after runout (ms) | 10000 |
+| `RELOAD_MODE` | Operating mode: `0` = MMU (manual/Klipper), `1` = RELOAD (auto-switch) | 0 |
+| `RELOAD_Y_MS` | Wait for Y-splitter to clear after runout (ms) | 10000 |
 | `TC_CUT_MS` | Toolchange cut timeout (ms) | 5000 |
 | `TC_UNLOAD_MS` | Toolchange unload timeout (ms) | 60000 |
 | `TC_Y_MS` | Wait for Y-splitter to clear after unload (ms, 0 = skip) | 5000 |
@@ -128,8 +128,8 @@ All speed parameters use **mm/min** (same as Klipper `F`).
 | `BUF_THR` | Analog sensor: normalised threshold to declare ADVANCE/TRAILING | 0.30 |
 | `BUF_ALPHA` | Analog sensor: EMA filter weight (higher = faster response) | 0.20 |
 | `TS_BUF_MS` | Buffer-based TS:1 fallback: ms buffer must hold TRAILING after OUT seen — tip pressed against extruder gears (0 = disabled) | 2000 |
-| `SYNC_SG` | Enable StallGuard-based speed scaling (pseudo-analog) for all sync and ISS tasks (`0`/`1`). When `0`, system uses digital bang-bang (switch between `TRAILING_RATE` and target). | 0 |
-| `SG_CURRENT_MA` | Motor current used when StallGuard is active (ISS or `SYNC_SG=1`) (mA, 0–2000) | 800 |
+| `SYNC_SG` | Enable StallGuard-based speed scaling (pseudo-analog) for all sync and RELOAD tasks (`0`/`1`). When `0`, system uses digital bang-bang (switch between `TRAILING_RATE` and target). | 0 |
+| `SG_CURRENT_MA` | Motor current used when StallGuard is active (RELOAD or `SYNC_SG=1`) (mA, 0–2000) | 800 |
 | `JOIN_RATE` | Fast approach speed (mm/min); must exceed max print speed | 2100 |
 | `PRESS_RATE` | Follow sync top speed (mm/min) — used when buffer is MID/ADVANCE | 1275 |
 | `TRAILING_RATE` | Follow sync coast speed (mm/min) — used when buffer is TRAILING | 42 |

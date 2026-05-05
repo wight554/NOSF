@@ -32,8 +32,8 @@ static int MOTION_STARTUP_MS = CONF_MOTION_STARTUP_MS;
 
 static int RUNOUT_COOLDOWN_MS = CONF_RUNOUT_COOLDOWN_MS;
 
-static int ISS_MODE = CONF_ISS_MODE;
-static int ISS_Y_TIMEOUT_MS = CONF_ISS_Y_TIMEOUT_MS;
+static int RELOAD_MODE = CONF_RELOAD_MODE;
+static int RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
 static int JOIN_SPS = CONF_JOIN_SPS;
 static int PRESS_SPS = CONF_PRESS_SPS;
 static int TRAILING_SPS = CONF_TRAILING_SPS;
@@ -53,7 +53,7 @@ static int TMC_SGT_L1 = CONF_SGT_L1;
 static int TMC_SGT_L2 = CONF_SGT_L2;
 static int TMC_TCOOLTHRS = CONF_TCOOLTHRS;
 
-static float g_sg_load = 0.0f;   // MA-filtered SG_RESULT; updated only during ISS states
+static float g_sg_load = 0.0f;   // MA-filtered SG_RESULT; updated only during RELOAD states
 static int STALL_RECOVERY_MS = CONF_STALL_RECOVERY_MS;
 
 static int BUF_SENSOR_TYPE = CONF_BUF_SENSOR_TYPE;
@@ -316,7 +316,7 @@ typedef struct lane_s {
     int lane_id;
     uint32_t runout_block_until_ms;
     uint32_t buf_advance_since_ms;  // for TS:1 buffer fallback
-    uint32_t iss_tail_ms;           // ISS: timestamp when IN cleared; 0 = not tracking
+    uint32_t reload_tail_ms;           // RELOAD: timestamp when IN cleared; 0 = not tracking
 } lane_t;
 
 typedef enum {
@@ -357,9 +357,9 @@ typedef enum {
     TC_LOAD_WAIT_OUT,
     TC_LOAD_WAIT_TH,
     TC_LOAD_DONE,
-    TC_ISS_WAIT_Y,    // ISS: old tail exited OUT, waiting for Y-splitter to clear
-    TC_ISS_APPROACH,  // ISS State 1: fast approach — detect contact via SG derivative
-    TC_ISS_FOLLOW,    // ISS State 2: follow sync — SG-interpolated speed, exit on ADVANCE
+    TC_RELOAD_WAIT_Y,    // RELOAD: old tail exited OUT, waiting for Y-splitter to clear
+    TC_RELOAD_APPROACH,  // RELOAD State 1: fast approach — detect contact via SG derivative
+    TC_RELOAD_FOLLOW,    // RELOAD State 2: follow sync — SG-interpolated speed, exit on ADVANCE
     TC_ERROR
 } tc_state_t;
 
@@ -368,16 +368,16 @@ typedef struct {
     int target_lane;
     int from_lane;
     uint32_t phase_start_ms;
-    uint32_t iss_tick_ms;                      // SYNC_TICK_MS rate limiter for ISS ticks
+    uint32_t reload_tick_ms;                      // SYNC_TICK_MS rate limiter for RELOAD ticks
     // SG moving-average ring buffer (States 1 & 2)
     float    sg_ma_buf[CONF_SG_MA_LEN];    // raw SG readings
     uint8_t  sg_ma_idx;                         // next write position
     uint8_t  sg_ma_fill;                        // samples loaded so far (cap at MA_LEN)
     float    sg_ma_prev;                        // MA from previous tick (for derivative)
     // State 2 follow sync
-    int      iss_current_sps;                   // current ramped speed in TC_ISS_FOLLOW
-    int      iss_stall_count;                   // consecutive stalls in State 2
-    uint32_t last_iss_stall_ms;                 // for stall frequency tracking
+    int      reload_current_sps;                   // current ramped speed in TC_RELOAD_FOLLOW
+    int      reload_stall_count;                   // consecutive stalls in State 2
+    uint32_t last_reload_stall_ms;                 // for stall frequency tracking
     uint32_t last_trailing_ms;                  // for trailing timeout in follow
 } tc_ctx_t;
 
@@ -444,7 +444,7 @@ static bool prev_lane2_in_present = false;
 // ===================== Forward declarations =====================
 static void cmd_event(const char *type, const char *data);
 static inline tc_state_t tc_state(void);
-static void iss_trigger(int runout_lane, uint32_t now_ms);
+static void reload_trigger(int runout_lane, uint32_t now_ms);
 
 // Auto-enable/disable sync whenever toolhead filament state changes.
 static void set_toolhead_filament(bool present) {
@@ -514,7 +514,7 @@ static void lane_stop(lane_t *L) {
     L->unload_sensor_latch = false;
     L->retract_deadline_ms = 0;
     L->buf_advance_since_ms = 0;
-    L->iss_tail_ms = 0;
+    L->reload_tail_ms = 0;
     L->current_sps = 0;
     L->target_sps = 0;
     motor_stop(&L->m);
@@ -546,8 +546,8 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
 
     // Hybrid mode: Use StealthChop and SG_CURRENT_MA for sync tasks.
     bool is_sync = (t == TASK_FEED);
-    bool is_iss = (is_sync && g_tc_ctx.state != TC_IDLE);
-    bool use_stealth = is_iss || (is_sync && SYNC_SG);
+    bool is_reload = (is_sync && g_tc_ctx.state != TC_IDLE);
+    bool use_stealth = is_reload || (is_sync && SYNC_SG);
 
     bool run_spreadcycle = TMC_SPREADCYCLE && !use_stealth;
     int current_ma = use_stealth ? SG_CURRENT_MA : TMC_RUN_CURRENT_MA[L->lane_id-1];
@@ -693,11 +693,11 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         } else if (!lane_in_present(L) && (int32_t)(now_ms - L->motion_started_ms) >= 1000) {
             if (lane_out_present(L)) {
                 // Tail between IN and OUT: keep pushing until OUT clears or 10s timeout.
-                L->iss_tail_ms = now_ms;
+                L->reload_tail_ms = now_ms;
             } else {
                 lane_stop(L);
                 cmd_event("RUNOUT", lane_s);
-                if (ISS_MODE && tc_state() == TC_IDLE) iss_trigger(L->lane_id, now_ms);
+                if (RELOAD_MODE && tc_state() == TC_IDLE) reload_trigger(L->lane_id, now_ms);
             }
         } else if (!L->unload_sensor_latch &&
                    (int32_t)(now_ms - L->motion_started_ms) >= 10000) {
@@ -723,7 +723,7 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         if ((int32_t)(now_ms - L->motion_started_ms) >= 1000 &&
             (int32_t)(now_ms - L->runout_block_until_ms) >= 0) {
             if (lane_out_present(L)) {
-                L->iss_tail_ms = now_ms;
+                L->reload_tail_ms = now_ms;
                 L->runout_block_until_ms = now_ms + 30000u;
             } else {
                 char lane_s[2] = { (char)('0' + L->lane_id), 0 };
@@ -731,23 +731,23 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
                 L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
                 if (L->task == TASK_FEED) set_toolhead_filament(false);
                 lane_stop(L);
-                if (ISS_MODE && L->task == TASK_FEED && tc_state() == TC_IDLE)
-                    iss_trigger(L->lane_id, now_ms);
+                if (RELOAD_MODE && L->task == TASK_FEED && tc_state() == TC_IDLE)
+                    reload_trigger(L->lane_id, now_ms);
             }
         }
     }
 
-    if (L->iss_tail_ms != 0 && (L->task == TASK_FEED || L->task == TASK_LOAD_FULL || L->task == TASK_AUTOLOAD)) {
-        uint32_t tail_age = now_ms - L->iss_tail_ms;
+    if (L->reload_tail_ms != 0 && (L->task == TASK_FEED || L->task == TASK_LOAD_FULL || L->task == TASK_AUTOLOAD)) {
+        uint32_t tail_age = now_ms - L->reload_tail_ms;
         if (!lane_out_present(L) || g_buf.state == BUF_ADVANCE || tail_age >= 10000u) {
             char lane_s[2] = { (char)('0' + L->lane_id), 0 };
-            L->iss_tail_ms = 0;
+            L->reload_tail_ms = 0;
             L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
             cmd_event("RUNOUT", lane_s);
             if (L->task == TASK_FEED) set_toolhead_filament(false);
-            bool was_iss = (ISS_MODE && L->task == TASK_FEED && tc_state() == TC_IDLE);
+            bool was_reload = (RELOAD_MODE && L->task == TASK_FEED && tc_state() == TC_IDLE);
             lane_stop(L);
-            if (was_iss) iss_trigger(L->lane_id, now_ms);
+            if (was_reload) reload_trigger(L->lane_id, now_ms);
         }
     }
 }
@@ -959,25 +959,25 @@ static void tc_abort(void) {
     cmd_event("TC:ERROR", "ABORTED");
 }
 
-// ISS auto-switch: called when the old lane's filament tail exits OUT.
+// RELOAD auto-switch: called when the old lane's filament tail exits OUT.
 // Waits for the Y-splitter to clear, then starts the standby lane in sync mode
 // until TRAILING confirms the new tip has met the old tail.
-static void iss_trigger(int runout_lane, uint32_t now_ms) {
+static void reload_trigger(int runout_lane, uint32_t now_ms) {
     memset(&g_tc_ctx, 0, sizeof(g_tc_ctx));
     int other = (runout_lane == 1) ? 2 : 1;
     lane_t *OL = lane_ptr(other);
     if (!OL || !lane_in_present(OL)) {
-        cmd_event("ISS:FAULT", "NO_FILAMENT");
+        cmd_event("RELOAD:FAULT", "NO_FILAMENT");
         return;
     }
     char ev[8];
     snprintf(ev, sizeof(ev), "%d->%d", runout_lane, other);
-    cmd_event("ISS:SWITCHING", ev);
+    cmd_event("RELOAD:SWITCHING", ev);
     g_tc_ctx.target_lane    = other;
     g_tc_ctx.from_lane      = runout_lane;
     g_tc_ctx.phase_start_ms = now_ms;
-    g_tc_ctx.iss_stall_count = 0;
-    g_tc_ctx.state          = TC_ISS_WAIT_Y;
+    g_tc_ctx.reload_stall_count = 0;
+    g_tc_ctx.state          = TC_RELOAD_WAIT_Y;
 }
 
 static const char *tc_state_name(tc_state_t s) {
@@ -995,9 +995,9 @@ static const char *tc_state_name(tc_state_t s) {
         case TC_LOAD_WAIT_OUT: return "LOAD_WAIT_OUT";
         case TC_LOAD_WAIT_TH: return "LOAD_WAIT_TH";
         case TC_LOAD_DONE: return "LOAD_DONE";
-        case TC_ISS_WAIT_Y:   return "ISS_WAIT_Y";
-        case TC_ISS_APPROACH: return "ISS_APPROACH";
-        case TC_ISS_FOLLOW:   return "ISS_FOLLOW";
+        case TC_RELOAD_WAIT_Y:   return "RELOAD_WAIT_Y";
+        case TC_RELOAD_APPROACH: return "RELOAD_APPROACH";
+        case TC_RELOAD_FOLLOW:   return "RELOAD_FOLLOW";
         case TC_ERROR: return "ERROR";
         default: return "?";
     }
@@ -1131,33 +1131,33 @@ static void tc_tick(uint32_t now_ms) {
             }
             break;
 
-        case TC_ISS_WAIT_Y:
+        case TC_RELOAD_WAIT_Y:
             // Old filament tail exited OUT; wait for it to clear the Y-splitter
             // before starting the standby lane.
-            if (!on_al(&g_y_split) || ISS_Y_TIMEOUT_MS == 0) {
+            if (!on_al(&g_y_split) || RELOAD_Y_TIMEOUT_MS == 0) {
                 char lane_s[2] = { (char)('0' + g_tc_ctx.target_lane), 0 };
                 set_active_lane(g_tc_ctx.target_lane);
                 lane_t *NL = lane_ptr(active_lane);
-                cmd_event("ISS:JOINING", lane_s);
+                cmd_event("RELOAD:JOINING", lane_s);
                 // State 1: fast approach — contact detected by SG derivative.
                 lane_start(NL, TASK_FEED, JOIN_SPS, true, now_ms, 0);
                 // Arm stall immediately — STARTUP_MS warmup is for sync mode.
                 NL->stall_armed = true;
                 NL->autoload_deadline_ms = now_ms + (uint32_t)TC_TIMEOUT_LOAD_MS;
-                // Zero ISS ctx fields for fresh approach.
-                g_tc_ctx.iss_tick_ms = now_ms;
+                // Zero RELOAD ctx fields for fresh approach.
+                g_tc_ctx.reload_tick_ms = now_ms;
                 g_tc_ctx.sg_ma_idx   = 0;
                 g_tc_ctx.sg_ma_fill  = 0;
                 g_tc_ctx.sg_ma_prev  = 0.0f;
                 for (int i = 0; i < CONF_SG_MA_LEN; i++) g_tc_ctx.sg_ma_buf[i] = 0.0f;
                 g_tc_ctx.phase_start_ms = now_ms;
-                g_tc_ctx.state = TC_ISS_APPROACH;
-            } else if (age > (uint32_t)ISS_Y_TIMEOUT_MS) {
-                tc_enter_error("ISS_Y_TIMEOUT");
+                g_tc_ctx.state = TC_RELOAD_APPROACH;
+            } else if (age > (uint32_t)RELOAD_Y_TIMEOUT_MS) {
+                tc_enter_error("RELOAD_Y_TIMEOUT");
             }
             break;
 
-        case TC_ISS_APPROACH: {
+        case TC_RELOAD_APPROACH: {
             // State 1: Fast Approach & Soft Crash Detection.
             //
             // Motor runs at JOIN_SPS.  SG is sampled into a moving-average
@@ -1170,7 +1170,7 @@ static void tc_tick(uint32_t now_ms) {
             // speed) or a hard DIAG stall fires, both also trigger transition.
 
             if (A && A->task == TASK_IDLE && A->fault != FAULT_STALL) {
-                tc_enter_error("ISS_APPROACH_FAULT");
+                tc_enter_error("RELOAD_APPROACH_FAULT");
                 break;
             }
 
@@ -1179,8 +1179,8 @@ static void tc_tick(uint32_t now_ms) {
             // the BUF_TRAILING fallback below is sufficient.
             bool contacted = false;
             if (BUF_SENSOR_TYPE == 0 &&
-                (now_ms - g_tc_ctx.iss_tick_ms) >= (uint32_t)SYNC_TICK_MS) {
-                g_tc_ctx.iss_tick_ms = now_ms;
+                (now_ms - g_tc_ctx.reload_tick_ms) >= (uint32_t)SYNC_TICK_MS) {
+                g_tc_ctx.reload_tick_ms = now_ms;
 
                 if (A && A->task == TASK_FEED) {
                     uint16_t sg_raw;
@@ -1221,17 +1221,17 @@ static void tc_tick(uint32_t now_ms) {
                 }
                 // Initialise State 2 at PRESS_SPS so follow sync starts
                 // immediately without a ramp-up delay.
-                g_tc_ctx.iss_current_sps = PRESS_SPS;
-                g_tc_ctx.iss_tick_ms     = now_ms;
+                g_tc_ctx.reload_current_sps = PRESS_SPS;
+                g_tc_ctx.reload_tick_ms     = now_ms;
                 g_tc_ctx.phase_start_ms  = now_ms;
-                g_tc_ctx.state = TC_ISS_FOLLOW;
+                g_tc_ctx.state = TC_RELOAD_FOLLOW;
             } else if (age > (uint32_t)TC_TIMEOUT_LOAD_MS) {
-                tc_enter_error("ISS_APPROACH_TIMEOUT");
+                tc_enter_error("RELOAD_APPROACH_TIMEOUT");
             }
             break;
         }
 
-        case TC_ISS_FOLLOW: {
+        case TC_RELOAD_FOLLOW: {
             // State 2: Follow Sync (Bang-Bang + SG Interpolation).
             //
             // Tips are touching.  We follow the old filament's speed through the
@@ -1256,7 +1256,7 @@ static void tc_tick(uint32_t now_ms) {
                 if (A) lane_stop(A);
                 set_toolhead_filament(true);
                 char lane_s[2] = { (char)('0' + active_lane), 0 };
-                cmd_event("ISS:LOADED", lane_s);
+                cmd_event("RELOAD:LOADED", lane_s);
                 g_tc_ctx.state = TC_IDLE;
                 break;
             }
@@ -1265,14 +1265,14 @@ static void tc_tick(uint32_t now_ms) {
                 if (A) lane_stop(A);
                 set_toolhead_filament(true);
                 char lane_s[2] = { (char)('0' + active_lane), 0 };
-                cmd_event("ISS:LOADED", lane_s);
+                cmd_event("RELOAD:LOADED", lane_s);
                 g_tc_ctx.state = TC_IDLE;
                 break;
             }
 
             // Tick-rate-limited speed update.
-            if ((now_ms - g_tc_ctx.iss_tick_ms) < (uint32_t)SYNC_TICK_MS) break;
-            g_tc_ctx.iss_tick_ms = now_ms;
+            if ((now_ms - g_tc_ctx.reload_tick_ms) < (uint32_t)SYNC_TICK_MS) break;
+            g_tc_ctx.reload_tick_ms = now_ms;
 
             // Speed target — common calculation.
             // SYNC_SG=1 enables pseudo-analog interpolation.
@@ -1281,19 +1281,19 @@ static void tc_tick(uint32_t now_ms) {
             int target_sps = sync_apply_scaling(PRESS_SPS, SYNC_SG);
 
             // Ramp toward target.
-            if (g_tc_ctx.iss_current_sps > target_sps)
-                g_tc_ctx.iss_current_sps -= SYNC_RAMP_DN_SPS;
-            else if (g_tc_ctx.iss_current_sps < target_sps)
-                g_tc_ctx.iss_current_sps += SYNC_RAMP_UP_SPS;
-            g_tc_ctx.iss_current_sps = clamp_i(g_tc_ctx.iss_current_sps, 0, PRESS_SPS);
+            if (g_tc_ctx.reload_current_sps > target_sps)
+                g_tc_ctx.reload_current_sps -= SYNC_RAMP_DN_SPS;
+            else if (g_tc_ctx.reload_current_sps < target_sps)
+                g_tc_ctx.reload_current_sps += SYNC_RAMP_UP_SPS;
+            g_tc_ctx.reload_current_sps = clamp_i(g_tc_ctx.reload_current_sps, 0, PRESS_SPS);
 
             // Drive motor.
             if (A) {
-                if (g_tc_ctx.iss_current_sps > 0) {
+                if (g_tc_ctx.reload_current_sps > 0) {
                     if (A->task != TASK_FEED)
-                        lane_start(A, TASK_FEED, g_tc_ctx.iss_current_sps, true, now_ms, 0);
+                        lane_start(A, TASK_FEED, g_tc_ctx.reload_current_sps, true, now_ms, 0);
                     else
-                        motor_set_rate_sps(&A->m, g_tc_ctx.iss_current_sps);
+                        motor_set_rate_sps(&A->m, g_tc_ctx.reload_current_sps);
                 } else if (A->task == TASK_FEED) {
                     lane_stop(A);
                 }
@@ -1301,14 +1301,14 @@ static void tc_tick(uint32_t now_ms) {
                 if (A->fault == FAULT_STALL) {
                     A->fault = FAULT_NONE;
                     // Reset count if stalls are far apart (> 2s).
-                    if ((int32_t)(now_ms - g_tc_ctx.last_iss_stall_ms) > 2000)
-                        g_tc_ctx.iss_stall_count = 0;
+                    if ((int32_t)(now_ms - g_tc_ctx.last_reload_stall_ms) > 2000)
+                        g_tc_ctx.reload_stall_count = 0;
                     
-                    g_tc_ctx.iss_stall_count++;
-                    g_tc_ctx.last_iss_stall_ms = now_ms;
-                    g_tc_ctx.iss_current_sps = TRAILING_SPS;
+                    g_tc_ctx.reload_stall_count++;
+                    g_tc_ctx.last_reload_stall_ms = now_ms;
+                    g_tc_ctx.reload_current_sps = TRAILING_SPS;
 
-                    if (g_tc_ctx.iss_stall_count >= 3) {
+                    if (g_tc_ctx.reload_stall_count >= 3) {
                         tc_enter_error("FOLLOW_JAM");
                         lane_stop(A);
                         break;
@@ -1329,14 +1329,14 @@ static void tc_tick(uint32_t now_ms) {
             }
 
             // Reporting for interpolation debugging
-            static uint32_t last_iss_report_ms = 0;
-            if ((now_ms - last_iss_report_ms) >= 500u) {
-                last_iss_report_ms = now_ms;
+            static uint32_t last_reload_report_ms = 0;
+            if ((now_ms - last_reload_report_ms) >= 500u) {
+                last_reload_report_ms = now_ms;
                 char ev[64];
                 float sg_report = (SG_TARGET > 0) ? (g_sg_load / SG_TARGET) : 0.0f;
                 snprintf(ev, sizeof(ev), "%s,%.1f,%.2f",
                          buf_state_name(g_buf.state),
-                         (double)sps_to_mm_per_min(g_tc_ctx.iss_current_sps),
+                         (double)sps_to_mm_per_min(g_tc_ctx.reload_current_sps),
                          (double)sg_report);
                 cmd_event("BS", ev);
             }
@@ -1593,7 +1593,7 @@ static void sync_tick(uint32_t now_ms) {
 
     if (s == BUF_TRAILING) {
         // Pause syncing when pushing against the wall, wait for neutral.
-        // MMU sync differs from ISS follow here: we prefer a full stop to maintain position.
+        // MMU sync differs from RELOAD follow here: we prefer a full stop to maintain position.
         sync_current_sps = 0;
     } else {
         float correction = (float)SYNC_KP_SPS * buf_pos;
@@ -1723,7 +1723,7 @@ typedef struct {
 
     float mm_per_step;
 
-    int iss_y_timeout_ms;
+    int reload_y_timeout_ms;
     int join_sps;
     int press_sps;
     int trailing_sps;
@@ -1736,7 +1736,7 @@ typedef struct {
     bool auto_preload;
     bool enable_cutter;
     bool spreadcycle;
-    bool iss_mode;
+    bool reload_mode;
     bool sync_sg;
 
     uint32_t crc32;
@@ -1820,8 +1820,8 @@ static void settings_defaults(void) {
 
     MM_PER_STEP = CONF_MM_PER_STEP;
 
-    ISS_MODE = CONF_ISS_MODE;
-    ISS_Y_TIMEOUT_MS = CONF_ISS_Y_TIMEOUT_MS;
+    RELOAD_MODE = CONF_RELOAD_MODE;
+    RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
     JOIN_SPS = CONF_JOIN_SPS;
     PRESS_SPS = CONF_PRESS_SPS;
     TRAILING_SPS = CONF_TRAILING_SPS;
@@ -1899,8 +1899,8 @@ static void settings_save(void) {
 
     s.mm_per_step = MM_PER_STEP;
 
-    s.iss_mode = (bool)ISS_MODE;
-    s.iss_y_timeout_ms = ISS_Y_TIMEOUT_MS;
+    s.reload_mode = (bool)RELOAD_MODE;
+    s.reload_y_timeout_ms = RELOAD_Y_TIMEOUT_MS;
     s.join_sps = JOIN_SPS;
     s.press_sps = PRESS_SPS;
     s.trailing_sps = TRAILING_SPS;
@@ -2022,8 +2022,8 @@ static void settings_load(void) {
     SYNC_KP_SPS = s->sync_kp_sps;
     TS_BUF_FALLBACK_MS = s->ts_buf_fallback_ms;
 
-    ISS_MODE = s->iss_mode ? 1 : 0;
-    ISS_Y_TIMEOUT_MS = s->iss_y_timeout_ms;
+    RELOAD_MODE = s->reload_mode ? 1 : 0;
+    RELOAD_Y_TIMEOUT_MS = s->reload_y_timeout_ms;
     JOIN_SPS = s->join_sps;
     PRESS_SPS = s->press_sps;
     TRAILING_SPS = s->trailing_sps;
@@ -2074,7 +2074,7 @@ static void status_dump(void) {
     snprintf(b, sizeof(b),
         "LN:%d,TC:%s,L1T:%s,L2T:%s,"
         "I1:%d,O1:%d,I2:%d,O2:%d,"
-        "TH:%d,YS:%d,BUF:%s,SPS:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,ISS:%d,"
+        "TH:%d,YS:%d,BUF:%s,SPS:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,RELOAD:%d,"
         "SG1:%u,SG2:%u,SGF:%d",
         active_lane, tc_state_name(g_tc_ctx.state),
         task_name(g_lane1.task), task_name(g_lane2.task),
@@ -2092,7 +2092,7 @@ static void status_dump(void) {
         BUF_INVERT ? 1 : 0,
         AUTO_PRELOAD ? 1 : 0,
         ENABLE_CUTTER ? 1 : 0,
-        ISS_MODE,
+        RELOAD_MODE,
         sg1,
         sg2,
         (int)g_sg_load);
@@ -2335,8 +2335,8 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "AUTO_PRELOAD")) AUTO_PRELOAD = (iv != 0);
             else if (!strcmp(param, "RETRACT_MM"))   AUTOLOAD_RETRACT_MM = clamp_i(iv, 0, 50);
             else if (!strcmp(param, "CUTTER"))       ENABLE_CUTTER = (iv != 0);
-            else if (!strcmp(param, "ISS_MODE"))     ISS_MODE = (iv != 0) ? 1 : 0;
-            else if (!strcmp(param, "ISS_Y_MS"))     ISS_Y_TIMEOUT_MS = clamp_i(iv, 1000, 60000);
+            else if (!strcmp(param, "RELOAD_MODE"))     RELOAD_MODE = (iv != 0) ? 1 : 0;
+            else if (!strcmp(param, "RELOAD_Y_MS"))     RELOAD_Y_TIMEOUT_MS = clamp_i(iv, 1000, 60000);
             else if (!strcmp(param, "JOIN_RATE"))     JOIN_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
             else if (!strcmp(param, "PRESS_RATE"))    PRESS_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
             else if (!strcmp(param, "TRAILING_RATE")) TRAILING_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
@@ -2401,8 +2401,8 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "AUTO_PRELOAD")) snprintf(out, sizeof(out), "AUTO_PRELOAD:%d", AUTO_PRELOAD ? 1 : 0);
         else if (!strcmp(param, "RETRACT_MM"))    snprintf(out, sizeof(out), "RETRACT_MM:%d", AUTOLOAD_RETRACT_MM);
         else if (!strcmp(param, "CUTTER"))         snprintf(out, sizeof(out), "CUTTER:%d", ENABLE_CUTTER ? 1 : 0);
-        else if (!strcmp(param, "ISS_MODE"))         snprintf(out, sizeof(out), "ISS_MODE:%d", ISS_MODE);
-        else if (!strcmp(param, "ISS_Y_MS"))         snprintf(out, sizeof(out), "ISS_Y_MS:%d", ISS_Y_TIMEOUT_MS);
+        else if (!strcmp(param, "RELOAD_MODE"))         snprintf(out, sizeof(out), "RELOAD_MODE:%d", RELOAD_MODE);
+        else if (!strcmp(param, "RELOAD_Y_MS"))         snprintf(out, sizeof(out), "RELOAD_Y_MS:%d", RELOAD_Y_TIMEOUT_MS);
         else if (!strcmp(param, "JOIN_RATE"))     snprintf(out, sizeof(out), "JOIN_RATE:%.1f", (double)sps_to_mm_per_min(JOIN_SPS));
         else if (!strcmp(param, "PRESS_RATE"))    snprintf(out, sizeof(out), "PRESS_RATE:%.1f", (double)sps_to_mm_per_min(PRESS_SPS));
         else if (!strcmp(param, "TRAILING_RATE")) snprintf(out, sizeof(out), "TRAILING_RATE:%.1f", (double)sps_to_mm_per_min(TRAILING_SPS));

@@ -17,9 +17,9 @@ Key globals (all `static`, declared at the top of `main.c`):
 ```c
 static lane_t   g_lane1, g_lane2;   // per-lane state
 static tmc_t    g_tmc1,  g_tmc2;    // TMC2209 UART handles
-static tc_ctx_t g_tc_ctx;           // toolchange / ISS state
+static tc_ctx_t g_tc_ctx;           // toolchange / RELOAD state
 static buf_t    g_buf;              // buffer arm position + zone
-static float    g_sg_load;          // MA-filtered SG_RESULT (ISS / sync)
+static float    g_sg_load;          // MA-filtered SG_RESULT (RELOAD / sync)
 static int      active_lane;        // 1 or 2
 ```
 
@@ -59,7 +59,7 @@ typedef struct lane_s {
 `fault_t` values: `FAULT_NONE`, `FAULT_STALL`, `FAULT_TIMEOUT`,
 `FAULT_SENSOR`, `FAULT_BUF`, `FAULT_CUT`
 
-### `tc_state_t` — toolchange / ISS state machine
+### `tc_state_t` — toolchange / RELOAD state machine
 
 ```c
 TC_IDLE
@@ -67,25 +67,25 @@ TC_UNLOAD_CUT → TC_UNLOAD_WAIT_CUT → TC_UNLOAD_REVERSE →
   TC_UNLOAD_WAIT_OUT → TC_UNLOAD_WAIT_Y → TC_UNLOAD_WAIT_TH → TC_UNLOAD_DONE
 TC_SWAP
 TC_LOAD_START → TC_LOAD_WAIT_OUT → TC_LOAD_WAIT_TH → TC_LOAD_DONE
-TC_ISS_WAIT_Y → TC_ISS_APPROACH → TC_ISS_FOLLOW          ← ISS path
+TC_RELOAD_WAIT_Y → TC_RELOAD_APPROACH → TC_RELOAD_FOLLOW          ← RELOAD path
 TC_ERROR
 ```
 
-ISS path detail:
-- `TC_ISS_WAIT_Y`: old tail cleared OUT; wait for Y-splitter sensor to clear
-- `TC_ISS_APPROACH`: motor at `JOIN_SPS`; SG MA derivative detects soft contact;
+RELOAD path detail:
+- `TC_RELOAD_WAIT_Y`: old tail cleared OUT; wait for Y-splitter sensor to clear
+- `TC_RELOAD_APPROACH`: motor at `JOIN_SPS`; SG MA derivative detects soft contact;
   DIAG stall (SGTHRS) catches hard jams; exits to FOLLOW on any contact
-- `TC_ISS_FOLLOW`: SG-interpolated speed (2-endstop) or arm position (analog);
+- `TC_RELOAD_FOLLOW`: SG-interpolated speed (2-endstop) or arm position (analog);
   exits on `BUF_ADVANCE` (extruder pickup confirmed) or timeout
 
-### `tc_ctx_t` — ISS context
+### `tc_ctx_t` — RELOAD context
 
 ```c
 typedef struct {
     tc_state_t state;
     int   target_lane, from_lane;
     uint32_t phase_start_ms;
-    uint32_t iss_tick_ms;              // rate-limiter for SYNC_TICK_MS ticks
+    uint32_t reload_tick_ms;              // rate-limiter for SYNC_TICK_MS ticks
     float    sg_ma_buf[CONF_SG_MA_LEN];
     uint8_t  sg_ma_idx, sg_ma_fill;
     float    sg_ma_prev;
@@ -136,7 +136,7 @@ static void lane_start(lane_t *L, ...) {
 ```
 
 In normal operation the main loop re-arms it after `MOTION_STARTUP_MS`.
-For ISS approach, `stall_armed = true` must be set **after** `lane_start()`:
+For RELOAD approach, `stall_armed = true` must be set **after** `lane_start()`:
 
 ```c
 lane_start(NL, TASK_FEED, JOIN_SPS, true, now_ms, 0);
@@ -149,17 +149,17 @@ NL->stall_armed = true;   // must come after lane_start, not before
 if (!sync_enabled || tc_state() != TC_IDLE) return;
 ```
 
-Buffer sync must not run during any toolchange or ISS state.
+Buffer sync must not run during any toolchange or RELOAD state.
 
 ### 3. `SG_RESULT` ≠ `SGTHRS`
 
 - **`SG_RESULT`** (0–511): continuous load measurement read via UART. Used for
-  ISS speed interpolation and derivative contact detection.
+  RELOAD speed interpolation and derivative contact detection.
 - **`SGTHRS`** (0–255): threshold that controls the **DIAG pin** only.
   `DIAG` fires when `SG_RESULT ≤ 2 × SGTHRS`.
 - **`TCOOLTHRS`**: gates both. SG active when `TSTEP ≤ TCOOLTHRS`.
 
-### 4. ISS SG parameters — global vs per-lane
+### 4. RELOAD SG parameters — global vs per-lane
 
 | Parameter | Scope | Reason |
 |-----------|-------|--------|
@@ -172,9 +172,9 @@ Buffer sync must not run during any toolchange or ISS state.
 
 - **During sync**: first stall → recovery mode (ramp back up);
   second stall within `STALL_RECOVERY_MS` → `FAULT_STALL` hard stop.
-- **During `TC_ISS_APPROACH`**: stall = contact detected → clear fault,
-  stop motor, transition to `TC_ISS_FOLLOW`.
-- **During `TC_ISS_FOLLOW`**: stall = pressure spike → clear fault, drop
+- **During `TC_RELOAD_APPROACH`**: stall = contact detected → clear fault,
+  stop motor, transition to `TC_RELOAD_FOLLOW`.
+- **During `TC_RELOAD_FOLLOW`**: stall = pressure spike → clear fault, drop
   speed to `TRAILING_SPS`, continue.
 
 ### 6. `MM_PER_STEP` and Speed Conversion
@@ -227,9 +227,9 @@ cmd_reply("ER", "REASON");          // → ER:REASON
 | Task | Read |
 |------|------|
 | Add/modify runtime parameter | This file §Settings Pattern + §Gotcha 1 |
-| Modify ISS approach or follow logic | `main.c` around `TC_ISS_APPROACH` / `TC_ISS_FOLLOW` cases + `BEHAVIOR.md` §StallGuard in ISS |
+| Modify RELOAD approach or follow logic | `main.c` around `TC_RELOAD_APPROACH` / `TC_RELOAD_FOLLOW` cases + `BEHAVIOR.md` §StallGuard in RELOAD |
 | Modify buffer sync | `main.c` `sync_tick()` function + `BEHAVIOR.md` §Buffer sync speed control |
-| StallGuard tuning or calibration | `BEHAVIOR.md` §StallGuard + §Tuning ISS StallGuard |
+| StallGuard tuning or calibration | `BEHAVIOR.md` §StallGuard + §Tuning RELOAD StallGuard |
 | Add a new serial command | `main.c` command dispatch block |
 | Hardware pinout / sensor wiring | `HARDWARE.md` |
 | Klipper macros or shell helper | `KLIPPER.md` |
