@@ -221,8 +221,8 @@ python3 scripts/nosf_test.py "UM:"
 # Toolchange to lane 2
 python3 scripts/nosf_test.py "TC:2"
 
-# Tune stall threshold
-python3 scripts/nosf_test.py "SET:STARTUP_MS:500" "SG:1"
+# Monitor StallGuard on lane 1
+python3 scripts/sg_monitor.py --lane 1
 
 # Save settings
 python3 scripts/nosf_test.py "SV:"

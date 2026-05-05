@@ -65,18 +65,13 @@ Examples of good commit messages:
 
 Clean build:
 ```bash
-cd ~/dev/NOSF
-rm -rf build
-mkdir build && cd build
-export PICO_SDK_PATH=~/dev/pico-sdk
-cmake -G Ninja ../firmware
-ninja
+cmake -S firmware -B build_local -G Ninja -DPICO_SDK_PATH=/path/to/pico-sdk
+ninja -C build_local
 ```
 
 Flash:
 ```bash
-sudo ~/dev/picotool/build/picotool load ~/dev/NOSF/build/nosf_controller.elf -f
-sudo ~/dev/picotool/build/picotool reboot
+bash scripts/flash_nosf.sh
 ```
 
 ---

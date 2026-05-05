@@ -87,13 +87,7 @@ picotool reboot
 
 ## 5) Tuning and Validation Helpers
 
-```bash
-python3 scripts/nosf_test.py "VR:" "?:"
-python3 scripts/klipper_tune.py --lane 1 read
-python3 scripts/tmc_chopconf.py --lane 1 read
-```
-
-All scripts support `--port`; if omitted they auto-detect serial ports.
+Please see `README.md` for the full list of tuning and validation helper scripts (like `scripts/tune_iss_sg.py` and `scripts/nosf_test.py`).
 
 ## Troubleshooting
 
