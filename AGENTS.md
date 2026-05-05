@@ -81,7 +81,7 @@ the context budget for code reading instead.
 
 ## Non-Negotiable Rules
 
-1. **Build must pass** before committing. Run `ninja -C build_local` (not needed if changes are purely documentation).
+1. **MANDATORY: Build must pass** before EVERY commit. Run `cmake --build build_clang` or `ninja -C build_local` (not needed if changes are purely documentation). Never skip this. A broken build is a failed task.
 2. **Commit and push after every change — automatically, without asking.**
    Do not ask the user "should I commit?" — just do it.
 3. **Bump `SETTINGS_VERSION`** in `main.c` whenever a field is added to or
