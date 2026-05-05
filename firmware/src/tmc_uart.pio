@@ -27,15 +27,20 @@ bitloop:
 ; Pin is configured as input outside of this program.
 
 start:
-wait 0 pin 0        ; Wait for start bit (falling edge)
-set x, 7    [10]    ; Preload bit counter, delay to center of start bit + half a bit to get to center of bit 0
+wait_low:
+    jmp pin wait_low    ; Wait for start bit (falling edge)
+
+    set x, 7    [10]    ; Preload bit counter, delay to center of start bit + half a bit to get to center of bit 0
 
 bitloop:
-in pins, 1          ; Sample data
-jmp x-- bitloop [6] ; Delay 8 cycles per bit (1 sampling + 1 jmp + 6 delay)
+    in pins, 1          ; Sample data
+    jmp x-- bitloop [6] ; Delay 8 cycles per bit (1 sampling + 1 jmp + 6 delay)
 
-wait 1 pin 0        ; Wait for stop bit (line goes idle HIGH)
-push                ; Push data to FIFO
+wait_high:
+    jmp pin done_wait   ; Wait for stop bit (line goes idle HIGH)
+    jmp wait_high
+done_wait:
+    push                ; Push data to FIFO
 
 % c-sdk {
 #include "hardware/clocks.h"
