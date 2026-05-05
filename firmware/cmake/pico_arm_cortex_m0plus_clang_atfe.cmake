@@ -165,16 +165,23 @@ endif ()
 
 
 # On Linux/Pi, Clang often needs help finding the C++ machine-specific headers
-# (like bits/c++config.h) which are buried in a subdirectory.
-# Also use compiler-rt instead of libgcc on system builds.
+# (like bits/c++config.h) and the GCC runtime (libgcc.a).
 if (NOT PICO_COMPILER_SYSROOT_IS_ATFE AND PICO_COMPILER_SYSROOT)
-    set(_pico_extra_flags "${_pico_extra_flags} --rtlib=compiler-rt")
+    # 1. Fix C++ headers
     file(GLOB _cpp_headers "/usr/lib/arm-none-eabi/include/c++/*")
     if (_cpp_headers)
         list(GET _cpp_headers 0 _cpp_base)
         if (EXISTS "${_cpp_base}/arm-none-eabi")
             set(_pico_extra_cpp_include "-isystem ${_cpp_base}/arm-none-eabi")
         endif()
+    endif()
+
+    # 2. Find libgcc.a for the linker
+    file(GLOB_RECURSE _libgcc_path "/usr/lib/gcc/arm-none-eabi/*/libgcc.a")
+    if (_libgcc_path)
+        list(GET _libgcc_path 0 _libgcc_file)
+        get_filename_component(_libgcc_dir "${_libgcc_file}" DIRECTORY)
+        string(APPEND _common_flags " -L${_libgcc_dir}")
     endif()
 endif()
 
