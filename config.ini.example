@@ -90,3 +90,4 @@ run_current:
 # press_rate: 1275              # top speed in follow-sync (mm/min)
 # follow_timeout_ms: 10000      # max time in follow/sync before error
 # sync_sg: False                 # experimental: use StallGuard interpolation during normal sync
+# reload_sg: True               # use StallGuard interpolation during RELOAD follow
