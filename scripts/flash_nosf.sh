@@ -1,8 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+USE_GCC=0
+if [[ "${1:-}" == "--gcc" ]]; then
+    USE_GCC=1
+    shift
+fi
+
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-BUILD_DIR="${BUILD_DIR:-$REPO/build_local}"
+if [[ $USE_GCC -eq 1 ]]; then
+    BUILD_DIR="${BUILD_DIR:-$REPO/build_local}"
+    PRESET="gcc"
+else
+    BUILD_DIR="${BUILD_DIR:-$REPO/build_clang}"
+    PRESET="clang"
+fi
 UF2_PATH="$BUILD_DIR/nosf_controller.uf2"
 ELF_PATH="$BUILD_DIR/nosf_controller.elf"
 
@@ -45,6 +57,8 @@ find_picotool() {
     fi
 
     local candidates=(
+        "$REPO/build_clang/_deps/picotool/picotool"
+        "$REPO/build_clang/picotool/picotool"
         "$REPO/build_local/_deps/picotool/picotool"
         "$REPO/build_local/picotool/picotool"
         "$REPO/build_audit/_deps/picotool/picotool"
@@ -199,9 +213,9 @@ if [[ ! -f "$BUILD_DIR/build.ninja" ]]; then
         exit 1
     fi
 
-    cmake_args=( -S "$REPO/firmware" -B "$BUILD_DIR" -G Ninja )
+    cmake_args=( --preset "$PRESET" -S "$REPO/firmware" -B "$BUILD_DIR" )
     cmake_args+=( "-DPICO_SDK_PATH=$SDK_PATH" )
-    echo "Using PICO_SDK_PATH=$SDK_PATH"
+    echo "Using PICO_SDK_PATH=$SDK_PATH with preset $PRESET"
     cmake "${cmake_args[@]}"
 fi
 cmake --build "$BUILD_DIR"
