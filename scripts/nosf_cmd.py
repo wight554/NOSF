@@ -74,7 +74,7 @@ DUMP_PARAMS = [
     ("STARTUP_MS",        "motion_startup_ms",       False),
     ("STALL_MS",          "stall_recovery_ms",       False),
     ("RAMP_STEP_RATE",    "ramp_step_rate",          False),
-    ("FOLLOW_MS",         "follow_timeout_ms",       False),
+    ("FOLLOW_MS",         "follow_timeout_ms",       True),
     # --- Buffer sync ---
     ("BUF_TRAVEL",        "buf_half_travel_mm",      False),
     ("BUF_HYST",          "buf_hyst_ms",             False),
@@ -88,8 +88,8 @@ DUMP_PARAMS = [
     ("BUF_ALPHA",         "buf_analog_alpha",        False),
     ("TS_BUF_MS",         "ts_buf_fallback_ms",      False),
     # --- SG tuning ---
-    ("SG_TARGET",         "sg_target",               False),
-    ("SG_DERIV",          "sg_deriv",                False),
+    ("SG_TARGET",         "sg_target",               True),
+    ("SG_DERIV",          "sg_deriv",                True),
     ("SYNC_SG_INTERP",    "sync_sg_interp",          False),
     ("RELOAD_SG_INTERP",  "reload_sg_interp",        False),
     # --- Reload ---

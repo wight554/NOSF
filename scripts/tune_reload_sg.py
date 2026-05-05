@@ -214,12 +214,12 @@ def print_recommendations(recs, free_air_sg, contact_floor, lane):
     print(f"    Hard-contact DIAG fallback for lane {lane}.")
     print(f"    TMC fires DIAG when SG_RESULT ≤ {2*sgt}  (= 2 × {sgt}).")
     print()
-    print("NOTE: SG_TARGET and SG_DERIV are global (both lanes).")
-    print(f"  SGT_L{lane} is per-lane — run this script for each lane separately.")
+    print("NOTE: SG_TARGET, SG_DERIV, and SGT are all per-lane.")
+    print(f"  Run this script for each lane separately to tune them independently.")
     print()
     print("Apply commands:")
     for k, v in recs.items():
-        key = f"SGT_L{lane}" if k == 'SGT' else k
+        key = f"{k}_L{lane}"
         print(f"  SET:{key}:{v}")
     print("  SV:")
     print()
@@ -232,7 +232,7 @@ def print_recommendations(recs, free_air_sg, contact_floor, lane):
 def apply_settings(ser, recs, lane):
     print("\nApplying...")
     for k, v in recs.items():
-        key = f"SGT_L{lane}" if k == 'SGT' else k
+        key = f"{k}_L{lane}"
         resp = send_wait(ser, f"SET:{key}:{v}") or "timeout"
         print(f"  SET:{key}:{v}  →  {resp}")
     resp = send_wait(ser, "SV:") or "timeout"

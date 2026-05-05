@@ -160,19 +160,19 @@ These can be set in `config.ini` (as single values or comma-separated lists) **a
 | `JOIN_RATE` | `join_rate` | RELOAD fast approach speed (mm/min) | 2100 |
 | `PRESS_RATE` | `press_rate` | RELOAD follow top speed (mm/min) | 1275 |
 | `TRAILING_RATE` | `trailing_rate` | RELOAD follow coast speed (mm/min) | 42 |
-| `SG_DERIV` | `sg_deriv` | SG approach contact threshold | 3 |
-| `SG_TARGET` | `sg_target` | SG follow-sync setpoint | 320.0 |
 | `SG_MA_LEN` | `sg_ma_len` | SG moving average window | 5 |
-| `FOLLOW_MS` | `follow_timeout_ms` | RELOAD follow timeout (ms) | 10000 |
-| `SGT` | `sgt` | Lane DIAG threshold (-64 to 63) | 0 |
-| `TCOOLTHRS` | `tcoolthrs` | SG activation threshold (TSTEP) | 0xFFFFF |
+| `FOLLOW_MS` | `follow_timeout_ms` | RELOAD follow timeout (ms) (per-lane capable) | 10000 |
+| `SGT` | `sgt` | Lane DIAG threshold (-64 to 63) (per-lane) | 0 |
+| `TCOOLTHRS` | `tcoolthrs` | SG activation threshold (TSTEP) (per-lane) | 0xFFFFF |
+| `SG_DERIV` | `sg_deriv` | SG approach contact threshold (per-lane) | 3 |
+| `SG_TARGET` | `sg_target` | SG follow-sync setpoint (per-lane) | 320.0 |
 | `MM_PER_STEP` | | (Read-only) Actual mm per step | from tune.h |
 
 ### Per-lane
 
 ```
-SET:<param>:<lane>:<value>
-GET:<param>:<lane>
+SET:<param>_L<lane>:<value>    (e.g. SET:SGT_L1:10)
+GET:<param>_L<lane>            (e.g. GET:SGT_L1)
 ```
 
 | Parameter | Description |
@@ -184,6 +184,11 @@ GET:<param>:<lane>
 | `SG_CURRENT_MA` | High-torque current for lane N (mA, 0–2000) |
 | `MICROSTEPS` | Microstepping for lane N (1–256) |
 | `ROTATION_DIST` | Rotation distance for lane N (mm) |
+| `GEAR_RATIO` | Gear ratio for lane N (e.g. 5.0) |
+| `FULL_STEPS` | Full steps per rotation for lane N (200/400) |
+| `SG_TARGET` | SG follow-sync setpoint for lane N |
+| `SG_DERIV` | SG approach contact threshold for lane N |
+| `FOLLOW_MS` | RELOAD follow timeout for lane N (ms) |
 
 ---
 
@@ -195,7 +200,7 @@ GET:<param>:<lane>
 | `LD:` | Load settings from flash (also called on boot). |
 | `RS:` | Reset to compile-time defaults and save. |
 
-Motor parameters (`RUN_CURRENT_MA`, `HOLD_CURRENT_MA`, `MM_PER_STEP`, `MICROSTEPS`) always come from the compiled `tune.h` on boot — flash values for these are ignored. All other parameters are restored from flash.
+All runtime parameters, including motor currents and kinematics, are restored from flash on boot if a valid settings block exists. `RS:` can be used to return to the hard-coded defaults in `tune.h`.
 
 ---
 

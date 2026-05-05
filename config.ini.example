@@ -97,7 +97,7 @@ run_current:
 # reload_mode: 0              # 0 = MMU (manual), 1 = RELOAD (auto-switch on runout)
 # reload_y_timeout_ms: 10000  # max wait for Y-splitter to clear after tail exits OUT
 
-# ─── RELOAD StallGuard Tuning ────────────────────────────────────────────────
+# ─── RELOAD StallGuard Tuning (per-lane capable) ──────────────────────────────
 # sg_target: 320.0            # target SG value for follow-sync
 # sg_deriv: 3                 # approach contact threshold (0 = disabled)
 # trailing_rate: 42           # coasting speed when buffer is stalled (mm/min)

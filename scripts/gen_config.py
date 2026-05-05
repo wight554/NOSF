@@ -208,6 +208,9 @@ def main():
         sgt = int(gm("sgt", "0"))
         tcoolthrs = int(gm("tcoolthrs", "0xFFFFF"), 0)
         sg_current_ma = int(gm("sg_current_ma", "800"))
+        sg_target = float(gm("sg_target", "320.0"))
+        sg_deriv = int(gm("sg_deriv", "3"))
+        follow_timeout_ms = int(gm("follow_timeout_ms", "10000"))
 
         mm_per_step = rotation_distance / (full_steps * microsteps * gear_ratio) if rotation_distance > 0 else 0.0125
         run_ma = int(round(run_current * 1000))
@@ -230,7 +233,10 @@ def main():
             "dir_invert": dir_invert,
             "sgt": sgt,
             "tcoolthrs": tcoolthrs,
-            "sg_current_ma": sg_current_ma
+            "sg_current_ma": sg_current_ma,
+            "sg_target": sg_target,
+            "sg_deriv": sg_deriv,
+            "follow_timeout_ms": follow_timeout_ms
         }
 
     # Generate for 2 lanes (can be expanded later by changing this loop)
@@ -265,6 +271,9 @@ def main():
         f"#define CONF_M1_SGT                {m1['sgt']}",
         f"#define CONF_M1_TCOOLTHRS          {m1['tcoolthrs']}",
         f"#define CONF_M1_SG_CURRENT_MA      {m1['sg_current_ma']}",
+        f"#define CONF_M1_SG_TARGET          {m1['sg_target']:.1f}f",
+        f"#define CONF_M1_SG_DERIV           {m1['sg_deriv']}",
+        f"#define CONF_M1_FOLLOW_TIMEOUT_MS  {m1['follow_timeout_ms']}",
         "",
         "// --- Motor / TMC (Lane 2) ---",
         f"#define CONF_M2_RUN_CURRENT_MA     {m2['run_ma']}",
@@ -283,6 +292,9 @@ def main():
         f"#define CONF_M2_SGT                {m2['sgt']}",
         f"#define CONF_M2_TCOOLTHRS          {m2['tcoolthrs']}",
         f"#define CONF_M2_SG_CURRENT_MA      {m2['sg_current_ma']}",
+        f"#define CONF_M2_SG_TARGET          {m2['sg_target']:.1f}f",
+        f"#define CONF_M2_SG_DERIV           {m2['sg_deriv']}",
+        f"#define CONF_M2_FOLLOW_TIMEOUT_MS  {m2['follow_timeout_ms']}",
         "",
         "// --- Global Motor Settings ---",
         f"#define CONF_M1_DIR_INVERT      {m1['dir_invert']}",

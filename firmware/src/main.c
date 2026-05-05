@@ -37,9 +37,9 @@ static int RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
 static int JOIN_SPS = CONF_JOIN_SPS;
 static int PRESS_SPS = CONF_PRESS_SPS;
 static int TRAILING_SPS = CONF_TRAILING_SPS;
-static int SG_DERIV = CONF_SG_DERIV;
-static float SG_TARGET = CONF_SG_TARGET;
-static int FOLLOW_TIMEOUT_MS = CONF_FOLLOW_TIMEOUT_MS;
+static int SG_DERIV[NUM_LANES] = {CONF_M1_SG_DERIV, CONF_M2_SG_DERIV};
+static float SG_TARGET[NUM_LANES] = {CONF_M1_SG_TARGET, CONF_M2_SG_TARGET};
+static int FOLLOW_TIMEOUT_MS[NUM_LANES] = {CONF_M1_FOLLOW_TIMEOUT_MS, CONF_M2_FOLLOW_TIMEOUT_MS};
 
 static int RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
 static int RAMP_TICK_MS = CONF_RAMP_TICK_MS;
@@ -589,14 +589,15 @@ static void sg_ma_update(lane_t *A) {
     }
 }
 
-static int sync_apply_scaling(int base_sps, bool use_sg) {
+static int sync_apply_scaling(lane_t *L, int base_sps, bool use_sg) {
     if (BUF_SENSOR_TYPE == 1) {
         // Analog: scale between TRAILING_SPS and base_sps based on g_buf_pos [-1, +1]
         float frac = clamp_f((g_buf_pos + 1.0f) * 0.5f, 0.0f, 1.0f);
         return (int)(TRAILING_SPS + (float)(base_sps - TRAILING_SPS) * frac);
     }
-    if (use_sg && SG_TARGET > 0.1f) {
-        float sg_frac = clamp_f(g_sg_load / SG_TARGET, 0.0f, 1.0f);
+    int idx = lane_to_idx(L->lane_id);
+    if (use_sg && SG_TARGET[idx] > 0.1f) {
+        float sg_frac = clamp_f(g_sg_load / SG_TARGET[idx], 0.0f, 1.0f);
         int target = (int)((float)base_sps * sg_frac);
         if (g_buf.state == BUF_TRAILING) return MIN(target, TRAILING_SPS);
         return target;
@@ -1221,7 +1222,13 @@ static void tc_tick(uint32_t now_ms) {
 
                             float deriv = sg_ma - g_tc_ctx.sg_ma_prev;
                             g_tc_ctx.sg_ma_prev = sg_ma;
-                            if (SG_DERIV > 0 && deriv < -(float)SG_DERIV)
+                            // RELOAD hit detection refined:
+                            // Require a sharp drop (SG_DERIV) AND the value must be below 50% of SG_TARGET.
+                            // This ignores minor friction/drag and only triggers on a significant load increase.
+                            int idx = lane_to_idx(A->lane_id);
+                            if (SG_DERIV[idx] > 0 && 
+                                deriv < -(float)SG_DERIV[idx] &&
+                                sg_ma < (SG_TARGET[idx] * 0.5f))
                                 contacted = true;
                         } else {
                             g_tc_ctx.sg_ma_prev = (float)sg_raw;
@@ -1246,7 +1253,7 @@ static void tc_tick(uint32_t now_ms) {
                 g_tc_ctx.reload_tick_ms     = now_ms;
                 g_tc_ctx.phase_start_ms  = now_ms;
                 g_tc_ctx.state = TC_RELOAD_FOLLOW;
-            } else if (age > (uint32_t)TC_TIMEOUT_LOAD_MS) {
+            } else if (age > (uint32_t)FOLLOW_TIMEOUT_MS[lane_to_idx(A->lane_id)]) {
                 tc_enter_error("RELOAD_APPROACH_TIMEOUT");
             }
             break;
@@ -1299,7 +1306,7 @@ static void tc_tick(uint32_t now_ms) {
             // RELOAD_SG_INTERP=1 enables pseudo-analog interpolation.
             // RELOAD_SG_INTERP=0 falls back to digital bang-bang (TRAILING_SPS / PRESS_SPS).
             sg_ma_update(A);
-            int target_sps = sync_apply_scaling(PRESS_SPS, RELOAD_SG_INTERP);
+            int target_sps = sync_apply_scaling(A, PRESS_SPS, RELOAD_SG_INTERP);
 
             // Ramp toward target.
             if (g_tc_ctx.reload_current_sps > target_sps)
@@ -1340,7 +1347,7 @@ static void tc_tick(uint32_t now_ms) {
             // Safety timeout: if buffer stays in TRAILING for > 10s, abort.
             if (g_buf.state == BUF_TRAILING) {
                 if (g_tc_ctx.last_trailing_ms == 0) g_tc_ctx.last_trailing_ms = now_ms;
-                if ((now_ms - g_tc_ctx.last_trailing_ms) > (uint32_t)FOLLOW_TIMEOUT_MS) {
+                if ((now_ms - g_tc_ctx.last_trailing_ms) > (uint32_t)FOLLOW_TIMEOUT_MS[lane_to_idx(A->lane_id)]) {
                     tc_enter_error("FOLLOW_TIMEOUT");
                     lane_stop(A);
                     break;
@@ -1354,7 +1361,8 @@ static void tc_tick(uint32_t now_ms) {
             if ((now_ms - last_reload_report_ms) >= 500u) {
                 last_reload_report_ms = now_ms;
                 char ev[64];
-                float sg_report = (SG_TARGET > 0) ? (g_sg_load / SG_TARGET) : 0.0f;
+                int idx = lane_to_idx(A->lane_id);
+                float sg_report = (SG_TARGET[idx] > 0.1f) ? (g_sg_load / SG_TARGET[idx]) : 0.0f;
                 snprintf(ev, sizeof(ev), "%s,%.1f,%.2f",
                          buf_state_name(g_buf.state),
                          (double)sps_to_mm_per_min(g_tc_ctx.reload_current_sps),
@@ -1624,7 +1632,7 @@ static void sync_tick(uint32_t now_ms) {
 
         // Common scaling (Analog or SG)
         sg_ma_update(A);
-        int target = sync_apply_scaling(base_target, SYNC_SG_INTERP);
+        int target = sync_apply_scaling(A, base_target, SYNC_SG_INTERP);
 
         if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
         else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
@@ -1701,7 +1709,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 26u
+#define SETTINGS_VERSION 27u
 
 typedef struct {
     uint32_t magic;
@@ -1743,9 +1751,9 @@ typedef struct {
     int join_sps;
     int press_sps;
     int trailing_sps;
-    int sg_deriv;
-    float sg_target;
-    int follow_timeout_ms;
+    int sg_deriv[NUM_LANES];
+    float sg_target[NUM_LANES];
+    int follow_timeout_ms[NUM_LANES];
 
     // Grouped booleans — packed together to avoid per-field padding.
     bool buf_invert;
@@ -1805,6 +1813,9 @@ static void settings_defaults(void) {
 
     MOTION_STARTUP_MS = CONF_MOTION_STARTUP_MS;
     for (int i = 0; i < NUM_LANES; i++) {
+        SG_DERIV[i] = (i == 0) ? CONF_M1_SG_DERIV : CONF_M2_SG_DERIV;
+        SG_TARGET[i] = (i == 0) ? CONF_M1_SG_TARGET : CONF_M2_SG_TARGET;
+        FOLLOW_TIMEOUT_MS[i] = (i == 0) ? CONF_M1_FOLLOW_TIMEOUT_MS : CONF_M2_FOLLOW_TIMEOUT_MS;
         TMC_SGT[i] = (i == 0) ? CONF_M1_SGT : CONF_M2_SGT;
         TMC_TCOOLTHRS[i] = (i == 0) ? CONF_M1_TCOOLTHRS : CONF_M2_TCOOLTHRS;
         SG_CURRENT_MA[i] = (i == 0) ? CONF_M1_SG_CURRENT_MA : CONF_M2_SG_CURRENT_MA;
@@ -1845,14 +1856,14 @@ static void settings_defaults(void) {
     MM_PER_STEP[0] = CONF_M1_MM_PER_STEP;
     MM_PER_STEP[1] = CONF_M2_MM_PER_STEP;
 
-    RELOAD_MODE = CONF_RELOAD_MODE;
-    RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
-    JOIN_SPS = CONF_JOIN_SPS;
-    PRESS_SPS = CONF_PRESS_SPS;
-    TRAILING_SPS = CONF_TRAILING_SPS;
-    SG_DERIV = CONF_SG_DERIV;
-    SG_TARGET = CONF_SG_TARGET;
-    FOLLOW_TIMEOUT_MS = CONF_FOLLOW_TIMEOUT_MS;
+    for (int i = 0; i < NUM_LANES; i++) {
+        SG_DERIV[i] = (i == 0) ? CONF_M1_SG_DERIV : CONF_M2_SG_DERIV;
+        SG_TARGET[i] = (i == 0) ? CONF_M1_SG_TARGET : CONF_M2_SG_TARGET;
+        FOLLOW_TIMEOUT_MS[i] = (i == 0) ? CONF_M1_FOLLOW_TIMEOUT_MS : CONF_M2_FOLLOW_TIMEOUT_MS;
+        TMC_SGT[i] = (i == 0) ? CONF_M1_SGT : CONF_M2_SGT;
+        TMC_TCOOLTHRS[i] = (i == 0) ? CONF_M1_TCOOLTHRS : CONF_M2_TCOOLTHRS;
+        SG_CURRENT_MA[i] = (i == 0) ? CONF_M1_SG_CURRENT_MA : CONF_M2_SG_CURRENT_MA;
+    }
     SYNC_SG_INTERP = CONF_SYNC_SG_INTERP;
     RELOAD_SG_INTERP = CONF_RELOAD_SG_INTERP;
 
@@ -1946,12 +1957,15 @@ static void settings_save(void) {
 
     s.reload_mode = (bool)RELOAD_MODE;
     s.reload_y_timeout_ms = RELOAD_Y_TIMEOUT_MS;
-    s.join_sps = JOIN_SPS;
-    s.press_sps = PRESS_SPS;
-    s.trailing_sps = TRAILING_SPS;
-    s.sg_deriv = SG_DERIV;
-    s.sg_target = SG_TARGET;
-    s.follow_timeout_ms = FOLLOW_TIMEOUT_MS;
+    for (int i = 0; i < NUM_LANES; i++) {
+        s.sg_deriv[i] = SG_DERIV[i];
+        s.sg_target[i] = SG_TARGET[i];
+        s.follow_timeout_ms[i] = FOLLOW_TIMEOUT_MS[i];
+        s.sgt[i] = TMC_SGT[i];
+        s.tcoolthrs[i] = TMC_TCOOLTHRS[i];
+        s.sg_current_ma[i] = SG_CURRENT_MA[i];
+    }
+
     s.sync_sg_interp = SYNC_SG_INTERP;
     s.reload_sg_interp = RELOAD_SG_INTERP;
 
@@ -2054,6 +2068,9 @@ static void settings_load(void) {
     ENABLE_CUTTER = s->enable_cutter;
 
     for (int i = 0; i < NUM_LANES; i++) {
+        SG_DERIV[i] = s->sg_deriv[i];
+        SG_TARGET[i] = s->sg_target[i];
+        FOLLOW_TIMEOUT_MS[i] = s->follow_timeout_ms[i];
         TMC_SGT[i] = s->sgt[i];
         TMC_TCOOLTHRS[i] = s->tcoolthrs[i];
         SG_CURRENT_MA[i] = s->sg_current_ma[i];
@@ -2107,13 +2124,16 @@ static void settings_load(void) {
     JOIN_SPS = s->join_sps;
     PRESS_SPS = s->press_sps;
     TRAILING_SPS = s->trailing_sps;
-    SG_DERIV = s->sg_deriv;
-    SG_TARGET = s->sg_target;
-    FOLLOW_TIMEOUT_MS = s->follow_timeout_ms;
     SYNC_SG_INTERP = s->sync_sg_interp;
     RELOAD_SG_INTERP = s->reload_sg_interp;
 
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < NUM_LANES; i++) {
+        SG_DERIV[i] = s->sg_deriv[i];
+        SG_TARGET[i] = s->sg_target[i];
+        FOLLOW_TIMEOUT_MS[i] = s->follow_timeout_ms[i];
+        TMC_SGT[i] = s->sgt[i];
+        TMC_TCOOLTHRS[i] = s->tcoolthrs[i];
+        SG_CURRENT_MA[i] = s->sg_current_ma[i];
         TMC_ROTATION_DISTANCE[i] = s->tmc_rotation_distance[i];
         TMC_GEAR_RATIO[i] = s->tmc_gear_ratio[i];
         TMC_FULL_STEPS[i] = s->tmc_full_steps[i];
@@ -2427,9 +2447,9 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "DRIVER_TOFF")) { SET_LANE({ TMC_TOFF[idx] = clamp_i(iv, 0, 15); }); }
         else if (!strcmp(base_param, "DRIVER_HSTRT")) { SET_LANE({ TMC_HSTRT[idx] = clamp_i(iv, 0, 7); }); }
         else if (!strcmp(base_param, "DRIVER_HEND")) { SET_LANE({ TMC_HEND[idx] = clamp_i(iv, -3, 12); }); }
-        else if (!strcmp(base_param, "SG_DERIV")) SG_DERIV = clamp_i(iv, 0, 1000);
-        else if (!strcmp(base_param, "SG_TARGET"))    SG_TARGET = clamp_f(fv, 0.0f, 1023.0f);
-        else if (!strcmp(base_param, "FOLLOW_MS"))    FOLLOW_TIMEOUT_MS = clamp_i(iv, 1000, 60000);
+        else if (!strcmp(base_param, "SG_DERIV")) { SET_LANE({ SG_DERIV[idx] = clamp_i(iv, 0, 1000); }); }
+        else if (!strcmp(base_param, "SG_TARGET")) { SET_LANE({ SG_TARGET[idx] = clamp_f(fv, 0.0f, 1023.0f); }); }
+        else if (!strcmp(base_param, "FOLLOW_MS")) { SET_LANE({ FOLLOW_TIMEOUT_MS[idx] = clamp_i(iv, 1000, 60000); }); }
         else if (!strcmp(base_param, "BASELINE_RATE"))    g_baseline_sps = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "BUF_SENSOR"))   BUF_SENSOR_TYPE = clamp_i(iv, 0, 1);
         else if (!strcmp(base_param, "BUF_NEUTRAL"))  BUF_NEUTRAL = clamp_f(fv, 0.0f, 1.0f);
@@ -2495,9 +2515,9 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "JOIN_RATE"))     snprintf(out, sizeof(out), "JOIN_RATE:%.1f", (double)sps_to_mm_per_min_idx(JOIN_SPS, idx));
         else if (!strcmp(param, "PRESS_RATE"))    snprintf(out, sizeof(out), "PRESS_RATE:%.1f", (double)sps_to_mm_per_min_idx(PRESS_SPS, idx));
         else if (!strcmp(param, "TRAILING_RATE")) snprintf(out, sizeof(out), "TRAILING_RATE:%.1f", (double)sps_to_mm_per_min_idx(TRAILING_SPS, idx));
-        else if (!strcmp(param, "SG_DERIV"))     snprintf(out, sizeof(out), "SG_DERIV:%d", SG_DERIV);
-        else if (!strcmp(param, "SG_TARGET"))    snprintf(out, sizeof(out), "SG_TARGET:%.1f", (double)SG_TARGET);
-        else if (!strcmp(param, "FOLLOW_MS"))    snprintf(out, sizeof(out), "FOLLOW_MS:%d", FOLLOW_TIMEOUT_MS);
+        else if (!strcmp(param, "SG_DERIV"))     snprintf(out, sizeof(out), "SG_DERIV:%d", SG_DERIV[idx]);
+        else if (!strcmp(param, "SG_TARGET"))    snprintf(out, sizeof(out), "SG_TARGET:%.1f", (double)SG_TARGET[idx]);
+        else if (!strcmp(param, "FOLLOW_MS"))    snprintf(out, sizeof(out), "FOLLOW_MS:%d", FOLLOW_TIMEOUT_MS[idx]);
         else if (!strcmp(param, "BASELINE_RATE")) snprintf(out, sizeof(out), "BASELINE_RATE:%.1f", (double)sps_to_mm_per_min_idx(g_baseline_sps, idx));
         else if (!strcmp(param, "BUF_SENSOR"))   snprintf(out, sizeof(out), "BUF_SENSOR:%d", BUF_SENSOR_TYPE);
         else if (!strcmp(param, "BUF_NEUTRAL"))  snprintf(out, sizeof(out), "BUF_NEUTRAL:%.3f", (double)BUF_NEUTRAL);

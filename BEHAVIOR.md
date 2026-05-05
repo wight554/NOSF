@@ -187,7 +187,9 @@ StallGuard provides tension-based speed feedback. It can be used in two ways:
 **`TC_RELOAD_APPROACH` — contact detection at approach speed**
 
 The motor runs at `JOIN_RATE`. The per-tick MA derivative is compared to
-`SG_DERIV`: a sharp negative drop triggers handoff to follow sync.
+`SG_DERIV`: a sharp negative drop **AND** a raw value below 50% of `SG_TARGET`
+triggers handoff to follow sync. This ensures that minor path friction does not
+cause premature triggering.
 
 **`TC_RELOAD_FOLLOW` — pressure maintenance during bowden journey**
 
