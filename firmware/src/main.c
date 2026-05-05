@@ -45,7 +45,7 @@ static int RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
 static int RAMP_TICK_MS = CONF_RAMP_TICK_MS;
 
 static int TMC_RUN_CURRENT_MA[2] = {CONF_RUN_CURRENT_MA, CONF_RUN_CURRENT_MA};
-static int SYNC_CURRENT_MA = CONF_SYNC_CURRENT_MA;
+static int SG_CURRENT_MA = CONF_SG_CURRENT_MA;
 static int TMC_HOLD_CURRENT_MA[2] = {CONF_HOLD_CURRENT_MA, CONF_HOLD_CURRENT_MA};
 static int TMC_MICROSTEPS = CONF_MICROSTEPS;
 static bool TMC_SPREADCYCLE = CONF_SPREADCYCLE;
@@ -544,13 +544,13 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     motor_set_dir(&L->m, forward);
     motor_set_rate_sps(&L->m, L->current_sps);
 
-    // Hybrid mode: Use StealthChop and SYNC_CURRENT_MA for sync tasks.
+    // Hybrid mode: Use StealthChop and SG_CURRENT_MA for sync tasks.
     bool is_sync = (t == TASK_FEED);
     bool is_iss = (is_sync && g_tc_ctx.state != TC_IDLE);
     bool use_stealth = is_iss || (is_sync && SYNC_SG);
 
     bool run_spreadcycle = TMC_SPREADCYCLE && !use_stealth;
-    int current_ma = is_sync ? SYNC_CURRENT_MA : TMC_RUN_CURRENT_MA[L->lane_id-1];
+    int current_ma = use_stealth ? SG_CURRENT_MA : TMC_RUN_CURRENT_MA[L->lane_id-1];
 
     tmc_set_spreadcycle(L->tmc, run_spreadcycle);
     tmc_set_run_current_ma(L->tmc, current_ma, TMC_HOLD_CURRENT_MA[L->lane_id-1]);
@@ -1782,7 +1782,7 @@ static void settings_defaults(void) {
 
     TMC_RUN_CURRENT_MA[0] = CONF_RUN_CURRENT_MA;
     TMC_RUN_CURRENT_MA[1] = CONF_RUN_CURRENT_MA;
-    SYNC_CURRENT_MA = CONF_SYNC_CURRENT_MA;
+    SG_CURRENT_MA = CONF_SG_CURRENT_MA;
     TMC_HOLD_CURRENT_MA[0] = CONF_HOLD_CURRENT_MA;
     TMC_HOLD_CURRENT_MA[1] = CONF_HOLD_CURRENT_MA;
     TMC_MICROSTEPS = CONF_MICROSTEPS;
@@ -1860,7 +1860,7 @@ static void settings_save(void) {
 
     s.run_current_ma[0] = TMC_RUN_CURRENT_MA[0];
     s.run_current_ma[1] = TMC_RUN_CURRENT_MA[1];
-    s.iss_current_ma = SYNC_CURRENT_MA;
+    s.iss_current_ma = SG_CURRENT_MA;
     s.hold_current_ma[0] = TMC_HOLD_CURRENT_MA[0];
     s.hold_current_ma[1] = TMC_HOLD_CURRENT_MA[1];
     s.microsteps = TMC_MICROSTEPS;
@@ -2028,7 +2028,7 @@ static void settings_load(void) {
     // Flash values for these fields are ignored so reflashing always takes effect.
     TMC_RUN_CURRENT_MA[0] = CONF_RUN_CURRENT_MA;
     TMC_RUN_CURRENT_MA[1] = CONF_RUN_CURRENT_MA;
-    SYNC_CURRENT_MA = CONF_SYNC_CURRENT_MA;
+    SG_CURRENT_MA = CONF_SG_CURRENT_MA;
     TMC_HOLD_CURRENT_MA[0] = CONF_HOLD_CURRENT_MA;
     TMC_HOLD_CURRENT_MA[1] = CONF_HOLD_CURRENT_MA;
     TMC_MICROSTEPS = CONF_MICROSTEPS;
@@ -2332,10 +2332,10 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "JOIN_RATE"))     JOIN_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
             else if (!strcmp(param, "PRESS_RATE"))    PRESS_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
             else if (!strcmp(param, "TRAILING_RATE")) TRAILING_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
-            else if (!strcmp(param, "SYNC_CURRENT_MA")) {
-                SYNC_CURRENT_MA = clamp_i(iv, 100, 1200);
-                if (g_lane1.task == TASK_FEED) tmc_set_run_current_ma(&g_tmc1, SYNC_CURRENT_MA, TMC_HOLD_CURRENT_MA[0]);
-                if (g_lane2.task == TASK_FEED) tmc_set_run_current_ma(&g_tmc2, SYNC_CURRENT_MA, TMC_HOLD_CURRENT_MA[1]);
+            else if (!strcmp(param, "SG_CURRENT_MA")) {
+                SG_CURRENT_MA = clamp_i(iv, 100, 1200);
+                if (g_lane1.task == TASK_FEED) tmc_set_run_current_ma(&g_tmc1, SG_CURRENT_MA, TMC_HOLD_CURRENT_MA[0]);
+                if (g_lane2.task == TASK_FEED) tmc_set_run_current_ma(&g_tmc2, SG_CURRENT_MA, TMC_HOLD_CURRENT_MA[1]);
             }
             else if (!strcmp(param, "SG_DERIV")) SG_DERIV = clamp_i(iv, 0, 1000);
             else if (!strcmp(param, "SG_TARGET"))    SG_TARGET = clamp_f(fv, 0.0f, 1023.0f);
@@ -2398,7 +2398,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "JOIN_RATE"))     snprintf(out, sizeof(out), "JOIN_RATE:%.1f", (double)sps_to_mm_per_min(JOIN_SPS));
         else if (!strcmp(param, "PRESS_RATE"))    snprintf(out, sizeof(out), "PRESS_RATE:%.1f", (double)sps_to_mm_per_min(PRESS_SPS));
         else if (!strcmp(param, "TRAILING_RATE")) snprintf(out, sizeof(out), "TRAILING_RATE:%.1f", (double)sps_to_mm_per_min(TRAILING_SPS));
-        else if (!strcmp(param, "SYNC_CURRENT_MA"))   snprintf(out, sizeof(out), "SYNC_CURRENT_MA:%d", SYNC_CURRENT_MA);
+        else if (!strcmp(param, "SG_CURRENT_MA"))   snprintf(out, sizeof(out), "SG_CURRENT_MA:%d", SG_CURRENT_MA);
         else if (!strcmp(param, "SG_DERIV")) snprintf(out, sizeof(out), "SG_DERIV:%d", SG_DERIV);
         else if (!strcmp(param, "SG_TARGET"))    snprintf(out, sizeof(out), "SG_TARGET:%.1f", (double)SG_TARGET);
         else if (!strcmp(param, "FOLLOW_MS"))    snprintf(out, sizeof(out), "FOLLOW_MS:%d", FOLLOW_TIMEOUT_MS);

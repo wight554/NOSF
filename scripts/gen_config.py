@@ -99,7 +99,7 @@ DEFAULTS = {
     # Sync / StallGuard
     "sg_target": "320.0",
     "sg_deriv": "3",
-    "sync_current_ma": "800",
+    "sg_current_ma": "800",
     "trailing_rate": "42",
     "join_rate": "2100",
     "press_rate": "1275",
@@ -264,7 +264,7 @@ def main():
         "// --- ISS Mode ---",
         f"#define CONF_ISS_MODE           {get('iss_mode')}",
         f"#define CONF_ISS_Y_TIMEOUT_MS   {get('iss_y_timeout_ms')}",
-        f"#define CONF_SYNC_CURRENT_MA     {get('sync_current_ma')}",
+        f"#define CONF_SG_CURRENT_MA     {get('sg_current_ma')}",
         f"#define CONF_JOIN_SPS           {mm_min_to_sps(get('join_rate'))}",
         f"#define CONF_PRESS_SPS          {mm_min_to_sps(get('press_rate'))}",
         f"#define CONF_SG_TARGET          {get_float('sg_target'):.1f}f",

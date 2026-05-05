@@ -31,7 +31,7 @@ When the buffer arm is fully deflected (trailing), the motor slows to this speed
 *   **Low (30–50)**: Motor crawls silently and gently when stalled. This is much more pleasant.
 *   **Unit**: mm/min.
 
-### 3. `SYNC_CURRENT_MA` (Sensitivity vs. Torque)
+### 3. `SG_CURRENT_MA` (Sensitivity vs. Torque)
 *   Higher current (800mA+) makes the motor stronger but can make the StallGuard signal "noisier."
 *   We recommend **800mA** for a good balance of force and sensing reliability.
 
@@ -79,7 +79,7 @@ For **FYSETC G36HSY4405-6D-1200** at **800mA**:
 ```bash
 python3 scripts/nosf_cmd.py "SET:SG_TARGET:320"
 python3 scripts/nosf_cmd.py "SET:TRAILING_RATE:42"
-python3 scripts/nosf_cmd.py "SET:SYNC_CURRENT_MA:800"
+python3 scripts/nosf_cmd.py "SET:SG_CURRENT_MA:800"
 python3 scripts/nosf_cmd.py "SET:SGT_L1:50"
 python3 scripts/nosf_cmd.py "SET:SGT_L2:50"
 python3 scripts/nosf_cmd.py "SET:SG_DERIV:3"
