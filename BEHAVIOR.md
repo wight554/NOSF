@@ -304,8 +304,12 @@ feedback; SG_RESULT is not sampled.  SGTHRS/DIAG still fires on hard jams.
 
 ### Tuning ISS StallGuard (`ISS_SG_TARGET`, `ISS_SG_DERIV_THR`, `SGT_L1`/`SGT_L2`)
 
-Use `scripts/tune_iss_sg.py`.  Filament must be loaded in the lane with the tip
-free (not touching anything).
+Use `scripts/tune_iss_sg.py`.
+
+**Prerequisites for tuning:**
+1. **Filament must be present** at the `IN` sensor. If the sensor is clear, the `FD:` command used for tuning will trigger a runout stop after 1 second, and StallGuard will stop updating.
+2. **Motor must be running** at a speed covered by `TCOOLTHRS`. StallGuard only updates when `TSTEP ≤ TCOOLTHRS` (i.e., at medium to high speeds).
+3. **SpreadCycle must be enabled** (`CONF_SPREADCYCLE = true` in `config.ini`). StallGuard2 does not function in StealthChop mode.
 
 ```bash
 # Step 0 — observe free-air SG and verify StallGuard is active:
@@ -363,6 +367,14 @@ the computed speed before starting.  If the device is not connected, use
 Let the motor settle for 3–5 s before touching anything.  Note the stable SG
 reading — call it `SG_FREE`.  Typical values are 80–300 depending on
 `RUN_CURRENT_MA` and bowden friction.
+
+**Troubleshooting static readings:**
+- If the value is stuck at a very low number (e.g. < 20) and doesn't change when
+  you grip the filament, the motor has likely stopped. Check for an `EV:RUNOUT`
+  event in the console—you must have filament at the `IN` sensor to keep the
+  feed motor running during tuning.
+- If the value is 0, the motor is either stopped or running too slow for
+  `TCOOLTHRS`.
 
 **Step 2 — Observe jam SG floor**
 
