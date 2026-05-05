@@ -60,6 +60,9 @@ bool tmc_init(tmc_t *t, uint tx_pin, uint rx_pin, uint8_t addr) {
     // the line is held HIGH (if TMC2209 pdn_disable=1 turns off its internal pull-down)
     gpio_pull_up(t->tx_pin);
 
+    // Guarantee the pin is actively driven HIGH (OUTPUT) while idle
+    pio_sm_set_pindirs_with_mask(t->pio, t->sm_tx, 1u << t->tx_pin, 1u << t->tx_pin);
+
     return true;
 }
 
@@ -135,12 +138,8 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
     // Restore pin to OUTPUT HIGH
     pio_sm_set_pindirs_with_mask(t->pio, t->sm_tx, 1u << t->tx_pin, 1u << t->tx_pin);
 
-    if (received < 8) {
-        printf("EV:DEBUG: received %d bytes\n", received);
-        return false;
-    }
-    printf("EV:DEBUG: rep: %02X %02X %02X %02X %02X %02X %02X %02X\n", rep[0], rep[1], rep[2], rep[3], rep[4], rep[5], rep[6], rep[7]);
-
+    if (received < 8) return false;
+    
     if (rep[0] != 0x05 || rep[1] != 0xFF || (rep[2] & 0x7Fu) != reg) {
         return false;
     }

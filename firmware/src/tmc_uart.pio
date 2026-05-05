@@ -63,7 +63,6 @@ static inline void tmc_uart_tx_program_init(PIO pio, uint sm, uint offset, uint 
 }
 
 static inline void tmc_uart_rx_program_init(PIO pio, uint sm, uint offset, uint pin, uint baud) {
-    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, false);
     pio_gpio_init(pio, pin);
     gpio_pull_up(pin);
 
