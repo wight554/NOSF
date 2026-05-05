@@ -44,7 +44,7 @@ def main():
     parser.add_argument('--timeout', type=float, default=130.0,
                         help='Seconds before giving up (default: 130)')
     parser.add_argument('--help', '-h', action='store_true')
-    parser.add_argument('cmd', nargs='?', help='NOSF command, e.g. TC:2 or SET:FEED:900')
+    parser.add_argument('cmd', nargs='?', help='NOSF command, e.g. TC:2 or SET:FEED:2100 (speeds in mm/min)')
     args = parser.parse_args()
 
     if args.help or not args.cmd:
