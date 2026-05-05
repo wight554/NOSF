@@ -54,7 +54,7 @@ bool tmc_init(tmc_t *t, uint tx_pin, uint rx_pin, uint8_t addr) {
     tmc_uart_rx_program_init(t->pio, t->sm_rx, t->offset_rx, t->tx_pin, TMC_BAUD);
 
     pio_sm_set_enabled(t->pio, t->sm_tx, true); // Keep TX SM enabled permanently to manage pin direction
-    pio_sm_set_enabled(t->pio, t->sm_rx, false);
+    pio_sm_set_enabled(t->pio, t->sm_rx, true); // Keep RX SM enabled permanently to autonomously track line state
     
     // Enable pull-up for the idle HIGH state
     gpio_pull_up(t->tx_pin);
@@ -68,11 +68,13 @@ static void tmc_uart_send_bytes(tmc_t *t, const uint8_t *buf, size_t len) {
     }
     
     // Wait for FIFO to empty
-    while (!pio_sm_is_tx_fifo_empty(t->pio, t->sm_tx)) tight_loop_contents();
+    uint64_t timeout_us = time_us_64() + 2000;
+    while (!pio_sm_is_tx_fifo_empty(t->pio, t->sm_tx) && time_us_64() < timeout_us) tight_loop_contents();
     
     // Wait for the state machine to finish shifting and stall at the 'pull' instruction.
     // 'pull' is the very first instruction at t->offset_tx.
-    while (pio_sm_get_pc(t->pio, t->sm_tx) != t->offset_tx) tight_loop_contents();
+    timeout_us = time_us_64() + 2000;
+    while (pio_sm_get_pc(t->pio, t->sm_tx) != t->offset_tx && time_us_64() < timeout_us) tight_loop_contents();
 }
 
 bool tmc_write(tmc_t *t, uint8_t reg, uint32_t val) {
@@ -105,7 +107,9 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
 
     tmc_uart_send_bytes(t, req, 4);
 
-    pio_sm_set_enabled(t->pio, t->sm_rx, true);
+    // TX has finished. The RX SM has read the TX echo.
+    // Clear the RX FIFO to discard the echo and prepare for the reply.
+    pio_sm_clear_fifos(t->pio, t->sm_rx);
 
     uint64_t timeout_us = time_us_64() + 5000;
     int received = 0;
@@ -115,8 +119,6 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
             rep[received++] = (uint8_t)(pio_sm_get(t->pio, t->sm_rx) >> 24); // Right-shifted 32-bit pull puts LSB at bit 24
         }
     }
-
-    pio_sm_set_enabled(t->pio, t->sm_rx, false);
 
     if (received < 8) return false;
     
@@ -145,7 +147,9 @@ int tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t *buf_out) {
     pio_sm_clear_fifos(t->pio, t->sm_rx);
     tmc_uart_send_bytes(t, req, 4);
     
-    pio_sm_set_enabled(t->pio, t->sm_rx, true);
+    // TX has finished. The RX SM has read the TX echo.
+    // Clear the RX FIFO to discard the echo and prepare for the reply.
+    pio_sm_clear_fifos(t->pio, t->sm_rx);
 
     uint64_t timeout_us = time_us_64() + 5000;
     int n = 0;
@@ -156,7 +160,6 @@ int tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t *buf_out) {
         }
     }
 
-    pio_sm_set_enabled(t->pio, t->sm_rx, false);
     return n;
 }
 
