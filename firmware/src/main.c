@@ -531,7 +531,7 @@ static void lane_stop(lane_t *L) {
     L->target_sps = 0;
     motor_stop(&L->m);
     // Revert to global default mode when idle.
-    tmc_set_spreadcycle(L->tmc, TMC_SPREADCYCLE);
+    tmc_set_spreadcycle(L->tmc, TMC_SPREADCYCLE[L->lane_id - 1]);
 }
 
 static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_ms, int autoload_timeout_ms) {
