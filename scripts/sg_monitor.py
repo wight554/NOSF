@@ -3,7 +3,7 @@
 NOSF — SG Monitor
 Feeds a lane at a fixed speed and continuously prints StallGuard values.
 Use this to characterise free-air SG, observe contact drops, and verify
-ISS_SG_TARGET / ISS_SG_DERIV / SGT_L1 / SGT_L2 before or after tuning.
+SG_TARGET / ISS_SG_DERIV / SGT_L1 / SGT_L2 before or after tuning.
 """
 import argparse
 import serial
@@ -64,7 +64,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Speed selection:
-  --iss       Read ISS_JOIN_RATE from device and use it as feed speed.
+  --iss       Read JOIN_RATE from device and use it as feed speed.
               This is the recommended mode for SGT calibration — it matches
               the exact speed used during ISS approach.
   --speed S   Explicit feed speed in mm/min.
@@ -93,7 +93,7 @@ the free-air baseline.
     speed_group.add_argument("--speed", type=float,
                              help="Feed speed in mm/min")
     speed_group.add_argument("--iss",   action="store_true",
-                             help="Read ISS_JOIN_RATE from device")
+                             help="Read JOIN_RATE from device")
     args = parser.parse_args()
 
     port = args.port or find_port()
@@ -107,16 +107,16 @@ the free-air baseline.
 
     try:
         if args.iss:
-            speed_str = get_value(ser, "ISS_JOIN_RATE")
+            speed_str = get_value(ser, "JOIN_RATE")
             if speed_str is None:
                 # Fallback for old firmware key
-                speed_str = get_value(ser, "ISS_JOIN")
+                speed_str = get_value(ser, "JOIN_RATE")
                 
             if speed_str is None:
-                print("Could not read ISS_JOIN_RATE from device. Use --speed instead.")
+                print("Could not read JOIN_RATE from device. Use --speed instead.")
                 sys.exit(1)
             speed = float(speed_str)
-            print(f"ISS_JOIN_RATE = {speed:.0f} mm/min")
+            print(f"JOIN_RATE = {speed:.0f} mm/min")
         else:
             speed = args.speed
 

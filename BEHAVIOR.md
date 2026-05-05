@@ -173,37 +173,37 @@ printer's long-term average feed rate. `SET:BASELINE_RATE` overrides this.
 When the buffer is in TRAILING, the motor stops until the extruder draws down
 the buffer surplus.
 
-### StallGuard in ISS (Endless Spool) mode
+### StallGuard in Sync modes
 
-**SG is not used during normal buffer sync.**
-
-ISS uses StallGuard in two complementary ways:
+StallGuard provides tension-based speed feedback. It can be used in two ways:
+1. **Normal Sync (`SYNC_SG=1`)**: Interpolates speed based on `SG_TARGET` even before the buffer arm moves significantly.
+2. **ISS Mode**: Uses both soft-contact detection and speed interpolation.
 
 | Layer | Mechanism | What it catches |
 |-------|-----------|-----------------|
-| Soft contact | SG_RESULT MA derivative vs `ISS_SG_DERIV` | Gentle tip-to-tail touch |
+| Soft contact | SG_RESULT MA derivative vs `SG_DERIV` | Gentle tip-to-tail touch |
 | Hard contact | DIAG interrupt via `SGTHRS` (`SGT_L1`/`SGT_L2`) | Jams, hard crashes |
 
 **`TC_ISS_APPROACH` — contact detection at approach speed**
 
-The motor runs at `ISS_JOIN_RATE`. The per-tick MA derivative is compared to
-`ISS_SG_DERIV`: a sharp negative drop triggers handoff to follow sync.
+The motor runs at `JOIN_RATE`. The per-tick MA derivative is compared to
+`SG_DERIV`: a sharp negative drop triggers handoff to follow sync.
 
 **`TC_ISS_FOLLOW` — pressure maintenance during bowden journey**
 
 Speed is interpolated linearly from the filtered SG:
 
 ```
-sg_frac   = clamp(SG_RESULT / ISS_SG_TARGET,  0, 1)
-target    = ISS_PRESS_RATE × sg_frac
+sg_frac   = clamp(SG_RESULT / SG_TARGET,  0, 1)
+target    = PRESS_RATE × sg_frac
 ```
 
-- `SG ≥ ISS_SG_TARGET` → full `ISS_PRESS_RATE`
+- `SG ≥ SG_TARGET` → full `PRESS_RATE`
 - `SG = 0` → 0 mm/min
-- `BUF_TRAILING` caps speed to `ISS_TRAILING_RATE`
+- `BUF_TRAILING` caps speed to `TRAILING_RATE`
 - `BUF_ADVANCE` (extruder pulling faster than we push) → handover detected, exit
 
-A stall during follow (DIAG fires) drops speed to `ISS_TRAILING_RATE`.
+A stall during follow (DIAG fires) drops speed to `TRAILING_RATE`.
 
 ### Trailing state — motor stop and recovery
 

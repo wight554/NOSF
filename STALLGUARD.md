@@ -10,35 +10,35 @@ Unlike a standard MMU, the ISS must match the speed of the printer's extruder. W
 
 1.  **Free-Air Baseline**: When the motor is spinning with no resistance, StallGuard reports a high value (the `SG_RESULT`).
 2.  **Contact/Tension**: As the extruder pulls the filament, the `SG_RESULT` drops.
-3.  **Speed Adjustment**: The firmware calculates the ratio: `sg_frac = SG_RESULT / ISS_SG_TARGET`.
-    *   If `sg_frac >= 1.0`: Motor runs at full speed (`ISS_PRESS_RATE`) to catch up.
+3.  **Speed Adjustment**: The firmware calculates the ratio: `sg_frac = SG_RESULT / SG_TARGET`.
+    *   If `sg_frac >= 1.0`: Motor runs at full speed (`PRESS_RATE`) to catch up.
     *   If `sg_frac < 1.0`: Motor slows down proportionally to match the tension.
 
 ---
 
 ## Critical Parameters
 
-### 1. `ISS_SG_TARGET` (The "Zero-Force" Reference)
+### 1. `SG_TARGET` (The "Zero-Force" Reference)
 This is the most important value. It defines the point where the motor *begins* to slow down.
 *   **Too Low**: You have to pull very hard before it slows down. The motor feels "stiff."
 *   **Too High**: The motor slows down even when there is no load. It feels "weak."
 *   **Tuning Rule**: Set this to **~10% below your Free-Air SG reading**.
-    *   Example: If `EV:BS` shows a ratio of `1.5` at idle with a target of `200`, your actual SG is `300`. Set `ISS_SG_TARGET` to `270`.
+    *   Example: If `EV:BS` shows a ratio of `1.5` at idle with a target of `200`, your actual SG is `300`. Set `SG_TARGET` to `270`.
 
-### 2. `ISS_TRAILING_RATE` (The "Quiet Stop" Speed)
+### 2. `TRAILING_RATE` (The "Quiet Stop" Speed)
 When the buffer arm is fully deflected (trailing), the motor slows to this speed.
 *   **High (100+)**: Motor may grind or "beep" loudly when it hits the physical limit.
 *   **Low (30–50)**: Motor crawls silently and gently when stalled. This is much more pleasant.
 *   **Unit**: mm/min.
 
-### 3. `ISS_CURRENT_MA` (Sensitivity vs. Torque)
+### 3. `SYNC_CURRENT_MA` (Sensitivity vs. Torque)
 *   Higher current (800mA+) makes the motor stronger but can make the StallGuard signal "noisier."
 *   We recommend **800mA** for a good balance of force and sensing reliability.
 
-### 4. `ISS_SG_DERIV` (The "Soft Contact" Sensor)
+### 4. `SG_DERIV` (The "Soft Contact" Sensor)
 This watches the *rate of change* of the StallGuard signal.
-*   When the new filament tip hits the old tail during a fast approach (`ISS_JOIN_RATE`), the load jumps instantly.
-*   `ISS_SG_DERIV` catches this jump *before* the motor grinds or stalls.
+*   When the new filament tip hits the old tail during a fast approach (`JOIN_RATE`), the load jumps instantly.
+*   `SG_DERIV` catches this jump *before* the motor grinds or stalls.
 *   **Tuning Rule**: Use `scripts/tune_iss_sg.py` to calibrate this. A typical value is **3 to 10**.
 
 ### 5. `SGT_L1 / SGT_L2` (The Hard Safety Net)
@@ -64,27 +64,27 @@ Use a serial monitor to watch the `BS` (Buffer Status) events during an ISS foll
 
 ### "My motor is beeping at stall"
 This happens when the motor is forced to a halt but the firmware is still trying to drive it at a speed higher than its "slip" frequency. 
-*   **Fix**: Lower `ISS_TRAILING_RATE` to **42** (equivalent to ~500 SPS) or lower.
+*   **Fix**: Lower `TRAILING_RATE` to **42** (equivalent to ~500 SPS) or lower.
 
 ### "The motor doesn't slow down until I pull really hard"
-*   **Fix**: Your `ISS_SG_TARGET` is too low. Increase it until the idle `EV:BS` ratio is around **1.1**.
+*   **Fix**: Your `SG_TARGET` is too low. Increase it until the idle `EV:BS` ratio is around **1.1**.
 
 ### "The motor slows down for no reason"
-*   **Fix**: Your `ISS_SG_TARGET` is too high (ratio is below 1.0 at idle). Decrease it.
+*   **Fix**: Your `SG_TARGET` is too high (ratio is below 1.0 at idle). Decrease it.
 
 ---
 
 ## The "Golden State" Reference
 For **FYSETC G36HSY4405-6D-1200** at **800mA**:
 ```bash
-python3 scripts/nosf_cmd.py "SET:ISS_SG_TARGET:320"
-python3 scripts/nosf_cmd.py "SET:ISS_TRAILING_RATE:42"
-python3 scripts/nosf_cmd.py "SET:ISS_CURRENT_MA:800"
+python3 scripts/nosf_cmd.py "SET:SG_TARGET:320"
+python3 scripts/nosf_cmd.py "SET:TRAILING_RATE:42"
+python3 scripts/nosf_cmd.py "SET:SYNC_CURRENT_MA:800"
 python3 scripts/nosf_cmd.py "SET:SGT_L1:50"
 python3 scripts/nosf_cmd.py "SET:SGT_L2:50"
-python3 scripts/nosf_cmd.py "SET:ISS_SG_DERIV:3"
+python3 scripts/nosf_cmd.py "SET:SG_DERIV:3"
 
 # Safety timeout (10s)
-python3 scripts/nosf_cmd.py "SET:ISS_FOLLOW_MS:10000"
+python3 scripts/nosf_cmd.py "SET:FOLLOW_MS:10000"
 python3 scripts/nosf_cmd.py "SV:"
 ```

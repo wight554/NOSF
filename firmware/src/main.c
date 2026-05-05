@@ -34,18 +34,18 @@ static int RUNOUT_COOLDOWN_MS = CONF_RUNOUT_COOLDOWN_MS;
 
 static int ISS_MODE = CONF_ISS_MODE;
 static int ISS_Y_TIMEOUT_MS = CONF_ISS_Y_TIMEOUT_MS;
-static int ISS_JOIN_SPS = CONF_ISS_JOIN_SPS;
-static int ISS_PRESS_SPS = CONF_ISS_PRESS_SPS;
-static int ISS_TRAILING_SPS = CONF_ISS_TRAILING_SPS;
-static int ISS_SG_DERIV = CONF_ISS_SG_DERIV;
-static float ISS_SG_TARGET = CONF_ISS_SG_TARGET;
-static int ISS_FOLLOW_TIMEOUT_MS = CONF_ISS_FOLLOW_TIMEOUT_MS;
+static int JOIN_SPS = CONF_JOIN_SPS;
+static int PRESS_SPS = CONF_PRESS_SPS;
+static int TRAILING_SPS = CONF_TRAILING_SPS;
+static int SG_DERIV = CONF_SG_DERIV;
+static float SG_TARGET = CONF_SG_TARGET;
+static int FOLLOW_TIMEOUT_MS = CONF_FOLLOW_TIMEOUT_MS;
 
 static int RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
 static int RAMP_TICK_MS = CONF_RAMP_TICK_MS;
 
 static int TMC_RUN_CURRENT_MA[2] = {CONF_RUN_CURRENT_MA, CONF_RUN_CURRENT_MA};
-static int TMC_ISS_CURRENT_MA = CONF_ISS_CURRENT_MA;
+static int SYNC_CURRENT_MA = CONF_SYNC_CURRENT_MA;
 static int TMC_HOLD_CURRENT_MA[2] = {CONF_HOLD_CURRENT_MA, CONF_HOLD_CURRENT_MA};
 static int TMC_MICROSTEPS = CONF_MICROSTEPS;
 static bool TMC_SPREADCYCLE = CONF_SPREADCYCLE;
@@ -370,7 +370,7 @@ typedef struct {
     uint32_t phase_start_ms;
     uint32_t iss_tick_ms;                      // SYNC_TICK_MS rate limiter for ISS ticks
     // SG moving-average ring buffer (States 1 & 2)
-    float    sg_ma_buf[CONF_ISS_SG_MA_LEN];    // raw SG readings
+    float    sg_ma_buf[CONF_SG_MA_LEN];    // raw SG readings
     uint8_t  sg_ma_idx;                         // next write position
     uint8_t  sg_ma_fill;                        // samples loaded so far (cap at MA_LEN)
     float    sg_ma_prev;                        // MA from previous tick (for derivative)
@@ -544,13 +544,13 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     motor_set_dir(&L->m, forward);
     motor_set_rate_sps(&L->m, L->current_sps);
 
-    // Hybrid mode: Use StealthChop and ISS_CURRENT_MA for sync tasks.
+    // Hybrid mode: Use StealthChop and SYNC_CURRENT_MA for sync tasks.
     bool is_sync = (t == TASK_FEED);
     bool is_iss = (is_sync && g_tc_ctx.state != TC_IDLE);
     bool use_stealth = is_iss || (is_sync && SYNC_SG);
 
     bool run_spreadcycle = TMC_SPREADCYCLE && !use_stealth;
-    int current_ma = is_sync ? TMC_ISS_CURRENT_MA : TMC_RUN_CURRENT_MA[L->lane_id-1];
+    int current_ma = is_sync ? SYNC_CURRENT_MA : TMC_RUN_CURRENT_MA[L->lane_id-1];
 
     tmc_set_spreadcycle(L->tmc, run_spreadcycle);
     tmc_set_run_current_ma(L->tmc, current_ma, TMC_HOLD_CURRENT_MA[L->lane_id-1]);
@@ -1111,7 +1111,7 @@ static void tc_tick(uint32_t now_ms) {
                 lane_t *NL = lane_ptr(active_lane);
                 cmd_event("ISS:JOINING", lane_s);
                 // State 1: fast approach — contact detected by SG derivative.
-                lane_start(NL, TASK_FEED, ISS_JOIN_SPS, true, now_ms, 0);
+                lane_start(NL, TASK_FEED, JOIN_SPS, true, now_ms, 0);
                 // Arm stall immediately — STARTUP_MS warmup is for sync mode.
                 NL->stall_armed = true;
                 NL->autoload_deadline_ms = now_ms + (uint32_t)TC_TIMEOUT_LOAD_MS;
@@ -1120,7 +1120,7 @@ static void tc_tick(uint32_t now_ms) {
                 g_tc_ctx.sg_ma_idx   = 0;
                 g_tc_ctx.sg_ma_fill  = 0;
                 g_tc_ctx.sg_ma_prev  = 0.0f;
-                for (int i = 0; i < CONF_ISS_SG_MA_LEN; i++) g_tc_ctx.sg_ma_buf[i] = 0.0f;
+                for (int i = 0; i < CONF_SG_MA_LEN; i++) g_tc_ctx.sg_ma_buf[i] = 0.0f;
                 g_tc_ctx.phase_start_ms = now_ms;
                 g_tc_ctx.state = TC_ISS_APPROACH;
             } else if (age > (uint32_t)ISS_Y_TIMEOUT_MS) {
@@ -1131,7 +1131,7 @@ static void tc_tick(uint32_t now_ms) {
         case TC_ISS_APPROACH: {
             // State 1: Fast Approach & Soft Crash Detection.
             //
-            // Motor runs at ISS_JOIN_SPS.  SG is sampled into a moving-average
+            // Motor runs at JOIN_SPS.  SG is sampled into a moving-average
             // ring buffer every SYNC_TICK_MS.  The per-tick derivative (MA delta)
             // is watched: a sharp negative drop means the new tip just hit the old
             // tail at speed.  We transition immediately — before the buffer arm even
@@ -1158,20 +1158,20 @@ static void tc_tick(uint32_t now_ms) {
                     if (tmc_read_sg_result(A->tmc, &sg_raw)) {
                         // Push into MA ring buffer.
                         g_tc_ctx.sg_ma_buf[g_tc_ctx.sg_ma_idx] = (float)sg_raw;
-                        g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_ISS_SG_MA_LEN;
-                        if (g_tc_ctx.sg_ma_fill < CONF_ISS_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
+                        g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_SG_MA_LEN;
+                        if (g_tc_ctx.sg_ma_fill < CONF_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
 
                         // Compute MA and derivative.
-                        if (g_tc_ctx.sg_ma_fill == CONF_ISS_SG_MA_LEN) {
+                        if (g_tc_ctx.sg_ma_fill == CONF_SG_MA_LEN) {
                             float sum = 0.0f;
-                            for (int i = 0; i < CONF_ISS_SG_MA_LEN; i++)
+                            for (int i = 0; i < CONF_SG_MA_LEN; i++)
                                 sum += g_tc_ctx.sg_ma_buf[i];
-                            float sg_ma = sum / (float)CONF_ISS_SG_MA_LEN;
+                            float sg_ma = sum / (float)CONF_SG_MA_LEN;
                             g_sg_load = sg_ma;
 
                             float deriv = sg_ma - g_tc_ctx.sg_ma_prev;
                             g_tc_ctx.sg_ma_prev = sg_ma;
-                            if (ISS_SG_DERIV > 0 && deriv < -(float)ISS_SG_DERIV)
+                            if (SG_DERIV > 0 && deriv < -(float)SG_DERIV)
                                 contacted = true;
                         } else {
                             g_tc_ctx.sg_ma_prev = (float)sg_raw;
@@ -1190,9 +1190,9 @@ static void tc_tick(uint32_t now_ms) {
                     if (stalled) A->fault = FAULT_NONE;
                     lane_stop(A);
                 }
-                // Initialise State 2 at ISS_PRESS_SPS so follow sync starts
+                // Initialise State 2 at PRESS_SPS so follow sync starts
                 // immediately without a ramp-up delay.
-                g_tc_ctx.iss_current_sps = ISS_PRESS_SPS;
+                g_tc_ctx.iss_current_sps = PRESS_SPS;
                 g_tc_ctx.iss_tick_ms     = now_ms;
                 g_tc_ctx.phase_start_ms  = now_ms;
                 g_tc_ctx.state = TC_ISS_FOLLOW;
@@ -1209,12 +1209,12 @@ static void tc_tick(uint32_t now_ms) {
             // entire bowden journey (~1 m) to the extruder.
             //
             // Speed is driven by two signals:
-            //   SG interpolation — target ISS_SG_TARGET (above crash=0, below
-            //     free-air=~14).  Speed scales linearly: SG at target → ISS_PRESS_SPS,
-            //     SG at 0 → 0.  If SG not configured (ISS_SG_TARGET==0), speed comes
+            //   SG interpolation — target SG_TARGET (above crash=0, below
+            //     free-air=~14).  Speed scales linearly: SG at target → PRESS_SPS,
+            //     SG at 0 → 0.  If SG not configured (SG_TARGET==0), speed comes
             //     from buffer state alone.
             //   Buffer cap — when TRAILING (buffer full), speed is clamped to
-            //     ISS_TRAILING_SPS regardless of SG.
+            //     TRAILING_SPS regardless of SG.
             //
             // Exit (State 3 — Toolhead Handover):
             //   BUF_ADVANCE: extruder grabbed the new tip and is pulling faster than
@@ -1250,33 +1250,33 @@ static void tc_tick(uint32_t now_ms) {
             if (BUF_SENSOR_TYPE == 1) {
                 // Analog buffer: continuous arm position drives speed proportionally.
                 // Maps g_buf_pos ∈ [-1 (TRAILING), +1 (ADVANCE)] →
-                //   [ISS_TRAILING_SPS, ISS_PRESS_SPS].
+                //   [TRAILING_SPS, PRESS_SPS].
                 // No SG needed — the arm already reflects contact pressure.
-                target_sps = (int)(ISS_TRAILING_SPS +
-                    (float)(ISS_PRESS_SPS - ISS_TRAILING_SPS) *
+                target_sps = (int)(TRAILING_SPS +
+                    (float)(PRESS_SPS - TRAILING_SPS) *
                     clamp_f((g_buf_pos + 1.0f) * 0.5f, 0.0f, 1.0f));
-            } else if (ISS_SG_TARGET > 0.0f) {
+            } else if (SG_TARGET > 0.0f) {
                 // 2-endstop + SG: update MA and interpolate speed from filtered SG.
                 // sg_frac ∈ [0, 1]: 0 when SG=0 (hard contact), 1 when SG≥target (free).
                 if (A && A->task == TASK_FEED) {
                     uint16_t sg_raw;
                     if (tmc_read_sg_result(A->tmc, &sg_raw)) {
                         g_tc_ctx.sg_ma_buf[g_tc_ctx.sg_ma_idx] = (float)sg_raw;
-                        g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_ISS_SG_MA_LEN;
-                        if (g_tc_ctx.sg_ma_fill < CONF_ISS_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
+                        g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_SG_MA_LEN;
+                        if (g_tc_ctx.sg_ma_fill < CONF_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
                         float sum = 0.0f;
-                        for (int i = 0; i < CONF_ISS_SG_MA_LEN; i++)
+                        for (int i = 0; i < CONF_SG_MA_LEN; i++)
                             sum += g_tc_ctx.sg_ma_buf[i];
-                        g_sg_load = sum / (float)CONF_ISS_SG_MA_LEN;
+                        g_sg_load = sum / (float)CONF_SG_MA_LEN;
                     }
                 }
-                float sg_frac = clamp_f(g_sg_load / ISS_SG_TARGET, 0.0f, 1.0f);
-                target_sps = (int)((float)ISS_PRESS_SPS * sg_frac);
+                float sg_frac = clamp_f(g_sg_load / SG_TARGET, 0.0f, 1.0f);
+                target_sps = (int)((float)PRESS_SPS * sg_frac);
                 if (g_buf.state == BUF_TRAILING)
-                    target_sps = MIN(target_sps, ISS_TRAILING_SPS);
+                    target_sps = MIN(target_sps, TRAILING_SPS);
             } else {
                 // 2-endstop, no SG: bang-bang on buffer state alone.
-                target_sps = (g_buf.state == BUF_TRAILING) ? ISS_TRAILING_SPS : ISS_PRESS_SPS;
+                target_sps = (g_buf.state == BUF_TRAILING) ? TRAILING_SPS : PRESS_SPS;
             }
 
             // Ramp toward target.
@@ -1284,7 +1284,7 @@ static void tc_tick(uint32_t now_ms) {
                 g_tc_ctx.iss_current_sps -= SYNC_RAMP_DN_SPS;
             else if (g_tc_ctx.iss_current_sps < target_sps)
                 g_tc_ctx.iss_current_sps += SYNC_RAMP_UP_SPS;
-            g_tc_ctx.iss_current_sps = clamp_i(g_tc_ctx.iss_current_sps, 0, ISS_PRESS_SPS);
+            g_tc_ctx.iss_current_sps = clamp_i(g_tc_ctx.iss_current_sps, 0, PRESS_SPS);
 
             // Drive motor.
             if (A) {
@@ -1305,7 +1305,7 @@ static void tc_tick(uint32_t now_ms) {
                     
                     g_tc_ctx.iss_stall_count++;
                     g_tc_ctx.last_iss_stall_ms = now_ms;
-                    g_tc_ctx.iss_current_sps = ISS_TRAILING_SPS;
+                    g_tc_ctx.iss_current_sps = TRAILING_SPS;
 
                     if (g_tc_ctx.iss_stall_count >= 3) {
                         tc_enter_error("FOLLOW_JAM");
@@ -1318,7 +1318,7 @@ static void tc_tick(uint32_t now_ms) {
             // Safety timeout: if buffer stays in TRAILING for > 10s, abort.
             if (g_buf.state == BUF_TRAILING) {
                 if (g_tc_ctx.last_trailing_ms == 0) g_tc_ctx.last_trailing_ms = now_ms;
-                if ((now_ms - g_tc_ctx.last_trailing_ms) > (uint32_t)ISS_FOLLOW_TIMEOUT_MS) {
+                if ((now_ms - g_tc_ctx.last_trailing_ms) > (uint32_t)FOLLOW_TIMEOUT_MS) {
                     tc_enter_error("FOLLOW_TIMEOUT");
                     lane_stop(A);
                     break;
@@ -1332,7 +1332,7 @@ static void tc_tick(uint32_t now_ms) {
             if ((now_ms - last_iss_report_ms) >= 500u) {
                 last_iss_report_ms = now_ms;
                 char ev[64];
-                float sg_report = (ISS_SG_TARGET > 0) ? (g_sg_load / ISS_SG_TARGET) : 0.0f;
+                float sg_report = (SG_TARGET > 0) ? (g_sg_load / SG_TARGET) : 0.0f;
                 snprintf(ev, sizeof(ev), "%s,%.1f,%.2f",
                          buf_state_name(g_buf.state),
                          (double)sps_to_mm_per_min(g_tc_ctx.iss_current_sps),
@@ -1600,20 +1600,20 @@ static void sync_tick(uint32_t now_ms) {
         int target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, SYNC_MAX_SPS);
 
         // Experimental: StallGuard scaling for normal sync.
-        if (SYNC_SG && ISS_SG_TARGET > 0.1f) {
+        if (SYNC_SG && SG_TARGET > 0.1f) {
             if (A && A->task == TASK_FEED) {
                 uint16_t sg_raw;
                 if (tmc_read_sg_result(A->tmc, &sg_raw)) {
                     g_tc_ctx.sg_ma_buf[g_tc_ctx.sg_ma_idx] = (float)sg_raw;
-                    g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_ISS_SG_MA_LEN;
-                    if (g_tc_ctx.sg_ma_fill < CONF_ISS_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
+                    g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_SG_MA_LEN;
+                    if (g_tc_ctx.sg_ma_fill < CONF_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
                     float sum = 0.0f;
-                    for (int i = 0; i < CONF_ISS_SG_MA_LEN; i++)
+                    for (int i = 0; i < CONF_SG_MA_LEN; i++)
                         sum += g_tc_ctx.sg_ma_buf[i];
-                    g_sg_load = sum / (float)CONF_ISS_SG_MA_LEN;
+                    g_sg_load = sum / (float)CONF_SG_MA_LEN;
                 }
             }
-            float sg_frac = clamp_f(g_sg_load / ISS_SG_TARGET, 0.0f, 1.0f);
+            float sg_frac = clamp_f(g_sg_load / SG_TARGET, 0.0f, 1.0f);
             target = (int)((float)target * sg_frac);
         }
 
@@ -1692,7 +1692,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 20u
+#define SETTINGS_VERSION 21u
 
 typedef struct {
     uint32_t magic;
@@ -1796,7 +1796,7 @@ static void settings_defaults(void) {
 
     TMC_RUN_CURRENT_MA[0] = CONF_RUN_CURRENT_MA;
     TMC_RUN_CURRENT_MA[1] = CONF_RUN_CURRENT_MA;
-    TMC_ISS_CURRENT_MA = CONF_ISS_CURRENT_MA;
+    SYNC_CURRENT_MA = CONF_SYNC_CURRENT_MA;
     TMC_HOLD_CURRENT_MA[0] = CONF_HOLD_CURRENT_MA;
     TMC_HOLD_CURRENT_MA[1] = CONF_HOLD_CURRENT_MA;
     TMC_MICROSTEPS = CONF_MICROSTEPS;
@@ -1834,12 +1834,12 @@ static void settings_defaults(void) {
 
     ISS_MODE = CONF_ISS_MODE;
     ISS_Y_TIMEOUT_MS = CONF_ISS_Y_TIMEOUT_MS;
-    ISS_JOIN_SPS = CONF_ISS_JOIN_SPS;
-    ISS_PRESS_SPS = CONF_ISS_PRESS_SPS;
-    ISS_TRAILING_SPS = CONF_ISS_TRAILING_SPS;
-    ISS_SG_DERIV = CONF_ISS_SG_DERIV;
-    ISS_SG_TARGET = CONF_ISS_SG_TARGET;
-    ISS_FOLLOW_TIMEOUT_MS = CONF_ISS_FOLLOW_TIMEOUT_MS;
+    JOIN_SPS = CONF_JOIN_SPS;
+    PRESS_SPS = CONF_PRESS_SPS;
+    TRAILING_SPS = CONF_TRAILING_SPS;
+    SG_DERIV = CONF_SG_DERIV;
+    SG_TARGET = CONF_SG_TARGET;
+    FOLLOW_TIMEOUT_MS = CONF_FOLLOW_TIMEOUT_MS;
     SYNC_SG = CONF_SYNC_SG;
 }
 
@@ -1874,7 +1874,7 @@ static void settings_save(void) {
 
     s.run_current_ma[0] = TMC_RUN_CURRENT_MA[0];
     s.run_current_ma[1] = TMC_RUN_CURRENT_MA[1];
-    s.iss_current_ma = TMC_ISS_CURRENT_MA;
+    s.iss_current_ma = SYNC_CURRENT_MA;
     s.hold_current_ma[0] = TMC_HOLD_CURRENT_MA[0];
     s.hold_current_ma[1] = TMC_HOLD_CURRENT_MA[1];
     s.microsteps = TMC_MICROSTEPS;
@@ -1913,12 +1913,12 @@ static void settings_save(void) {
 
     s.iss_mode = (bool)ISS_MODE;
     s.iss_y_timeout_ms = ISS_Y_TIMEOUT_MS;
-    s.iss_join_sps = ISS_JOIN_SPS;
-    s.iss_press_sps = ISS_PRESS_SPS;
-    s.iss_trailing_sps = ISS_TRAILING_SPS;
-    s.iss_sg_deriv = ISS_SG_DERIV;
-    s.iss_sg_target = ISS_SG_TARGET;
-    s.iss_follow_timeout_ms = ISS_FOLLOW_TIMEOUT_MS;
+    s.iss_join_sps = JOIN_SPS;
+    s.iss_press_sps = PRESS_SPS;
+    s.iss_trailing_sps = TRAILING_SPS;
+    s.iss_sg_deriv = SG_DERIV;
+    s.iss_sg_target = SG_TARGET;
+    s.iss_follow_timeout_ms = FOLLOW_TIMEOUT_MS;
     s.sync_sg = SYNC_SG;
 
     s.crc32 = crc32_buf((const uint8_t *)&s, offsetof(settings_t, crc32));
@@ -2030,19 +2030,19 @@ static void settings_load(void) {
 
     ISS_MODE = s->iss_mode ? 1 : 0;
     ISS_Y_TIMEOUT_MS = s->iss_y_timeout_ms;
-    ISS_JOIN_SPS = s->iss_join_sps;
-    ISS_PRESS_SPS = s->iss_press_sps;
-    ISS_TRAILING_SPS = s->iss_trailing_sps;
-    ISS_SG_DERIV = s->iss_sg_deriv;
-    ISS_SG_TARGET = s->iss_sg_target;
-    ISS_FOLLOW_TIMEOUT_MS = s->iss_follow_timeout_ms;
+    JOIN_SPS = s->iss_join_sps;
+    PRESS_SPS = s->iss_press_sps;
+    TRAILING_SPS = s->iss_trailing_sps;
+    SG_DERIV = s->iss_sg_deriv;
+    SG_TARGET = s->iss_sg_target;
+    FOLLOW_TIMEOUT_MS = s->iss_follow_timeout_ms;
     SYNC_SG = s->sync_sg;
 
     // Motor parameters always come from compile-time config (tune.h / config.ini).
     // Flash values for these fields are ignored so reflashing always takes effect.
     TMC_RUN_CURRENT_MA[0] = CONF_RUN_CURRENT_MA;
     TMC_RUN_CURRENT_MA[1] = CONF_RUN_CURRENT_MA;
-    TMC_ISS_CURRENT_MA = CONF_ISS_CURRENT_MA;
+    SYNC_CURRENT_MA = CONF_SYNC_CURRENT_MA;
     TMC_HOLD_CURRENT_MA[0] = CONF_HOLD_CURRENT_MA;
     TMC_HOLD_CURRENT_MA[1] = CONF_HOLD_CURRENT_MA;
     TMC_MICROSTEPS = CONF_MICROSTEPS;
@@ -2343,17 +2343,17 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "CUTTER"))       ENABLE_CUTTER = (iv != 0);
             else if (!strcmp(param, "ISS_MODE"))     ISS_MODE = (iv != 0) ? 1 : 0;
             else if (!strcmp(param, "ISS_Y_MS"))     ISS_Y_TIMEOUT_MS = clamp_i(iv, 1000, 60000);
-            else if (!strcmp(param, "ISS_JOIN_RATE"))     ISS_JOIN_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
-            else if (!strcmp(param, "ISS_PRESS_RATE"))    ISS_PRESS_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
-            else if (!strcmp(param, "ISS_TRAILING_RATE")) ISS_TRAILING_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
-            else if (!strcmp(param, "ISS_CURRENT_MA")) {
-                TMC_ISS_CURRENT_MA = clamp_i(iv, 100, 1200);
-                if (g_lane1.task == TASK_FEED) tmc_set_run_current_ma(&g_tmc1, TMC_ISS_CURRENT_MA, TMC_HOLD_CURRENT_MA[0]);
-                if (g_lane2.task == TASK_FEED) tmc_set_run_current_ma(&g_tmc2, TMC_ISS_CURRENT_MA, TMC_HOLD_CURRENT_MA[1]);
+            else if (!strcmp(param, "JOIN_RATE"))     JOIN_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
+            else if (!strcmp(param, "PRESS_RATE"))    PRESS_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
+            else if (!strcmp(param, "TRAILING_RATE")) TRAILING_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
+            else if (!strcmp(param, "SYNC_CURRENT_MA")) {
+                SYNC_CURRENT_MA = clamp_i(iv, 100, 1200);
+                if (g_lane1.task == TASK_FEED) tmc_set_run_current_ma(&g_tmc1, SYNC_CURRENT_MA, TMC_HOLD_CURRENT_MA[0]);
+                if (g_lane2.task == TASK_FEED) tmc_set_run_current_ma(&g_tmc2, SYNC_CURRENT_MA, TMC_HOLD_CURRENT_MA[1]);
             }
-            else if (!strcmp(param, "ISS_SG_DERIV")) ISS_SG_DERIV = clamp_i(iv, 0, 1000);
-            else if (!strcmp(param, "ISS_SG_TARGET"))    ISS_SG_TARGET = clamp_f(fv, 0.0f, 1023.0f);
-            else if (!strcmp(param, "ISS_FOLLOW_MS"))    ISS_FOLLOW_TIMEOUT_MS = clamp_i(iv, 1000, 60000);
+            else if (!strcmp(param, "SG_DERIV")) SG_DERIV = clamp_i(iv, 0, 1000);
+            else if (!strcmp(param, "SG_TARGET"))    SG_TARGET = clamp_f(fv, 0.0f, 1023.0f);
+            else if (!strcmp(param, "FOLLOW_MS"))    FOLLOW_TIMEOUT_MS = clamp_i(iv, 1000, 60000);
             else if (!strcmp(param, "BASELINE_RATE"))    g_baseline_sps = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
             else if (!strcmp(param, "BUF_SENSOR"))   BUF_SENSOR_TYPE = clamp_i(iv, 0, 1);
             else if (!strcmp(param, "BUF_NEUTRAL"))  BUF_NEUTRAL = clamp_f(fv, 0.0f, 1.0f);
@@ -2409,13 +2409,13 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "CUTTER"))         snprintf(out, sizeof(out), "CUTTER:%d", ENABLE_CUTTER ? 1 : 0);
         else if (!strcmp(param, "ISS_MODE"))         snprintf(out, sizeof(out), "ISS_MODE:%d", ISS_MODE);
         else if (!strcmp(param, "ISS_Y_MS"))         snprintf(out, sizeof(out), "ISS_Y_MS:%d", ISS_Y_TIMEOUT_MS);
-        else if (!strcmp(param, "ISS_JOIN_RATE"))     snprintf(out, sizeof(out), "ISS_JOIN_RATE:%.1f", (double)sps_to_mm_per_min(ISS_JOIN_SPS));
-        else if (!strcmp(param, "ISS_PRESS_RATE"))    snprintf(out, sizeof(out), "ISS_PRESS_RATE:%.1f", (double)sps_to_mm_per_min(ISS_PRESS_SPS));
-        else if (!strcmp(param, "ISS_TRAILING_RATE")) snprintf(out, sizeof(out), "ISS_TRAILING_RATE:%.1f", (double)sps_to_mm_per_min(ISS_TRAILING_SPS));
-        else if (!strcmp(param, "ISS_CURRENT_MA"))   snprintf(out, sizeof(out), "ISS_CURRENT_MA:%d", TMC_ISS_CURRENT_MA);
-        else if (!strcmp(param, "ISS_SG_DERIV")) snprintf(out, sizeof(out), "ISS_SG_DERIV:%d", ISS_SG_DERIV);
-        else if (!strcmp(param, "ISS_SG_TARGET"))    snprintf(out, sizeof(out), "ISS_SG_TARGET:%.1f", (double)ISS_SG_TARGET);
-        else if (!strcmp(param, "ISS_FOLLOW_MS"))    snprintf(out, sizeof(out), "ISS_FOLLOW_MS:%d", ISS_FOLLOW_TIMEOUT_MS);
+        else if (!strcmp(param, "JOIN_RATE"))     snprintf(out, sizeof(out), "JOIN_RATE:%.1f", (double)sps_to_mm_per_min(JOIN_SPS));
+        else if (!strcmp(param, "PRESS_RATE"))    snprintf(out, sizeof(out), "PRESS_RATE:%.1f", (double)sps_to_mm_per_min(PRESS_SPS));
+        else if (!strcmp(param, "TRAILING_RATE")) snprintf(out, sizeof(out), "TRAILING_RATE:%.1f", (double)sps_to_mm_per_min(TRAILING_SPS));
+        else if (!strcmp(param, "SYNC_CURRENT_MA"))   snprintf(out, sizeof(out), "SYNC_CURRENT_MA:%d", SYNC_CURRENT_MA);
+        else if (!strcmp(param, "SG_DERIV")) snprintf(out, sizeof(out), "SG_DERIV:%d", SG_DERIV);
+        else if (!strcmp(param, "SG_TARGET"))    snprintf(out, sizeof(out), "SG_TARGET:%.1f", (double)SG_TARGET);
+        else if (!strcmp(param, "FOLLOW_MS"))    snprintf(out, sizeof(out), "FOLLOW_MS:%d", FOLLOW_TIMEOUT_MS);
         else if (!strcmp(param, "BASELINE_RATE"))     snprintf(out, sizeof(out), "BASELINE_RATE:%.1f", (double)sps_to_mm_per_min(g_baseline_sps));
         else if (!strcmp(param, "BUF_SENSOR"))   snprintf(out, sizeof(out), "BUF_SENSOR:%d", BUF_SENSOR_TYPE);
         else if (!strcmp(param, "BUF_NEUTRAL"))  snprintf(out, sizeof(out), "BUF_NEUTRAL:%.3f", (double)BUF_NEUTRAL);

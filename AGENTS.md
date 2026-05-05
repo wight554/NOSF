@@ -46,7 +46,7 @@ Two operating modes controlled by `ISS_MODE`:
 | `KLIPPER.md` | Klipper integration: shell helper setup, toolchange macros, sync tuning |
 | `HARDWARE.md` | Board pinout, sensor wiring |
 | `BUILD_FLASH.md` | Build and flash instructions |
-| `scripts/tune_iss_sg.py` | ISS StallGuard tuning script (ISS_SG_TARGET, ISS_SG_DERIV_THR, SGT_Lx) |
+| `scripts/tune_iss_sg.py` | ISS StallGuard tuning script (SG_TARGET, SG_DERIV_THR, SGT_Lx) |
 | `scripts/sg_monitor.py` | Real-time SG monitor — use `--iss` flag for approach-speed calibration |
 | `scripts/nosf_cmd.py` | Single-command serial helper for Klipper shell integration |
 
@@ -88,6 +88,11 @@ the context budget for code reading instead.
    removed from `settings_t`. The current version is in that file; grep for it.
 4. **Do not mock or stub hardware** — all changes must compile against the real
    Pico SDK target.
+5. **MANDATORY: Documentation Sync** — Every finished task must validate
+   against all project documentation (`MANUAL.md`, `BEHAVIOR.md`, etc.) to
+   ensure that parameter names, units, and command formats remain perfectly
+   synchronized. If you change a parameter name in code, you MUST update it
+   everywhere in the docs.
 
 ## Commit Format
 

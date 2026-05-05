@@ -240,6 +240,6 @@ oscillates.
 | `TS:1` not reaching NOSF | Sensor wiring or config | Test: `RUN_SHELL_COMMAND CMD=nosf PARAMS="TS:1"` |
 | `TC:` times out | Bowden too long / jam | Increase `TC_LOAD_MS` / `TC_UNLOAD_MS` |
 | Sync not enabling after load | No `TS:1` sent | Check sensor or enable `TS_BUF_MS` fallback |
-| ISS approach never detects contact | `ISS_SG_DERIV` too high or TCOOLTHRS too low | Run `tune_iss_sg.py --lane N --contact`; verify `TCOOLTHRS` covers operating speed |
-| ISS approach fires immediately (false trigger) | `ISS_SG_DERIV` too low | Increase `ISS_SG_DERIV`; or increase `iss_sg_ma_len` in config.ini |
-| ISS follow sync motor stops mid-bowden | SG dropping to 0 (hard friction) | Check PTFE routing; reduce `ISS_PRESS_RATE` |
+| ISS approach never detects contact | `SG_DERIV` too high or TCOOLTHRS too low | Run `tune_iss_sg.py --lane N --contact`; verify `TCOOLTHRS` covers operating speed |
+| ISS approach fires immediately (false trigger) | `SG_DERIV` too low | Increase `SG_DERIV`; or increase `iss_sg_ma_len` in config.ini |
+| ISS follow sync motor stops mid-bowden | SG dropping to 0 (hard friction) | Check PTFE routing; reduce `PRESS_RATE` |

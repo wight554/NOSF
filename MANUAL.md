@@ -105,6 +105,8 @@ All speed parameters use **mm/min** (same as Klipper `F`).
 | `CUT_FEED` | Feed distance before cut (mm) | 48 |
 | `CUT_LEN` | Cut stroke length (mm) | 10 |
 | `CUT_AMT` | Number of cut repetitions | 1 |
+| `ISS_MODE` | Operating mode: `0` = MMU (manual/Klipper), `1` = ISS (auto-switch) | 0 |
+| `ISS_Y_MS` | Wait for Y-splitter to clear after runout (ms) | 10000 |
 | `TC_CUT_MS` | Toolchange cut timeout (ms) | 5000 |
 | `TC_UNLOAD_MS` | Toolchange unload timeout (ms) | 60000 |
 | `TC_Y_MS` | Wait for Y-splitter to clear after unload (ms, 0 = skip) | 5000 |
@@ -127,13 +129,15 @@ All speed parameters use **mm/min** (same as Klipper `F`).
 | `BUF_THR` | Analog sensor: normalised threshold to declare ADVANCE/TRAILING | 0.30 |
 | `BUF_ALPHA` | Analog sensor: EMA filter weight (higher = faster response) | 0.20 |
 | `TS_BUF_MS` | Buffer-based TS:1 fallback: ms buffer must hold TRAILING after OUT seen — tip pressed against extruder gears (0 = disabled) | 2000 |
-| `ISS_JOIN_RATE` | ISS approach speed (mm/min); must exceed max print speed | 2100 |
-| `ISS_PRESS_RATE` | ISS follow sync top speed (mm/min) — used when buffer is MID/ADVANCE | 1275 |
-| `ISS_TRAILING_RATE` | ISS follow sync coast speed (mm/min) — used when buffer is TRAILING | 42 |
-| `ISS_SG_DERIV` | ISS approach SG derivative threshold: drop/tick that fires contact detection | 3 |
-| `ISS_SG_TARGET` | ISS follow sync SG setpoint: motor speed scales from `ISS_PRESS_RATE` (SG ≥ target) to 0 (SG = 0) (0 = disabled) | 0.0 |
-| `ISS_SG_MA_LEN` | ISS StallGuard moving average window length | 5 |
-| `ISS_FOLLOW_MS` | ISS follow sync timeout (ms) before error | 10000 |
+| `SYNC_SG` | Experimental: Enable StallGuard-based speed scaling during normal sync (`0`/`1`) | 0 |
+| `SYNC_CURRENT_MA` | High-torque current for all sync and ISS tasks (mA, 0–2000) | 800 |
+| `JOIN_RATE` | Fast approach speed (mm/min); must exceed max print speed | 2100 |
+| `PRESS_RATE` | Follow sync top speed (mm/min) — used when buffer is MID/ADVANCE | 1275 |
+| `TRAILING_RATE` | Follow sync coast speed (mm/min) — used when buffer is TRAILING | 42 |
+| `SG_DERIV` | StallGuard approach derivative threshold: drop/tick that fires contact detection | 3 |
+| `SG_TARGET` | Follow sync SG setpoint: motor speed scales from `PRESS_RATE` (SG ≥ target) to 0 (SG = 0) (0 = disabled) | 320.0 |
+| `SG_MA_LEN` | StallGuard moving average window length | 5 |
+| `FOLLOW_MS` | Follow sync timeout (ms) before error | 10000 |
 | `SGT_L1` | Lane 1 SGTHRS — DIAG fires when SG_RESULT ≤ 2 × value; 0 = disabled | 0 |
 | `SGT_L2` | Lane 2 SGTHRS — DIAG fires when SG_RESULT ≤ 2 × value; 0 = disabled | 0 |
 | `TCOOLTHRS` | StallGuard activation: SG active when TSTEP ≤ this value (TSTEP = ~12.5 MHz ÷ SPS). Default `0xFFFFF` (max) ensures StallGuard is active at all speeds. | 0xFFFFF |

@@ -19,7 +19,7 @@ static lane_t   g_lane1, g_lane2;   // per-lane state
 static tmc_t    g_tmc1,  g_tmc2;    // TMC2209 UART handles
 static tc_ctx_t g_tc_ctx;           // toolchange / ISS state
 static buf_t    g_buf;              // buffer arm position + zone
-static float    g_sg_load;          // MA-filtered SG_RESULT (ISS only)
+static float    g_sg_load;          // MA-filtered SG_RESULT (ISS / sync)
 static int      active_lane;        // 1 or 2
 ```
 
@@ -73,7 +73,7 @@ TC_ERROR
 
 ISS path detail:
 - `TC_ISS_WAIT_Y`: old tail cleared OUT; wait for Y-splitter sensor to clear
-- `TC_ISS_APPROACH`: motor at `ISS_JOIN_SPS`; SG MA derivative detects soft contact;
+- `TC_ISS_APPROACH`: motor at `JOIN_SPS`; SG MA derivative detects soft contact;
   DIAG stall (SGTHRS) catches hard jams; exits to FOLLOW on any contact
 - `TC_ISS_FOLLOW`: SG-interpolated speed (2-endstop) or arm position (analog);
   exits on `BUF_ADVANCE` (extruder pickup confirmed) or timeout
@@ -86,10 +86,10 @@ typedef struct {
     int   target_lane, from_lane;
     uint32_t phase_start_ms;
     uint32_t iss_tick_ms;              // rate-limiter for SYNC_TICK_MS ticks
-    float    sg_ma_buf[CONF_ISS_SG_MA_LEN];
+    float    sg_ma_buf[CONF_SG_MA_LEN];
     uint8_t  sg_ma_idx, sg_ma_fill;
     float    sg_ma_prev;
-    int      iss_current_sps;
+    int      sync_current_sps;
 } tc_ctx_t;
 ```
 
@@ -118,7 +118,7 @@ Every runtime parameter that must survive reboot goes through `settings_t`.
 9. Add `GET:` handler (search for `snprintf(out` block)
 10. **Bump `SETTINGS_VERSION`** at line ~1659
 
-Current `SETTINGS_VERSION`: **17** (grep `main.c` to confirm before bumping)
+Current `SETTINGS_VERSION`: **21** (grep `main.c` to confirm before bumping)
 
 ---
 
@@ -139,7 +139,7 @@ In normal operation the main loop re-arms it after `MOTION_STARTUP_MS`.
 For ISS approach, `stall_armed = true` must be set **after** `lane_start()`:
 
 ```c
-lane_start(NL, TASK_FEED, ISS_JOIN_SPS, true, now_ms, 0);
+lane_start(NL, TASK_FEED, JOIN_SPS, true, now_ms, 0);
 NL->stall_armed = true;   // must come after lane_start, not before
 ```
 
@@ -163,8 +163,8 @@ Buffer sync must not run during any toolchange or ISS state.
 
 | Parameter | Scope | Reason |
 |-----------|-------|--------|
-| `ISS_SG_TARGET` | Global | Speed interpolation setpoint |
-| `ISS_SG_DERIV` | Global | Contact detection sensitivity |
+| `SG_TARGET` | Global | Speed interpolation setpoint |
+| `SG_DERIV` | Global | Contact detection sensitivity |
 | `TMC_SGT_L1` / `TMC_SGT_L2` | Per-lane | Lanes may have different bowden friction |
 | `TMC_TCOOLTHRS` | Global (both TMCs updated together) | Single threshold for both |
 
@@ -175,7 +175,7 @@ Buffer sync must not run during any toolchange or ISS state.
 - **During `TC_ISS_APPROACH`**: stall = contact detected → clear fault,
   stop motor, transition to `TC_ISS_FOLLOW`.
 - **During `TC_ISS_FOLLOW`**: stall = pressure spike → clear fault, drop
-  speed to `ISS_TRAILING_SPS`, continue.
+  speed to `TRAILING_SPS`, continue.
 
 ### 6. `MM_PER_STEP` and Speed Conversion
 
