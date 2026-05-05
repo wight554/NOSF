@@ -99,6 +99,7 @@ static int BUF_HYST_MS = CONF_BUF_HYST_MS;
 static int BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
 static float BUF_HALF_TRAVEL_MM = CONF_BUF_HALF_TRAVEL_MM;
 static int SYNC_AUTO_STOP_MS = 2000;
+static int AUTO_LOAD_MAX_MM = 2000;
 static bool BUF_INVERT = false;
 static bool AUTO_PRELOAD = true;
 static int AUTOLOAD_RETRACT_MM = 10;
@@ -330,6 +331,8 @@ typedef struct lane_s {
     uint32_t runout_block_until_ms;
     uint32_t buf_advance_since_ms;  // for TS:1 buffer fallback
     uint32_t reload_tail_ms;           // RELOAD: timestamp when IN cleared; 0 = not tracking
+    float task_dist_mm;                // distance traveled in current task
+    uint32_t last_dist_tick_ms;        // for distance integration
 } lane_t;
 
 typedef enum {
@@ -541,6 +544,8 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     L->task = t;
     L->fault = FAULT_NONE;
     L->motion_started_ms = now_ms;
+    L->task_dist_mm = 0.0f;
+    L->last_dist_tick_ms = now_ms;
     L->stall_armed = false;
     L->unload_sensor_latch = false;
     L->retract_deadline_ms = 0;
@@ -633,6 +638,14 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
             if (L->current_sps > L->target_sps) L->current_sps = L->target_sps;
             motor_set_rate_sps(&L->m, L->current_sps);
         }
+    }
+
+    // Distance integration
+    uint32_t dt_ms = now_ms - L->last_dist_tick_ms;
+    if (dt_ms > 0) {
+        int idx = lane_to_idx(L->lane_id);
+        L->task_dist_mm += (float)L->current_sps * ((float)dt_ms / 1000.0f) * MM_PER_STEP[idx];
+        L->last_dist_tick_ms = now_ms;
     }
 
     if (!L->stall_armed && L->task != TASK_IDLE) {
@@ -759,6 +772,12 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         } else if (L->autoload_deadline_ms != 0 && (int32_t)(now_ms - L->autoload_deadline_ms) >= 0) {
             lane_stop(L);
             cmd_event("LOAD_TIMEOUT", lane_s);
+        } else if (AUTO_LOAD_MAX_MM > 0) {
+            // Safety distance limit
+            if (L->task_dist_mm > (float)AUTO_LOAD_MAX_MM) {
+                lane_stop(L);
+                cmd_event("LOAD_TIMEOUT", lane_s);
+            }
         }
     }
 
@@ -1423,26 +1442,34 @@ static void autopreload_tick(uint32_t now_ms) {
     bool in1 = lane_in_present(&g_lane1);
     bool in2 = lane_in_present(&g_lane2);
 
+    // MMU is completely empty if neither OUT sensor is present.
+    bool mmu_empty = !lane_out_present(&g_lane1) && !lane_out_present(&g_lane2);
+
     if (in1 && !prev_lane1_in_present) {
         if (g_lane1.task == TASK_IDLE && tc_state() == TC_IDLE && !cutter_busy() && !lane_out_present(&g_lane1)) {
-            lane_start(&g_lane1, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, 6000);
-            cmd_event("PRELOAD", "1");
-            // Set active lane at insert time (matches Klipper insert_gcode logic).
-            // Only activate if the other lane's OUT is not present (other lane not loaded).
-            if (!lane_out_present(&g_lane2)) {
-                set_active_lane(1);
+            if (mmu_empty) {
+                // Completely empty MMU: auto-load all the way to toolhead.
+                lane_start(&g_lane1, TASK_LOAD_FULL, FEED_SPS, true, now_ms, 0);
+                cmd_event("AUTO_LOAD", "1");
+            } else {
+                // Other lane loaded: just preload to Y-splitter.
+                lane_start(&g_lane1, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, 6000);
+                cmd_event("PRELOAD", "1");
             }
+            if (!lane_out_present(&g_lane2)) set_active_lane(1);
         }
     }
 
     if (in2 && !prev_lane2_in_present) {
         if (g_lane2.task == TASK_IDLE && tc_state() == TC_IDLE && !cutter_busy() && !lane_out_present(&g_lane2)) {
-            lane_start(&g_lane2, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, 6000);
-            cmd_event("PRELOAD", "2");
-            // Set active lane at insert time.
-            if (!lane_out_present(&g_lane1)) {
-                set_active_lane(2);
+            if (mmu_empty) {
+                lane_start(&g_lane2, TASK_LOAD_FULL, FEED_SPS, true, now_ms, 0);
+                cmd_event("AUTO_LOAD", "2");
+            } else {
+                lane_start(&g_lane2, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, 6000);
+                cmd_event("PRELOAD", "2");
             }
+            if (!lane_out_present(&g_lane1)) set_active_lane(2);
         }
     }
 
@@ -1767,7 +1794,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 28u
+#define SETTINGS_VERSION 29u
 
 typedef struct {
     uint32_t magic;
@@ -1778,6 +1805,7 @@ typedef struct {
     int sync_ramp_up, sync_ramp_dn;
     int sync_tick_ms, pre_ramp_sps;
     int sync_auto_stop_ms;
+    int auto_load_max_mm;
     float buf_half_travel_mm;
     int buf_hyst_ms, buf_predict_thr_ms;
     float baseline_alpha;
@@ -1860,6 +1888,7 @@ static void settings_defaults(void) {
     SYNC_TICK_MS = CONF_SYNC_TICK_MS;
     PRE_RAMP_SPS = CONF_PRE_RAMP_SPS;
     SYNC_AUTO_STOP_MS = 2000;
+    AUTO_LOAD_MAX_MM = 2000;
     BUF_HALF_TRAVEL_MM = CONF_BUF_HALF_TRAVEL_MM;
     BUF_HYST_MS = CONF_BUF_HYST_MS;
     BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
@@ -1972,6 +2001,7 @@ static void settings_save(void) {
     s.sync_tick_ms = SYNC_TICK_MS;
     s.pre_ramp_sps = PRE_RAMP_SPS;
     s.sync_auto_stop_ms = SYNC_AUTO_STOP_MS;
+    s.auto_load_max_mm = AUTO_LOAD_MAX_MM;
     s.buf_half_travel_mm = BUF_HALF_TRAVEL_MM;
     s.buf_hyst_ms = BUF_HYST_MS;
     s.buf_predict_thr_ms = BUF_PREDICT_THR_MS;
@@ -2120,6 +2150,7 @@ static void settings_load(void) {
     SYNC_TICK_MS = s->sync_tick_ms;
     PRE_RAMP_SPS = s->pre_ramp_sps;
     SYNC_AUTO_STOP_MS = s->sync_auto_stop_ms;
+    AUTO_LOAD_MAX_MM = s->auto_load_max_mm;
     BUF_HALF_TRAVEL_MM = s->buf_half_travel_mm;
     BUF_HYST_MS = s->buf_hyst_ms;
     BUF_PREDICT_THR_MS = s->buf_predict_thr_ms;
@@ -2520,6 +2551,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "BUF_RANGE"))    BUF_RANGE = clamp_f(fv, 0.01f, 0.5f);
         else if (!strcmp(base_param, "BUF_THR"))      BUF_THR = clamp_f(fv, 0.01f, 0.99f);
         else if (!strcmp(base_param, "BUF_ALPHA"))    BUF_ANALOG_ALPHA = clamp_f(fv, 0.01f, 1.0f);
+        else if (!strcmp(base_param, "AUTO_LOAD_MAX")) AUTO_LOAD_MAX_MM = clamp_i(iv, 100, 10000);
         else if (!strcmp(base_param, "SYNC_KP_RATE"))      SYNC_KP_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
         else if (!strcmp(base_param, "SYNC_AUTO_STOP"))   SYNC_AUTO_STOP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "TS_BUF_MS"))    TS_BUF_FALLBACK_MS = clamp_i(iv, 0, 30000);
@@ -2589,6 +2621,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "BUF_RANGE"))    snprintf(out, sizeof(out), "BUF_RANGE:%.3f", (double)BUF_RANGE);
         else if (!strcmp(param, "BUF_THR"))      snprintf(out, sizeof(out), "BUF_THR:%.3f", (double)BUF_THR);
         else if (!strcmp(param, "BUF_ALPHA"))    snprintf(out, sizeof(out), "BUF_ALPHA:%.3f", (double)BUF_ANALOG_ALPHA);
+        else if (!strcmp(param, "AUTO_LOAD_MAX")) snprintf(out, sizeof(out), "AUTO_LOAD_MAX:%d", AUTO_LOAD_MAX_MM);
         else if (!strcmp(param, "SYNC_KP_RATE"))     snprintf(out, sizeof(out), "SYNC_KP_RATE:%.1f", (double)sps_to_mm_per_min(SYNC_KP_SPS));
         else if (!strcmp(param, "SYNC_AUTO_STOP"))   snprintf(out, sizeof(out), "SYNC_AUTO_STOP:%d", SYNC_AUTO_STOP_MS);
         else if (!strcmp(param, "TS_BUF_MS"))    snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
