@@ -52,6 +52,14 @@ static bool TMC_SPREADCYCLE = CONF_SPREADCYCLE;
 static int TMC_SGT_L1 = CONF_SGT_L1;
 static int TMC_SGT_L2 = CONF_SGT_L2;
 static int TMC_TCOOLTHRS = CONF_TCOOLTHRS;
+static float TMC_ROTATION_DISTANCE = CONF_ROTATION_DISTANCE;
+static float TMC_GEAR_RATIO = CONF_GEAR_RATIO;
+static int TMC_FULL_STEPS = CONF_FULL_STEPS;
+static int TMC_TBL = CONF_TBL;
+static int TMC_TOFF = CONF_TOFF;
+static int TMC_HSTRT = CONF_HSTRT;
+static int TMC_HEND = CONF_HEND;
+static bool TMC_INTERPOLATE = CONF_INTPOL;
 
 static float g_sg_load = 0.0f;   // MA-filtered SG_RESULT; updated only during RELOAD states
 static int STALL_RECOVERY_MS = CONF_STALL_RECOVERY_MS;
@@ -1688,7 +1696,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 21u
+#define SETTINGS_VERSION 22u
 
 typedef struct {
     uint32_t magic;
@@ -1745,13 +1753,20 @@ typedef struct {
     bool enable_cutter;
     bool spreadcycle;
     bool reload_mode;
-    bool sync_sg;
-    bool reload_sg;
+    bool sync_sg_interp;
+    bool reload_sg_interp;
+
+    float tmc_rotation_distance;
+    float tmc_gear_ratio;
+    int tmc_full_steps;
+    int tmc_microsteps;
+    int tmc_tbl, tmc_toff, tmc_hstrt, tmc_hend;
+    bool tmc_interpolate;
 
     uint32_t crc32;
 } settings_t;
-_Static_assert(sizeof(settings_t) <= 256,
-    "settings_t exceeds one flash page - add multi-page loop to settings_save()");
+_Static_assert(sizeof(settings_t) <= 512,
+               "settings_t exceeds two flash pages - expand buffer in settings_save()");
 
 static uint32_t crc32_buf(const uint8_t *data, size_t len) {
     uint32_t crc = 0xFFFFFFFFu;
@@ -1839,6 +1854,16 @@ static void settings_defaults(void) {
     FOLLOW_TIMEOUT_MS = CONF_FOLLOW_TIMEOUT_MS;
     SYNC_SG_INTERP = CONF_SYNC_SG_INTERP;
     RELOAD_SG_INTERP = CONF_RELOAD_SG_INTERP;
+
+    TMC_ROTATION_DISTANCE = CONF_ROTATION_DISTANCE;
+    TMC_GEAR_RATIO = CONF_GEAR_RATIO;
+    TMC_FULL_STEPS = CONF_FULL_STEPS;
+    TMC_MICROSTEPS = CONF_MICROSTEPS;
+    TMC_TBL = CONF_TBL;
+    TMC_TOFF = CONF_TOFF;
+    TMC_HSTRT = CONF_HSTRT;
+    TMC_HEND = CONF_HEND;
+    TMC_INTERPOLATE = CONF_INTPOL;
 }
 
 static void settings_save(void) {
@@ -1917,20 +1942,42 @@ static void settings_save(void) {
     s.sg_deriv = SG_DERIV;
     s.sg_target = SG_TARGET;
     s.follow_timeout_ms = FOLLOW_TIMEOUT_MS;
-    s.sync_sg = SYNC_SG_INTERP;
-    s.reload_sg = RELOAD_SG_INTERP;
+    s.sync_sg_interp = SYNC_SG_INTERP;
+    s.reload_sg_interp = RELOAD_SG_INTERP;
+
+    s.tmc_rotation_distance = TMC_ROTATION_DISTANCE;
+    s.tmc_gear_ratio = TMC_GEAR_RATIO;
+    s.tmc_full_steps = TMC_FULL_STEPS;
+    s.tmc_microsteps = TMC_MICROSTEPS;
+    s.tmc_tbl = TMC_TBL;
+    s.tmc_toff = TMC_TOFF;
+    s.tmc_hstrt = TMC_HSTRT;
+    s.tmc_hend = TMC_HEND;
+    s.tmc_interpolate = TMC_INTERPOLATE;
 
     s.crc32 = crc32_buf((const uint8_t *)&s, offsetof(settings_t, crc32));
 
-    uint8_t page[FLASH_PAGE_SIZE] = {0};
-    memcpy(page, &s, sizeof(s));
+    uint8_t buffer[512] = {0};
+    memcpy(buffer, &s, sizeof(s));
 
     stop_all();
 
     uint32_t ints = save_and_disable_interrupts();
     flash_range_erase(SETTINGS_FLASH_OFFSET, FLASH_SECTOR_SIZE);
-    flash_range_program(SETTINGS_FLASH_OFFSET, page, FLASH_PAGE_SIZE);
+    flash_range_program(SETTINGS_FLASH_OFFSET, buffer, 512);
     restore_interrupts(ints);
+}
+
+static void sync_tmc_settings(void) {
+    // Recalculate MM_PER_STEP
+    MM_PER_STEP = TMC_ROTATION_DISTANCE / (float)(TMC_FULL_STEPS * TMC_GEAR_RATIO * TMC_MICROSTEPS);
+
+    // Re-setup CHOPCONF for both drivers
+    tmc_setup_chopconf(&g_tmc1, TMC_MICROSTEPS, TMC_TOFF, TMC_TBL, TMC_HSTRT, TMC_HEND, TMC_INTERPOLATE);
+    tmc_setup_chopconf(&g_tmc2, TMC_MICROSTEPS, TMC_TOFF, TMC_TBL, TMC_HSTRT, TMC_HEND, TMC_INTERPOLATE);
+    
+    tmc_set_spreadcycle(&g_tmc1, TMC_SPREADCYCLE);
+    tmc_set_spreadcycle(&g_tmc2, TMC_SPREADCYCLE);
 }
 
 static void tmc_apply_all(void) {
@@ -1938,8 +1985,8 @@ static void tmc_apply_all(void) {
     tmc_set_pwmconf(&g_tmc2);
     tmc_set_spreadcycle(&g_tmc1, TMC_SPREADCYCLE);
     tmc_set_spreadcycle(&g_tmc2, TMC_SPREADCYCLE);
-    tmc_setup_chopconf(&g_tmc1, TMC_MICROSTEPS, CONF_TOFF, CONF_TBL, CONF_HSTRT, CONF_HEND, CONF_INTPOL);
-    tmc_setup_chopconf(&g_tmc2, TMC_MICROSTEPS, CONF_TOFF, CONF_TBL, CONF_HSTRT, CONF_HEND, CONF_INTPOL);
+    tmc_setup_chopconf(&g_tmc1, TMC_MICROSTEPS, TMC_TOFF, TMC_TBL, TMC_HSTRT, TMC_HEND, TMC_INTERPOLATE);
+    tmc_setup_chopconf(&g_tmc2, TMC_MICROSTEPS, TMC_TOFF, TMC_TBL, TMC_HSTRT, TMC_HEND, TMC_INTERPOLATE);
     tmc_set_run_current_ma(&g_tmc1, TMC_RUN_CURRENT_MA[0], TMC_HOLD_CURRENT_MA[0]);
     tmc_set_run_current_ma(&g_tmc2, TMC_RUN_CURRENT_MA[1], TMC_HOLD_CURRENT_MA[1]);
     tmc_set_tcoolthrs(&g_tmc1, (uint32_t)TMC_TCOOLTHRS);
@@ -2041,8 +2088,20 @@ static void settings_load(void) {
     SG_DERIV = s->sg_deriv;
     SG_TARGET = s->sg_target;
     FOLLOW_TIMEOUT_MS = s->follow_timeout_ms;
-    SYNC_SG_INTERP = s->sync_sg;
-    RELOAD_SG_INTERP = s->reload_sg;
+    SYNC_SG_INTERP = s->sync_sg_interp;
+    RELOAD_SG_INTERP = s->reload_sg_interp;
+
+    TMC_ROTATION_DISTANCE = s->tmc_rotation_distance;
+    TMC_GEAR_RATIO = s->tmc_gear_ratio;
+    TMC_FULL_STEPS = s->tmc_full_steps;
+    TMC_MICROSTEPS = s->tmc_microsteps;
+    TMC_TBL = s->tmc_tbl;
+    TMC_TOFF = s->tmc_toff;
+    TMC_HSTRT = s->tmc_hstrt;
+    TMC_HEND = s->tmc_hend;
+    TMC_INTERPOLATE = s->tmc_interpolate;
+
+    sync_tmc_settings();
 
     // Motor parameters always come from compile-time config (tune.h / config.ini).
     // Flash values for these fields are ignored so reflashing always takes effect.
@@ -2375,6 +2434,16 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "SGT_L1"))    { TMC_SGT_L1 = clamp_i(iv, 0, 255); tmc_set_sgthrs(&g_tmc1, (uint8_t)TMC_SGT_L1); }
             else if (!strcmp(param, "SGT_L2"))    { TMC_SGT_L2 = clamp_i(iv, 0, 255); tmc_set_sgthrs(&g_tmc2, (uint8_t)TMC_SGT_L2); }
             else if (!strcmp(param, "TCOOLTHRS")) { TMC_TCOOLTHRS = clamp_i(iv, 0, 0xFFFFF); tmc_set_tcoolthrs(&g_tmc1, (uint32_t)TMC_TCOOLTHRS); tmc_set_tcoolthrs(&g_tmc2, (uint32_t)TMC_TCOOLTHRS); }
+            else if (!strcmp(param, "MICROSTEPS")) { TMC_MICROSTEPS = clamp_i(iv, 1, 256); sync_tmc_settings(); }
+            else if (!strcmp(param, "INTERPOLATE")) { TMC_INTERPOLATE = (iv != 0); sync_tmc_settings(); }
+            else if (!strcmp(param, "STEALTHCHOP")) { TMC_SPREADCYCLE = (iv == 0); sync_tmc_settings(); }
+            else if (!strcmp(param, "DRIVER_TBL")) { TMC_TBL = clamp_i(iv, 0, 3); sync_tmc_settings(); }
+            else if (!strcmp(param, "DRIVER_TOFF")) { TMC_TOFF = clamp_i(iv, 0, 15); sync_tmc_settings(); }
+            else if (!strcmp(param, "DRIVER_HSTRT")) { TMC_HSTRT = clamp_i(iv, 0, 7); sync_tmc_settings(); }
+            else if (!strcmp(param, "DRIVER_HEND")) { TMC_HEND = clamp_i(iv, -3, 12); sync_tmc_settings(); }
+            else if (!strcmp(param, "ROTATION_DIST")) { TMC_ROTATION_DISTANCE = clamp_f(fv, 0.1, 1000.0); sync_tmc_settings(); }
+            else if (!strcmp(param, "GEAR_RATIO")) { TMC_GEAR_RATIO = clamp_f(fv, 0.001, 1000.0); sync_tmc_settings(); }
+            else if (!strcmp(param, "FULL_STEPS")) { TMC_FULL_STEPS = (iv == 400 ? 400 : 200); sync_tmc_settings(); }
             else if (!strcmp(param, "SERVO_OPEN"))   SERVO_OPEN_US = clamp_i(iv, 400, 2600);
             else if (!strcmp(param, "SERVO_CLOSE"))  SERVO_CLOSE_US = clamp_i(iv, 400, 2600);
             else if (!strcmp(param, "SERVO_SETTLE")) SERVO_SETTLE_MS = clamp_i(iv, 100, 2000);
@@ -2438,6 +2507,16 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "SGT_L1"))    snprintf(out, sizeof(out), "SGT_L1:%d", TMC_SGT_L1);
         else if (!strcmp(param, "SGT_L2"))    snprintf(out, sizeof(out), "SGT_L2:%d", TMC_SGT_L2);
         else if (!strcmp(param, "TCOOLTHRS")) snprintf(out, sizeof(out), "TCOOLTHRS:%d", TMC_TCOOLTHRS);
+        else if (!strcmp(param, "MICROSTEPS")) snprintf(out, sizeof(out), "MICROSTEPS:%d", TMC_MICROSTEPS);
+        else if (!strcmp(param, "INTERPOLATE")) snprintf(out, sizeof(out), "INTERPOLATE:%d", TMC_INTERPOLATE ? 1 : 0);
+        else if (!strcmp(param, "STEALTHCHOP")) snprintf(out, sizeof(out), "STEALTHCHOP:%d", TMC_SPREADCYCLE ? 0 : 1);
+        else if (!strcmp(param, "DRIVER_TBL")) snprintf(out, sizeof(out), "DRIVER_TBL:%d", TMC_TBL);
+        else if (!strcmp(param, "DRIVER_TOFF")) snprintf(out, sizeof(out), "DRIVER_TOFF:%d", TMC_TOFF);
+        else if (!strcmp(param, "DRIVER_HSTRT")) snprintf(out, sizeof(out), "DRIVER_HSTRT:%d", TMC_HSTRT);
+        else if (!strcmp(param, "DRIVER_HEND")) snprintf(out, sizeof(out), "DRIVER_HEND:%d", TMC_HEND);
+        else if (!strcmp(param, "ROTATION_DIST")) snprintf(out, sizeof(out), "ROTATION_DIST:%.5f", (double)TMC_ROTATION_DISTANCE);
+        else if (!strcmp(param, "GEAR_RATIO")) snprintf(out, sizeof(out), "GEAR_RATIO:%.5f", (double)TMC_GEAR_RATIO);
+        else if (!strcmp(param, "FULL_STEPS")) snprintf(out, sizeof(out), "FULL_STEPS:%d", TMC_FULL_STEPS);
         else if (!strcmp(param, "SERVO_OPEN"))   snprintf(out, sizeof(out), "SERVO_OPEN:%d", SERVO_OPEN_US);
         else if (!strcmp(param, "SERVO_CLOSE"))  snprintf(out, sizeof(out), "SERVO_CLOSE:%d", SERVO_CLOSE_US);
         else if (!strcmp(param, "SERVO_SETTLE")) snprintf(out, sizeof(out), "SERVO_SETTLE:%d", SERVO_SETTLE_MS);

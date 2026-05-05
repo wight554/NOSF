@@ -96,19 +96,9 @@ These settings must be defined in `config.ini` and require a reflash to change.
 
 | config.ini Key | Description | Default |
 |----------------|-------------|---------|
-| `microsteps` | Stepper microstepping (1-256) | |
-| `rotation_distance` | mm of filament per full motor rotation | |
-| `full_steps_per_rotation` | 200 for 1.8°, 400 for 0.9° motors | 200 |
-| `gear_ratio` | Mechanical reduction (e.g. `50:10`) | 1:1 |
 | `sense_resistor` | TMC2209 R_SENSE (Ohms) | 0.110 |
 | `m1_dir_invert` | Invert rotation for lane 1 (`0`/`1`) | 0 |
 | `m2_dir_invert` | Invert rotation for lane 2 (`0`/`1`) | 0 |
-| `interpolate` | Enable driver-level step interpolation | True |
-| `stealthchop_threshold` | 0 = SpreadCycle always (recommended), >0 = speed threshold | 0 |
-| `driver_TBL` | Blank time (TMC register) | 2 |
-| `driver_TOFF` | Off time (TMC register) | 3 |
-| `driver_HSTRT` | Hysteresis start (TMC register) | 5 |
-| `driver_HEND` | Hysteresis end (TMC register) | 0 |
 
 ### Tunables (Runtime & config.ini)
 These can be set in `config.ini` (compile-time defaults) **and** updated at runtime via `SET:<cmd>:<val>`.
@@ -120,6 +110,16 @@ These can be set in `config.ini` (compile-time defaults) **and** updated at runt
 | `AUTO_RATE` | `auto_rate` | Autoload speed (mm/min) | 2100 |
 | `RUN_CURRENT_MA` | `run_current` | Normal operating current (mA) | |
 | `HOLD_CURRENT_MA` | `hold_current` | Idle holding current (mA) | run/2 |
+| `MICROSTEPS` | `microsteps` | Stepper microstepping (1-256) | 16 |
+| `ROTATION_DIST` | `rotation_distance` | mm of filament per full motor rotation | |
+| `FULL_STEPS` | `full_steps_per_rotation` | 200 for 1.8°, 400 for 0.9° motors | 200 |
+| `GEAR_RATIO` | `gear_ratio` | Mechanical reduction (e.g. `5:1`) | 1:1 |
+| `INTERPOLATE` | `interpolate` | Enable driver-level step interpolation (`0`/`1`) | 1 |
+| `STEALTHCHOP` | `stealthchop_threshold` | `0` = SpreadCycle (recommended), `1` = StealthChop | 0 |
+| `DRIVER_TBL` | `driver_TBL` | TMC Blank time (0-3) | 2 |
+| `DRIVER_TOFF` | `driver_TOFF` | TMC Off time (0-15) | 3 |
+| `DRIVER_HSTRT` | `driver_HSTRT` | TMC Hysteresis start (0-7) | 5 |
+| `DRIVER_HEND` | `driver_HEND` | TMC Hysteresis end (-3 to 12) | 0 |
 | `STARTUP_MS` | `motion_startup_ms` | Stall arm delay after motion start (ms) | 1000 |
 | `STALL_MS` | `stall_recovery_ms` | Wait time after a stall detection (ms) | 3000 |
 | `AUTO_PRELOAD` | `auto_preload` | Auto-start preload on IN insert (`0`/`1`) | 1 |
