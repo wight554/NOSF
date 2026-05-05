@@ -13,9 +13,6 @@
 // ERB V2.0 onboard Rsense (R46/R47, R48/R49) — hardware constant
 #define CONF_RSENSE_OHM         0.110f
 
-// ----- ISS Internal -----
-#define CONF_ISS_SG_MA_LEN      5
-
 // ----- Firmware version -----
 #define CONF_FW_VERSION         "NOSF_0.2.0"
 

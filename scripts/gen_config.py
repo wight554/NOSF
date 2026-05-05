@@ -104,6 +104,7 @@ DEFAULTS = {
     "iss_trailing_sps": "1000",
     "iss_join_sps": "25000",
     "iss_press_sps": "15000",
+    "iss_sg_ma_len": "5",
     "iss_follow_timeout_ms": "10000",
 }
 
@@ -264,6 +265,7 @@ def main():
         f"#define CONF_ISS_SG_TARGET      {get_float('iss_sg_target'):.1f}f",
         f"#define CONF_ISS_SG_DERIV_THR   {get('iss_sg_deriv_thr')}",
         f"#define CONF_ISS_TRAILING_SPS   {get('iss_trailing_sps')}",
+        f"#define CONF_ISS_SG_MA_LEN      {get('iss_sg_ma_len')}",
         f"#define CONF_ISS_FOLLOW_TIMEOUT_MS {get('iss_follow_timeout_ms')}",
         "",
     ]

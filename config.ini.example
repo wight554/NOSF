@@ -86,6 +86,7 @@ run_current: 0.8
 # iss_sg_deriv_thr: 0            # derivative threshold for approach contact (0 = disabled)
 # iss_current_ma: 800            # high-torque current for ISS/Sync tasks
 # iss_trailing_sps: 500          # coasting speed when buffer is stalled (trailing)
+# iss_sg_ma_len: 5               # MA window for SG filtering
 # iss_join_sps: 25000            # fast approach speed
 # iss_press_sps: 15000           # top speed in follow-sync
 # iss_follow_timeout_ms: 10000   # max time in trailing before error
