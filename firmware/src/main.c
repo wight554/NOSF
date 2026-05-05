@@ -798,6 +798,7 @@ static void cutter_start(lane_t *L, uint32_t now_ms) {
 }
 
 static void cutter_abort(void) {
+    if (g_cut.state == CUT_IDLE) return;  // nothing to abort
     if (g_cut.lane) {
         motor_stop(&g_cut.lane->m);
     }
