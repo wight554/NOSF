@@ -1,6 +1,6 @@
 # NOSF — StallGuard Auto-Tuning Guide
 
-This guide covers the automated workflow for calibrating StallGuard thresholds (`SGT`) using the ML-backed tuning suite. This workflow correlates real-time motor load with slicer geometry and volumetric flow.
+This guide covers the automated workflow for calibrating StallGuard thresholds (`SGT`) starting from an empty MMU.
 
 ---
 
@@ -16,20 +16,17 @@ This guide covers the automated workflow for calibrating StallGuard thresholds (
 
 ## Step 1: Klipper Setup
 
-To allow the tuner to "see" what the printer is doing, you must enable the `M118` (Respond) command in Klipper.
-
-Add to your `printer.cfg`:
+Ensure `M118` (Respond) is enabled in your `printer.cfg`:
 
 ```ini
 [respond]
-# Enables the M118 command used for sync markers
 ```
 
 ---
 
 ## Step 2: Prepare the G-code
 
-Standard linear speed is not enough for accurate tuning because back-pressure depends on line width and height. Use the marker script to calculate the effective filament speed.
+Calculate the effective filament speed based on line geometry:
 
 ```bash
 # Process your sliced G-code
@@ -38,45 +35,39 @@ python3 scripts/gcode_marker.py my_model.gcode
 
 ---
 
-## Step 3: Run the Live Tuner
+## Step 3: Zero-to-Tuned Workflow
 
-The tuner uses an **Automated Sync Workflow**. You don't need to manually enable sync on the MMU.
+Follow these steps to prepare your MMU and start the tuning session:
 
-1.  **Load Filament**: Run the `FL` command on the MMU. It will push filament until it hits the extruder gears and stops automatically.
-2.  **Start Print**: Start the marked G-code in Klipper.
-3.  **Start Tuner**: Run the tuner script on your PC/Pi.
+### 1. Preload Filament (`LO`)
+Insert your filament into the desired MMU lane. The MMU will detect the insertion (if `AUTO_PRELOAD` is on) or you can trigger it manually:
+*   **Action**: Insert filament.
+*   **Result**: MMU pushes filament to the output sensor/Y-splitter. It is now "Preloaded."
+
+### 2. Load to Toolhead (`FL`)
+Send the **Full Load** command to push the filament from the MMU to the printer's extruder:
+*   **Command**: `FL:1` (for Lane 1).
+*   **Result**: The MMU pushes until it hits the extruder gears. The firmware detects the resistance (Buffer `TRAILING` or `ADVANCE`) and stops automatically.
+
+### 3. Start the Tuning Session
+1.  **Start Print**: Start the `my_model_geo.gcode` file in Klipper.
+2.  **Run Tuner**: Immediately start the tuner script on your PC/Pi.
 
 ```bash
-# Example: Fine-tuning a Fysetc kit motor
-python3 scripts/sg_tuner.py \
-  --baseline fysetc-g36hsy4405-6d-1200 \
-  --fine-tune \
-  --klipper-log /tmp/printer
+python3 scripts/sg_tuner.py --baseline <motor_name> --fine-tune
 ```
 
-### How Synchronization Happens:
-*   **Pull-to-Sync**: When Klipper starts the print, the extruder pulls the filament.
-*   **Auto-Trigger**: The MMU detects this pull (Buffer `ADVANCE`) and immediately starts syncing.
-*   **Proactive Setup**: The `sg_tuner.py` script automatically configures the controller's TMC settings and `SYNC_SG_INTERP` mode for the duration of the run.
+### 4. Automatic Synchronization
+*   **Pull-to-Sync**: As Klipper begins the first extrusion move, the extruder pulls the filament.
+*   **Handshake**: The MMU detects the pull (Buffer `ADVANCE`) and instantly enables sync mode.
+*   **Collection**: The `sg_tuner.py` script proactively sets all TMC parameters and begins the `SGT` sweep.
 
 ---
 
 ## Step 4: Analysis & Recommendation
 
-The tuner script monitors for a `FINISH` marker in the G-code and will automatically stop and analyze the data when the print ends.
-
-### Recommendation Output Example:
-```
---- Analysis Results (Flow-Aware) ---
-Noise Floor (σ): 12.42 SG units
-Recommended SGT values:
- Speed (mm/min) | Flow (mm3/s) |   Rec SGT
----------------------------------------------
-            500 |          2.0 |         18
-           1000 |          4.0 |         14
-           2000 |          8.0 |          8
-```
+The tuner monitors for a `FINISH` marker and will automatically stop and analyze the data when the print ends.
 
 ### How to apply:
-1.  Update your `config.ini` with the new `sgt` value.
+1.  Update your `config.ini` with the recommended `sgt` value.
 2.  Run `scripts/gen_config.py` and rebuild/flash.
