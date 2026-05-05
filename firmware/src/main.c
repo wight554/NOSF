@@ -548,7 +548,7 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     // Hybrid mode: Use StealthChop and ISS_CURRENT_MA for sync tasks.
     bool is_sync = (t == TASK_FEED);
     bool is_iss = (is_sync && g_tc_ctx.state != TC_IDLE);
-    bool use_stealth = is_iss || (is_sync && SYNC_STEALTH);
+    bool use_stealth = is_iss || (is_sync && (SYNC_STEALTH || SYNC_SG));
 
     bool run_spreadcycle = TMC_SPREADCYCLE && !use_stealth;
     int current_ma = is_sync ? TMC_ISS_CURRENT_MA : TMC_RUN_CURRENT_MA[L->lane_id-1];
