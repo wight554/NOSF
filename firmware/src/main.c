@@ -428,6 +428,8 @@ typedef struct {
     uint32_t dwell_ms;
 } zone_event_t;
 
+static const char *buf_state_name(buf_state_t s);
+
 // ===================== Globals =====================
 static lane_t g_lane1;
 static lane_t g_lane2;
