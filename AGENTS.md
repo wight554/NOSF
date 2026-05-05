@@ -97,6 +97,8 @@ Every commit must follow this format exactly:
 <short description>
 
 <body — what changed and why, as many lines as needed>
+
+Generated-By: <Your Agent Name>
 ```
 
 Example:
@@ -108,12 +110,14 @@ lane_start() always resets stall_armed to false. Set it true immediately
 after lane_start in TC_ISS_WAIT_Y so DIAG interrupts are live from the
 moment the approach motor starts. Safe because TCOOLTHRS gates SG during
 ramp-up — DIAG cannot false-fire at low speed.
+
+Generated-By: Gemini 3.1 Pro (High)
 ```
 
 Rules:
 - Subject line: lowercase, imperative, no period, ≤ 72 chars
 - Body: explain *why*, not just what
-- Include `Co-Authored-By` only if you have a valid email for the bot/user; do not use `.invalid` placeholders.
+- Always state the model used. Use `Co-Authored-By` if you have a valid email. Otherwise, use `Generated-By: <Your Agent Name>`. Do not use `.invalid` placeholders.
 - Push immediately after every commit: `git push`
 
 ## TASK.md Workflow — Required Before Writing Any Code
