@@ -106,22 +106,26 @@ python3 scripts/nosf_cmd.py "SV:"
 
 ## Tuning Scripts
 
-- `scripts/tune_reload_sg_interp.py`: RELOAD StallGuard tuning wizard (contact detection)
+- `scripts/nosf_cmd.py`: Serial helper — send commands and dump live config
+- `scripts/gen_config.py`: Generate `tune.h` from `config.ini`
+- `scripts/tune_reload_sg.py`: RELOAD StallGuard tuning wizard
 - `scripts/sg_monitor.py`: Real-time StallGuard monitor
-- `scripts/klipper_tune.py`: Apply/read Klipper-style parameters
-- `scripts/tmc_chopconf.py`: Direct CHOPCONF read/write utility
 - `STALLGUARD.md`: Deep-dive guide on StallGuard & RELOAD tuning
-- `scripts/nosf_cmd.py`: Robust single-command serial helper for Klipper integration
 
-All scripts support `--port`; if omitted they auto-detect from available serial devices.
+All scripts support `--port`; if omitted they auto-detect the serial device.
 
 Examples:
 
 ```bash
-python3 scripts/klipper_tune.py --lane 1 read
-python3 scripts/klipper_tune.py --lane 2 apply config.ini
-python3 scripts/tmc_chopconf.py --lane 1 read
+# Send commands
 python3 scripts/nosf_cmd.py "VR:" "?:"
+python3 scripts/nosf_cmd.py "SET:SGT_L1:10" "SV:"
+
+# Read all live parameters as config.ini (copy-paste ready)
+python3 scripts/nosf_cmd.py --dump
+
+# Terse key: value dump
+python3 scripts/nosf_cmd.py --dump --raw
 ```
 
 ## Build Notes
