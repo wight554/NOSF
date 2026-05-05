@@ -184,6 +184,7 @@ if (NOT PICO_COMPILER_SYSROOT_IS_ATFE AND PICO_COMPILER_SYSROOT)
     if (NOT _libgcc_file OR NOT EXISTS "${_libgcc_file}")
         # Fallback to broad filesystem search in common locations
         file(GLOB_RECURSE _libgcc_candidates 
+             "/usr/lib/gcc/arm-none-eabi/*/thumb/v6-m/nofp/libgcc.a"
              "/usr/lib/gcc/arm-none-eabi/*/armv6-m/*/libgcc.a"
              "/usr/lib/gcc/arm-none-eabi/*/libgcc.a")
         if (_libgcc_candidates)
