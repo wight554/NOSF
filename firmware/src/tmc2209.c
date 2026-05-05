@@ -112,15 +112,14 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
 
     tmc_uart_send_bytes(t, req, 4);
 
-    // TX has finished. The RX SM has read the TX echo.
-    // Explicitly wait for and drain the 4 echo bytes to guarantee the RX SM 
-    // has finished processing the stop bit and is waiting for the reply.
-    for (int i = 0; i < 4; i++) {
-        uint64_t drain_timeout = time_us_64() + 2000;
-        while (pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx) && time_us_64() < drain_timeout) tight_loop_contents();
-        if (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
-            pio_sm_get(t->pio, t->sm_rx);
-        }
+    // TX has finished.
+    // Wait briefly to ensure the RX SM has completed pushing the final echo byte 
+    // into the FIFO. The TMC2209 waits ~200us before replying, so 10us is safe.
+    busy_wait_us_32(10);
+    
+    // Completely drain the RX FIFO of all echo bytes and any preceding garbage
+    while (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
+        pio_sm_get(t->pio, t->sm_rx);
     }
 
     // Now release the pin to INPUT so the TMC2209 can reply. 
@@ -171,13 +170,12 @@ int tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t *buf_out) {
     pio_sm_clear_fifos(t->pio, t->sm_rx);
     tmc_uart_send_bytes(t, req, 4);
     
-    // Explicitly wait for and drain the 4 echo bytes
-    for (int i = 0; i < 4; i++) {
-        uint64_t drain_timeout = time_us_64() + 2000;
-        while (pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx) && time_us_64() < drain_timeout) tight_loop_contents();
-        if (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
-            pio_sm_get(t->pio, t->sm_rx);
-        }
+    // Wait briefly to ensure the RX SM has completed pushing the final echo byte
+    busy_wait_us_32(10);
+    
+    // Completely drain the RX FIFO of all echo bytes and any preceding garbage
+    while (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
+        pio_sm_get(t->pio, t->sm_rx);
     }
 
     // Now release the pin to INPUT so the TMC2209 can reply.
