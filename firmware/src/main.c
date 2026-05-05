@@ -759,7 +759,7 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
 
     if (L->reload_tail_ms != 0 && (L->task == TASK_FEED || L->task == TASK_LOAD_FULL || L->task == TASK_AUTOLOAD)) {
         uint32_t tail_age = now_ms - L->reload_tail_ms;
-        if (!lane_out_present(L) || g_buf.state == BUF_ADVANCE || tail_age >= 10000u) {
+        if (!lane_out_present(L) || (RELOAD_MODE && g_buf.state == BUF_ADVANCE) || tail_age >= 10000u) {
             char lane_s[2] = { (char)('0' + L->lane_id), 0 };
             L->reload_tail_ms = 0;
             L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
