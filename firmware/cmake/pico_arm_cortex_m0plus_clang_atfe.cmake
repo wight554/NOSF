@@ -124,6 +124,28 @@ else ()
             break()
         endif ()
     endforeach()
+
+    # Fallback: Check for system clang + newlib (e.g. Raspberry Pi OS / Debian)
+    if (NOT PICO_COMPILER_SYSROOT)
+        set(_pico_target_triple "armv6m-none-eabi")
+        if (EXISTS "/usr/lib/arm-none-eabi")
+            set(PICO_COMPILER_SYSROOT "/usr/lib/arm-none-eabi")
+        elseif (EXISTS "/usr/arm-none-eabi")
+            set(PICO_COMPILER_SYSROOT "/usr/arm-none-eabi")
+        endif()
+        
+        # On Linux/Pi, Clang often needs help finding the C++ machine-specific headers
+        # (like bits/c++config.h) which are buried in a subdirectory.
+        if (PICO_COMPILER_SYSROOT)
+            file(GLOB _cpp_headers "/usr/lib/arm-none-eabi/include/c++/*")
+            if (_cpp_headers)
+                list(GET _cpp_headers 0 _cpp_base)
+                if (EXISTS "${_cpp_base}/arm-none-eabi")
+                    include_directories(SYSTEM "${_cpp_base}/arm-none-eabi")
+                endif()
+            endif()
+        endif()
+    endif()
 endif ()
 
 if (NOT PICO_COMPILER_SYSROOT)
