@@ -26,9 +26,6 @@ import time
 # Commands that must wait for a completion event rather than just OK:
 COMPLETION_EVENTS = {
     'TC':  (['EV:TC:DONE'],    ['EV:TC:ERROR']),
-    'FL':  (['EV:LOADED'],     ['EV:LOAD_TIMEOUT']),
-    'UL':  (['EV:UNLOADED'],   ['EV:UNLOAD_TIMEOUT']),
-    'UM':  (['EV:UNLOADED'],   ['EV:UNLOAD_TIMEOUT']),
 }
 
 def find_serial_port():

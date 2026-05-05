@@ -1337,6 +1337,19 @@ static void tc_tick(uint32_t now_ms) {
                     }
                 }
             }
+
+            // Reporting for interpolation debugging
+            static uint32_t last_iss_report_ms = 0;
+            if ((now_ms - last_iss_report_ms) >= 500u) {
+                last_iss_report_ms = now_ms;
+                char ev[64];
+                float sg_report = (ISS_SG_TARGET > 0) ? (g_sg_load / ISS_SG_TARGET) : 0.0f;
+                snprintf(ev, sizeof(ev), "%s,%.1f,%.2f",
+                         buf_state_name(g_buf.state),
+                         (double)sps_to_mm_per_min(g_tc_ctx.iss_current_sps),
+                         (double)sg_report);
+                cmd_event("BS", ev);
+            }
             break;
         }
 
