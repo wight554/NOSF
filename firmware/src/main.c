@@ -1697,7 +1697,7 @@ typedef struct {
     int sgt_l1, sgt_l2;
     int tcoolthrs;
 
-    int run_current_ma[2], iss_current_ma, hold_current_ma[2];
+    int run_current_ma[2], sg_current_ma, hold_current_ma[2];
     int microsteps;
 
     int servo_open_us, servo_close_us, servo_block_us;
@@ -1722,12 +1722,12 @@ typedef struct {
     float mm_per_step;
 
     int iss_y_timeout_ms;
-    int iss_join_sps;
-    int iss_press_sps;
-    int iss_trailing_sps;
-    int iss_sg_deriv;
-    float iss_sg_target;
-    int iss_follow_timeout_ms;
+    int join_sps;
+    int press_sps;
+    int trailing_sps;
+    int sg_deriv;
+    float sg_target;
+    int follow_timeout_ms;
 
     // Grouped booleans — packed together to avoid per-field padding.
     bool buf_invert;
@@ -1860,7 +1860,7 @@ static void settings_save(void) {
 
     s.run_current_ma[0] = TMC_RUN_CURRENT_MA[0];
     s.run_current_ma[1] = TMC_RUN_CURRENT_MA[1];
-    s.iss_current_ma = SG_CURRENT_MA;
+    s.sg_current_ma = SG_CURRENT_MA;
     s.hold_current_ma[0] = TMC_HOLD_CURRENT_MA[0];
     s.hold_current_ma[1] = TMC_HOLD_CURRENT_MA[1];
     s.microsteps = TMC_MICROSTEPS;
@@ -1899,12 +1899,12 @@ static void settings_save(void) {
 
     s.iss_mode = (bool)ISS_MODE;
     s.iss_y_timeout_ms = ISS_Y_TIMEOUT_MS;
-    s.iss_join_sps = JOIN_SPS;
-    s.iss_press_sps = PRESS_SPS;
-    s.iss_trailing_sps = TRAILING_SPS;
-    s.iss_sg_deriv = SG_DERIV;
-    s.iss_sg_target = SG_TARGET;
-    s.iss_follow_timeout_ms = FOLLOW_TIMEOUT_MS;
+    s.join_sps = JOIN_SPS;
+    s.press_sps = PRESS_SPS;
+    s.trailing_sps = TRAILING_SPS;
+    s.sg_deriv = SG_DERIV;
+    s.sg_target = SG_TARGET;
+    s.follow_timeout_ms = FOLLOW_TIMEOUT_MS;
     s.sync_sg = SYNC_SG;
 
     s.crc32 = crc32_buf((const uint8_t *)&s, offsetof(settings_t, crc32));
@@ -1983,7 +1983,13 @@ static void settings_load(void) {
     TMC_SGT_L2 = s->sgt_l2;
     TMC_TCOOLTHRS = s->tcoolthrs;
 
-    TMC_TCOOLTHRS = s->tcoolthrs;
+    TMC_RUN_CURRENT_MA[0] = s->run_current_ma[0];
+    TMC_RUN_CURRENT_MA[1] = s->run_current_ma[1];
+    SG_CURRENT_MA = s->sg_current_ma;
+    TMC_HOLD_CURRENT_MA[0] = s->hold_current_ma[0];
+    TMC_HOLD_CURRENT_MA[1] = s->hold_current_ma[1];
+    TMC_MICROSTEPS = s->microsteps;
+    TMC_SPREADCYCLE = s->spreadcycle;
 
     SERVO_OPEN_US = s->servo_open_us;
     SERVO_CLOSE_US = s->servo_close_us;
@@ -2016,12 +2022,12 @@ static void settings_load(void) {
 
     ISS_MODE = s->iss_mode ? 1 : 0;
     ISS_Y_TIMEOUT_MS = s->iss_y_timeout_ms;
-    JOIN_SPS = s->iss_join_sps;
-    PRESS_SPS = s->iss_press_sps;
-    TRAILING_SPS = s->iss_trailing_sps;
-    SG_DERIV = s->iss_sg_deriv;
-    SG_TARGET = s->iss_sg_target;
-    FOLLOW_TIMEOUT_MS = s->iss_follow_timeout_ms;
+    JOIN_SPS = s->join_sps;
+    PRESS_SPS = s->press_sps;
+    TRAILING_SPS = s->trailing_sps;
+    SG_DERIV = s->sg_deriv;
+    SG_TARGET = s->sg_target;
+    FOLLOW_TIMEOUT_MS = s->follow_timeout_ms;
     SYNC_SG = s->sync_sg;
 
     // Motor parameters always come from compile-time config (tune.h / config.ini).
