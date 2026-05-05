@@ -97,8 +97,6 @@ Every commit must follow this format exactly:
 <short description>
 
 <body — what changed and why, as many lines as needed>
-
-Co-Authored-By: <Your Agent Name> <noreply@agent.invalid>
 ```
 
 Example:
@@ -110,14 +108,12 @@ lane_start() always resets stall_armed to false. Set it true immediately
 after lane_start in TC_ISS_WAIT_Y so DIAG interrupts are live from the
 moment the approach motor starts. Safe because TCOOLTHRS gates SG during
 ramp-up — DIAG cannot false-fire at low speed.
-
-Co-Authored-By: Gemini 2.5 Pro <noreply@google.invalid>
 ```
 
 Rules:
 - Subject line: lowercase, imperative, no period, ≤ 72 chars
 - Body: explain *why*, not just what
-- Always include `Co-Authored-By` with your model name
+- Include `Co-Authored-By` only if you have a valid email for the bot/user; do not use `.invalid` placeholders.
 - Push immediately after every commit: `git push`
 
 ## TASK.md Workflow — Required Before Writing Any Code
