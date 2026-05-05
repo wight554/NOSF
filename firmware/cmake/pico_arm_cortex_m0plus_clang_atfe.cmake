@@ -177,11 +177,24 @@ if (NOT PICO_COMPILER_SYSROOT_IS_ATFE AND PICO_COMPILER_SYSROOT)
     endif()
 
     # 2. Find libgcc.a for the linker
-    file(GLOB_RECURSE _libgcc_path "/usr/lib/gcc/arm-none-eabi/*/libgcc.a")
-    if (_libgcc_path)
-        list(GET _libgcc_path 0 _libgcc_file)
+    execute_process(COMMAND arm-none-eabi-gcc -mcpu=cortex-m0plus -print-libgcc-file-name
+                    OUTPUT_VARIABLE _libgcc_file
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET)
+    if (NOT _libgcc_file OR NOT EXISTS "${_libgcc_file}")
+        # Fallback to filesystem search
+        file(GLOB_RECURSE _libgcc_path "/usr/lib/gcc/arm-none-eabi/*/libgcc.a")
+        if (_libgcc_path)
+            list(GET _libgcc_path 0 _libgcc_file)
+        endif()
+    endif()
+
+    if (_libgcc_file AND EXISTS "${_libgcc_file}")
         get_filename_component(_libgcc_dir "${_libgcc_file}" DIRECTORY)
+        message(STATUS "ARM clang: found libgcc at ${_libgcc_dir}")
         string(APPEND _common_flags " -L${_libgcc_dir}")
+    else()
+        message(WARNING "ARM clang: libgcc.a not found. Linker may fail with -lgcc.")
     endif()
 endif()
 
