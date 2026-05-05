@@ -27,3 +27,9 @@ cmake_install.cmake
 
 # AI Scratchpads
 TASK.md
+
+# IDE / LSP
+compile_commands.json
+.cache/
+.vscode/
+.clangd
