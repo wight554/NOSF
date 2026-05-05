@@ -53,7 +53,6 @@ DEFAULTS = {
     # Buffer Sync
     "buf_half_travel_mm": "5.0",
     "buf_hyst_ms": "30",
-    "sync_ratio": "1.0",
     "sync_ramp_up_rate": "25",
     "sync_ramp_dn_rate": "13",
     "sync_tick_ms": "20",
@@ -221,7 +220,6 @@ def main():
         "// --- Buffer Sync ---",
         f"#define CONF_BUF_HALF_TRAVEL_MM {get_float('buf_half_travel_mm')}f",
         f"#define CONF_BUF_HYST_MS        {get('buf_hyst_ms')}",
-        f"#define CONF_SYNC_RATIO         {get_float('sync_ratio')}f",
         f"#define CONF_SYNC_RAMP_UP_SPS   {mm_min_to_sps(get('sync_ramp_up_rate'))}",
         f"#define CONF_SYNC_RAMP_DN_SPS   {mm_min_to_sps(get('sync_ramp_dn_rate'))}",
         f"#define CONF_SYNC_TICK_MS       {get('sync_tick_ms')}",

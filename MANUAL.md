@@ -118,7 +118,6 @@ All speed parameters use **mm/min** (same as Klipper `F`).
 | `SYNC_UP_RATE` | Sync ramp-up increment (mm/min per 20 ms tick) | 25 |
 | `SYNC_DN_RATE` | Sync ramp-down increment (mm/min per 20 ms tick) | 13 |
 | `RAMP_STEP_RATE` | Normal motion ramp increment (mm/min per 5 ms tick) | 17 |
-| `SYNC_RATIO` | Buffer arm velocity → speed scale factor | 1.0 |
 | `PRE_RAMP_RATE` | Pre-advance speed offset (mm/min) | 35 |
 | `BUF_TRAVEL` | Half-travel of buffer arm (mm) | 5.0 |
 | `BUF_HYST` | Buffer zone debounce (ms) | 30 |

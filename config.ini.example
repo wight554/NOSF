@@ -39,14 +39,12 @@ run_current:
 # --- Buffer Sync ---
 # buf_half_travel_mm: 5.0
 # buf_hyst_ms: 30
-# sync_ratio: 1.0
 # sync_ramp_up_rate: 25
 # sync_ramp_dn_rate: 13
 # sync_tick_ms: 20
 # baseline_alpha: 0.15
 # buf_predict_thr_ms: 250
 # sync_kp_rate: 850
-# sync_sg: False                 # experimental: use StallGuard interpolation during normal sync
 
 # --- Cutter / Servo ---
 # servo_open_us: 500
