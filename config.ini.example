@@ -46,7 +46,6 @@ run_current:
 # baseline_alpha: 0.15
 # buf_predict_thr_ms: 250
 # sync_kp_rate: 850
-# sync_stealth: False            # experimental: use StealthChop only during sync
 # sync_sg: False                 # experimental: use StallGuard interpolation during normal sync
 
 # --- Cutter / Servo ---

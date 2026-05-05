@@ -63,7 +63,6 @@ static float BUF_THR = CONF_BUF_THR;
 static float BUF_ANALOG_ALPHA = CONF_BUF_ANALOG_ALPHA;
 static int SYNC_KP_SPS = CONF_SYNC_KP_SPS;
 static int TS_BUF_FALLBACK_MS = CONF_TS_BUF_FALLBACK_MS;
-static bool SYNC_STEALTH = CONF_SYNC_STEALTH;
 static bool SYNC_SG = CONF_SYNC_SG;
 
 static int SERVO_OPEN_US = CONF_SERVO_OPEN_US;
@@ -548,7 +547,7 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     // Hybrid mode: Use StealthChop and ISS_CURRENT_MA for sync tasks.
     bool is_sync = (t == TASK_FEED);
     bool is_iss = (is_sync && g_tc_ctx.state != TC_IDLE);
-    bool use_stealth = is_iss || (is_sync && (SYNC_STEALTH || SYNC_SG));
+    bool use_stealth = is_iss || (is_sync && SYNC_SG);
 
     bool run_spreadcycle = TMC_SPREADCYCLE && !use_stealth;
     int current_ma = is_sync ? TMC_ISS_CURRENT_MA : TMC_RUN_CURRENT_MA[L->lane_id-1];
@@ -1693,7 +1692,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 19u
+#define SETTINGS_VERSION 20u
 
 typedef struct {
     uint32_t magic;
@@ -1750,7 +1749,6 @@ typedef struct {
     bool enable_cutter;
     bool spreadcycle;
     bool iss_mode;
-    bool sync_stealth;
     bool sync_sg;
 
     uint32_t crc32;
@@ -1842,7 +1840,6 @@ static void settings_defaults(void) {
     ISS_SG_DERIV = CONF_ISS_SG_DERIV;
     ISS_SG_TARGET = CONF_ISS_SG_TARGET;
     ISS_FOLLOW_TIMEOUT_MS = CONF_ISS_FOLLOW_TIMEOUT_MS;
-    SYNC_STEALTH = CONF_SYNC_STEALTH;
     SYNC_SG = CONF_SYNC_SG;
 }
 
@@ -1922,7 +1919,6 @@ static void settings_save(void) {
     s.iss_sg_deriv = ISS_SG_DERIV;
     s.iss_sg_target = ISS_SG_TARGET;
     s.iss_follow_timeout_ms = ISS_FOLLOW_TIMEOUT_MS;
-    s.sync_stealth = SYNC_STEALTH;
     s.sync_sg = SYNC_SG;
 
     s.crc32 = crc32_buf((const uint8_t *)&s, offsetof(settings_t, crc32));
@@ -2040,7 +2036,6 @@ static void settings_load(void) {
     ISS_SG_DERIV = s->iss_sg_deriv;
     ISS_SG_TARGET = s->iss_sg_target;
     ISS_FOLLOW_TIMEOUT_MS = s->iss_follow_timeout_ms;
-    SYNC_STEALTH = s->sync_stealth;
     SYNC_SG = s->sync_sg;
 
     // Motor parameters always come from compile-time config (tune.h / config.ini).
@@ -2369,7 +2364,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "TS_BUF_MS"))    TS_BUF_FALLBACK_MS = clamp_i(iv, 0, 30000);
             else if (!strcmp(param, "STARTUP_MS"))   MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
             else if (!strcmp(param, "STALL_MS"))     STALL_RECOVERY_MS = clamp_i(iv, 0, 10000);
-            else if (!strcmp(param, "SYNC_STEALTH")) SYNC_STEALTH = (iv != 0);
             else if (!strcmp(param, "SYNC_SG"))      SYNC_SG = (iv != 0);
             else if (!strcmp(param, "SGT_L1"))    { TMC_SGT_L1 = clamp_i(iv, 0, 255); tmc_set_sgthrs(&g_tmc1, (uint8_t)TMC_SGT_L1); }
             else if (!strcmp(param, "SGT_L2"))    { TMC_SGT_L2 = clamp_i(iv, 0, 255); tmc_set_sgthrs(&g_tmc2, (uint8_t)TMC_SGT_L2); }
@@ -2432,7 +2426,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "TS_BUF_MS"))    snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
         else if (!strcmp(param, "STARTUP_MS"))   snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
         else if (!strcmp(param, "STALL_MS"))     snprintf(out, sizeof(out), "STALL_MS:%d", STALL_RECOVERY_MS);
-        else if (!strcmp(param, "SYNC_STEALTH")) snprintf(out, sizeof(out), "SYNC_STEALTH:%d", SYNC_STEALTH ? 1 : 0);
         else if (!strcmp(param, "SYNC_SG"))      snprintf(out, sizeof(out), "SYNC_SG:%d", SYNC_SG ? 1 : 0);
         else if (!strcmp(param, "SGT_L1"))    snprintf(out, sizeof(out), "SGT_L1:%d", TMC_SGT_L1);
         else if (!strcmp(param, "SGT_L2"))    snprintf(out, sizeof(out), "SGT_L2:%d", TMC_SGT_L2);
