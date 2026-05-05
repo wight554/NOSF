@@ -1,0 +1,39 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 19, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "cacheVariables": {
+        "PICO_SDK_PATH": { "type": "PATH", "value": "$env{PICO_SDK_PATH}" }
+      }
+    },
+    {
+      "name": "gcc",
+      "displayName": "GCC (arm-none-eabi-gcc)",
+      "description": "Default GCC cross-compiler; works on macOS and Raspberry Pi",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/../build_local"
+    },
+    {
+      "name": "clang",
+      "displayName": "Clang (ATfE / LLVM Embedded)",
+      "description": "ATfE 22.x or compatible LLVM embedded toolchain",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/../build_clang",
+      "toolchainFile": "${sourceDir}/cmake/pico_arm_cortex_m0plus_clang_atfe.cmake"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "gcc",
+      "configurePreset": "gcc"
+    },
+    {
+      "name": "clang",
+      "configurePreset": "clang"
+    }
+  ]
+}

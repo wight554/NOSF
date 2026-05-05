@@ -2415,7 +2415,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             int idx = lane_to_idx(ln);
             if (reg == TMC_REG_IHOLD_IRUN && g_shadow_ihold_irun_valid[idx]) {
                 char out[32];
-                snprintf(out, sizeof(out), "%d:%d:0x%08lX", ln, reg, g_shadow_ihold_irun[idx]);
+                snprintf(out, sizeof(out), "%d:%d:0x%08X", ln, reg, (unsigned int)g_shadow_ihold_irun[idx]);
                 cmd_reply("OK", out);
                 return;
             }
@@ -2423,7 +2423,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             uint32_t val = 0;
             if (tmc_read(t, (uint8_t)reg, &val)) {
                 char out[32];
-                snprintf(out, sizeof(out), "%d:%d:0x%08lX", ln, reg, val);
+                snprintf(out, sizeof(out), "%d:%d:0x%08X", ln, reg, (unsigned int)val);
                 cmd_reply("OK", out);
             } else {
                 cmd_reply("ER", "TR:NO_RESPONSE");

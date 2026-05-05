@@ -2,6 +2,7 @@
 # build outputs
 build/
 build_local/
+build_clang/
 **/build/
 *.elf
 *.uf2
@@ -27,6 +28,7 @@ cmake_install.cmake
 
 # AI Scratchpads
 TASK.md
+scratch/
 
 # IDE / LSP
 compile_commands.json
