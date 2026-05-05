@@ -114,51 +114,58 @@ bool tmc_write(tmc_t *t, uint8_t reg, uint32_t val) {
     return true;
 }
 
-bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
+// Perform the bus turnaround and receive 8 bytes from the TMC2209.
+// Returns the number of bytes received (0-8).
+static int tmc_read_bytes(tmc_t *t, uint8_t reg, uint8_t *buf) {
     uint8_t req[4];
-    uint8_t rep[8];
-
     req[0] = 0x05;
     req[1] = t->addr;
     req[2] = reg & 0x7Fu;
     req[3] = tmc_crc8(req, 3);
 
+    // Clear RX FIFO before starting to remove any old junk
+    pio_sm_clear_fifos(t->pio, t->sm_rx);
+    // Also force-reset the ISR to zero. If the RX SM was mid-frame receiving noise
+    // when clear_fifos was called, the ISR could have stale bits that would corrupt
+    // the MSB of the first received byte. MOV ISR, NULL zeroes it cleanly.
+    pio_sm_exec(t->pio, t->sm_rx, pio_encode_mov(pio_isr, pio_null));
+
+    tmc_uart_send_bytes(t, req, 4);
+
+    // tmc_uart_send_bytes includes a 30us inter-frame gap covering the stop bit.
+    // Add 10 more us to ensure the RX SM has pushed the final echo byte to FIFO.
+    busy_wait_us_32(10);
+    
+    // Completely drain the RX FIFO of all echo bytes (4 bytes) and any preceding garbage
+    while (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
+        pio_sm_get(t->pio, t->sm_rx);
+    }
+
+    // Now release the pin to INPUT so the TMC2209 can reply. 
+    // (Requires internal pull-up and pdn_disable=1 so it stays HIGH during idle)
+    pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, false);
+
+    uint64_t timeout_us = time_us_64() + 5000;
+    int received = 0;
+    
+    while (received < 8 && time_us_64() < timeout_us) {
+        if (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
+            buf[received++] = (uint8_t)(pio_sm_get(t->pio, t->sm_rx) >> 24);
+        }
+    }
+
+    // Restore pin to OUTPUT HIGH
+    pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, true);
+
+    return received;
+}
+
+bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
+    uint8_t rep[8];
+
     for (int attempt = 0; attempt < 2; attempt++) {
-        // Clear RX FIFO before starting to remove any old junk
-        pio_sm_clear_fifos(t->pio, t->sm_rx);
-        // Also force-reset the ISR to zero. If the RX SM was mid-frame receiving noise
-        // when clear_fifos was called, the ISR could have stale bits that would corrupt
-        // the MSB of the first received byte. MOV ISR, NULL zeroes it cleanly.
-        pio_sm_exec(t->pio, t->sm_rx, pio_encode_mov(pio_isr, pio_null));
-
-        tmc_uart_send_bytes(t, req, 4);
-
-        // tmc_uart_send_bytes includes a 30us inter-frame gap covering the stop bit.
-        // Add 10 more us to ensure the RX SM has pushed the final echo byte to FIFO.
-        busy_wait_us_32(10);
-        
-        // Completely drain the RX FIFO of all echo bytes and any preceding garbage
-        while (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
-            pio_sm_get(t->pio, t->sm_rx);
-        }
-
-        // Now release the pin to INPUT so the TMC2209 can reply. 
-        // (Requires internal pull-up and pdn_disable=1 so it stays HIGH during idle)
-        pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, false);
-
-        uint64_t timeout_us = time_us_64() + 5000;
-        int received = 0;
-        
-        while (received < 8 && time_us_64() < timeout_us) {
-            if (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
-                rep[received++] = (uint8_t)(pio_sm_get(t->pio, t->sm_rx) >> 24);
-            }
-        }
-
-        // Restore pin to OUTPUT HIGH
-        pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, true);
-
-        if (received < 8) continue;
+        int n = tmc_read_bytes(t, reg, rep);
+        if (n < 8) continue;
         if (rep[0] != 0x05 || rep[1] != 0xFF || (rep[2] & 0x7Fu) != reg) continue;
         if (tmc_crc8(rep, 7) != rep[7]) continue;
 
@@ -172,43 +179,7 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
 }
 
 int tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t *buf_out) {
-    uint8_t req[4];
-
-    req[0] = 0x05;
-    req[1] = t->addr;
-    req[2] = reg & 0x7Fu;
-    req[3] = tmc_crc8(req, 3);
-
-    // Clear RX FIFO before starting to remove any old junk
-    pio_sm_clear_fifos(t->pio, t->sm_rx);
-    pio_sm_exec(t->pio, t->sm_rx, pio_encode_mov(pio_isr, pio_null));
-    tmc_uart_send_bytes(t, req, 4);
-    
-    // 30us inter-frame gap is already built into tmc_uart_send_bytes.
-    // 10us extra to ensure the RX SM has pushed the final echo byte.
-    busy_wait_us_32(10);
-    
-    // Completely drain the RX FIFO of all echo bytes and any preceding garbage
-    while (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
-        pio_sm_get(t->pio, t->sm_rx);
-    }
-
-    // Now release the pin to INPUT so the TMC2209 can reply.
-    pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, false);
-
-    uint64_t timeout_us = time_us_64() + 5000;
-    int n = 0;
-    
-    while (n < 8 && time_us_64() < timeout_us) {
-        if (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
-            buf_out[n++] = (uint8_t)(pio_sm_get(t->pio, t->sm_rx) >> 24);
-        }
-    }
-
-    // Restore pin to OUTPUT HIGH
-    pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, true);
-
-    return n;
+    return tmc_read_bytes(t, reg, buf_out);
 }
 
 static uint8_t clamp_u5_from_ma(int ma) {

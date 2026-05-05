@@ -60,10 +60,7 @@ static int AUTO_SPS = CONF_AUTO_SPS;
 
 static int MOTION_STARTUP_MS = CONF_MOTION_STARTUP_MS;
 
-static int LOW_DELAY_MS = CONF_LOW_DELAY_MS;
-static int SWAP_COOLDOWN_MS = CONF_SWAP_COOLDOWN_MS;
 static int RUNOUT_COOLDOWN_MS = CONF_RUNOUT_COOLDOWN_MS;
-static bool REQUIRE_Y_EMPTY_SWAP = CONF_REQUIRE_Y_EMPTY_SWAP;
 
 static int ISS_MODE = CONF_ISS_MODE;
 static int ISS_Y_TIMEOUT_MS = CONF_ISS_Y_TIMEOUT_MS;
@@ -120,7 +117,6 @@ static int PRE_RAMP_SPS = CONF_PRE_RAMP_SPS;
 static int BUF_HYST_MS = CONF_BUF_HYST_MS;
 static int BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
 static float BUF_HALF_TRAVEL_MM = CONF_BUF_HALF_TRAVEL_MM;
-static float SYNC_RATIO = CONF_SYNC_RATIO;
 static bool BUF_INVERT = false;
 static bool AUTO_PRELOAD = true;
 static int AUTOLOAD_RETRACT_MM = 10;
@@ -825,11 +821,11 @@ static void cutter_tick(uint32_t now_ms) {
             break;
 
         case CUT_OPEN_WAIT:
-            if (age >= (uint32_t)SERVO_SETTLE_MS) {
+            if (age > (uint32_t)CUT_TIMEOUT_SETTLE_MS) {
+                cutter_abort();
+            } else if (age >= (uint32_t)SERVO_SETTLE_MS) {
                 g_cut.phase_start_ms = now_ms;
                 g_cut.state = CUT_FEEDING;
-            } else if (age > (uint32_t)CUT_TIMEOUT_SETTLE_MS) {
-                cutter_abort();
             }
             break;
 
@@ -855,11 +851,11 @@ static void cutter_tick(uint32_t now_ms) {
             break;
 
         case CUT_CLOSE_WAIT:
-            if (age >= (uint32_t)SERVO_SETTLE_MS) {
+            if (age > (uint32_t)CUT_TIMEOUT_SETTLE_MS) {
+                cutter_abort();
+            } else if (age >= (uint32_t)SERVO_SETTLE_MS) {
                 g_cut.phase_start_ms = now_ms;
                 g_cut.state = CUT_REOPENING;
-            } else if (age > (uint32_t)CUT_TIMEOUT_SETTLE_MS) {
-                cutter_abort();
             }
             break;
 
@@ -870,10 +866,10 @@ static void cutter_tick(uint32_t now_ms) {
             break;
 
         case CUT_REOPEN_WAIT:
-            if (age >= (uint32_t)SERVO_SETTLE_MS) {
-                g_cut.state = CUT_REPEAT_CHECK;
-            } else if (age > (uint32_t)CUT_TIMEOUT_SETTLE_MS) {
+            if (age > (uint32_t)CUT_TIMEOUT_SETTLE_MS) {
                 cutter_abort();
+            } else if (age >= (uint32_t)SERVO_SETTLE_MS) {
+                g_cut.state = CUT_REPEAT_CHECK;
             }
             break;
 
@@ -1602,25 +1598,16 @@ static void __not_in_flash_func(stall_irq)(uint gpio, uint32_t events) {
 
     if (gpio == PIN_M1_DIAG && g_lane1.stall_armed) {
         motor_stop(&g_lane1.m);
-        g_lane1.task = TASK_IDLE;
         stall_pending_l1 = true;
     }
     if (gpio == PIN_M2_DIAG && g_lane2.stall_armed) {
         motor_stop(&g_lane2.m);
-        g_lane2.task = TASK_IDLE;
         stall_pending_l2 = true;
     }
 }
 
 static void stall_init(void) {
-    gpio_init(PIN_M1_DIAG);
-    gpio_set_dir(PIN_M1_DIAG, GPIO_IN);
-    gpio_pull_down(PIN_M1_DIAG);
-
-    gpio_init(PIN_M2_DIAG);
-    gpio_set_dir(PIN_M2_DIAG, GPIO_IN);
-    gpio_pull_down(PIN_M2_DIAG);
-
+    // Pins already configured by tmc_init (PIO RX). Just enable IRQ.
     gpio_set_irq_enabled_with_callback(PIN_M1_DIAG, GPIO_IRQ_EDGE_RISE, true, &stall_irq);
     gpio_set_irq_enabled(PIN_M2_DIAG, GPIO_IRQ_EDGE_RISE, true);
 }
@@ -1655,7 +1642,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 13u
+#define SETTINGS_VERSION 15u
 
 typedef struct {
     uint32_t magic;
@@ -1665,7 +1652,6 @@ typedef struct {
     int sync_max_sps, sync_min_sps;
     int sync_ramp_up, sync_ramp_dn;
     int sync_tick_ms, pre_ramp_sps;
-    float sync_ratio;
     float buf_half_travel_mm;
     int buf_hyst_ms, buf_predict_thr_ms;
     float baseline_alpha;
@@ -1686,9 +1672,10 @@ typedef struct {
     int tc_timeout_th_ms, tc_timeout_load_ms;
     int tc_timeout_y_ms;
 
-    int low_delay_ms, swap_cooldown_ms, runout_cooldown_ms;
+    int runout_cooldown_ms;
 
     int ramp_step_sps, ramp_tick_ms;
+    int stall_recovery_ms;
 
 
     int buf_sensor_type;
@@ -1710,7 +1697,6 @@ typedef struct {
     bool auto_preload;
     bool enable_cutter;
     bool spreadcycle;
-    bool require_y_empty_swap;
     bool iss_mode;
 
     uint32_t crc32;
@@ -1741,7 +1727,6 @@ static void settings_defaults(void) {
     SYNC_RAMP_DN_SPS = CONF_SYNC_RAMP_DN_SPS;
     SYNC_TICK_MS = CONF_SYNC_TICK_MS;
     PRE_RAMP_SPS = CONF_PRE_RAMP_SPS;
-    SYNC_RATIO = CONF_SYNC_RATIO;
     BUF_HALF_TRAVEL_MM = CONF_BUF_HALF_TRAVEL_MM;
     BUF_HYST_MS = CONF_BUF_HYST_MS;
     BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
@@ -1750,6 +1735,7 @@ static void settings_defaults(void) {
     AUTO_PRELOAD = true;
     AUTOLOAD_RETRACT_MM = 10;
     ENABLE_CUTTER = false;
+    STALL_RECOVERY_MS = CONF_STALL_RECOVERY_MS;
 
     MOTION_STARTUP_MS = CONF_MOTION_STARTUP_MS;
     TMC_SGT_L1 = CONF_SGT_L1;
@@ -1777,10 +1763,7 @@ static void settings_defaults(void) {
     TC_TIMEOUT_LOAD_MS = CONF_TC_TIMEOUT_LOAD_MS;
     TC_TIMEOUT_Y_MS = CONF_TC_TIMEOUT_Y_MS;
 
-    LOW_DELAY_MS = CONF_LOW_DELAY_MS;
-    SWAP_COOLDOWN_MS = CONF_SWAP_COOLDOWN_MS;
     RUNOUT_COOLDOWN_MS = CONF_RUNOUT_COOLDOWN_MS;
-    REQUIRE_Y_EMPTY_SWAP = CONF_REQUIRE_Y_EMPTY_SWAP;
 
     RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
     RAMP_TICK_MS = CONF_RAMP_TICK_MS;
@@ -1820,7 +1803,6 @@ static void settings_save(void) {
     s.sync_ramp_dn = SYNC_RAMP_DN_SPS;
     s.sync_tick_ms = SYNC_TICK_MS;
     s.pre_ramp_sps = PRE_RAMP_SPS;
-    s.sync_ratio = SYNC_RATIO;
     s.buf_half_travel_mm = BUF_HALF_TRAVEL_MM;
     s.buf_hyst_ms = BUF_HYST_MS;
     s.buf_predict_thr_ms = BUF_PREDICT_THR_MS;
@@ -1856,13 +1838,11 @@ static void settings_save(void) {
     s.tc_timeout_load_ms = TC_TIMEOUT_LOAD_MS;
     s.tc_timeout_y_ms = TC_TIMEOUT_Y_MS;
 
-    s.low_delay_ms = LOW_DELAY_MS;
-    s.swap_cooldown_ms = SWAP_COOLDOWN_MS;
     s.runout_cooldown_ms = RUNOUT_COOLDOWN_MS;
-    s.require_y_empty_swap = REQUIRE_Y_EMPTY_SWAP;
 
     s.ramp_step_sps = RAMP_STEP_SPS;
     s.ramp_tick_ms = RAMP_TICK_MS;
+    s.stall_recovery_ms = STALL_RECOVERY_MS;
 
 
     s.buf_sensor_type = BUF_SENSOR_TYPE;
@@ -1945,7 +1925,6 @@ static void settings_load(void) {
     SYNC_RAMP_DN_SPS = s->sync_ramp_dn;
     SYNC_TICK_MS = s->sync_tick_ms;
     PRE_RAMP_SPS = s->pre_ramp_sps;
-    SYNC_RATIO = s->sync_ratio;
     BUF_HALF_TRAVEL_MM = s->buf_half_travel_mm;
     BUF_HYST_MS = s->buf_hyst_ms;
     BUF_PREDICT_THR_MS = s->buf_predict_thr_ms;
@@ -1960,12 +1939,7 @@ static void settings_load(void) {
     TMC_SGT_L2 = s->sgt_l2;
     TMC_TCOOLTHRS = s->tcoolthrs;
 
-    TMC_RUN_CURRENT_MA[0] = s->run_current_ma[0];
-    TMC_RUN_CURRENT_MA[1] = s->run_current_ma[1];
-    TMC_HOLD_CURRENT_MA[0] = s->hold_current_ma[0];
-    TMC_HOLD_CURRENT_MA[1] = s->hold_current_ma[1];
-    TMC_MICROSTEPS = s->microsteps;
-    TMC_SPREADCYCLE = s->spreadcycle;
+    TMC_TCOOLTHRS = s->tcoolthrs;
 
     SERVO_OPEN_US = s->servo_open_us;
     SERVO_CLOSE_US = s->servo_close_us;
@@ -1981,13 +1955,11 @@ static void settings_load(void) {
     TC_TIMEOUT_LOAD_MS = s->tc_timeout_load_ms;
     TC_TIMEOUT_Y_MS = s->tc_timeout_y_ms;
 
-    LOW_DELAY_MS = s->low_delay_ms;
-    SWAP_COOLDOWN_MS = s->swap_cooldown_ms;
     RUNOUT_COOLDOWN_MS = s->runout_cooldown_ms;
-    REQUIRE_Y_EMPTY_SWAP = s->require_y_empty_swap;
 
     RAMP_STEP_SPS = s->ramp_step_sps;
     RAMP_TICK_MS = s->ramp_tick_ms;
+    STALL_RECOVERY_MS = s->stall_recovery_ms;
 
 
     BUF_SENSOR_TYPE = s->buf_sensor_type;
@@ -2301,7 +2273,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "SYNC_MIN"))     SYNC_MIN_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
             else if (!strcmp(param, "SYNC_UP"))      SYNC_RAMP_UP_SPS = clamp_i(iv, 10, 2000);
             else if (!strcmp(param, "SYNC_DN"))      SYNC_RAMP_DN_SPS = clamp_i(iv, 10, 2000);
-            else if (!strcmp(param, "SYNC_RATIO"))   { SYNC_RATIO = fv < 0.1f ? 0.1f : fv > 5.0f ? 5.0f : fv; }
             else if (!strcmp(param, "PRE_RAMP"))     PRE_RAMP_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
             else if (!strcmp(param, "BUF_TRAVEL"))   { BUF_HALF_TRAVEL_MM = fv < 1.0f ? 1.0f : fv > 50.0f ? 50.0f : fv; }
             else if (!strcmp(param, "BUF_HYST"))     BUF_HYST_MS = clamp_i(iv, 5, 500);
@@ -2324,6 +2295,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "SYNC_KP"))      SYNC_KP_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
             else if (!strcmp(param, "TS_BUF_MS"))    TS_BUF_FALLBACK_MS = clamp_i(iv, 0, 30000);
             else if (!strcmp(param, "STARTUP_MS"))   MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
+            else if (!strcmp(param, "STALL_MS"))     STALL_RECOVERY_MS = clamp_i(iv, 0, 10000);
             else if (!strcmp(param, "SGT_L1"))    { TMC_SGT_L1 = clamp_i(iv, 0, 255); tmc_set_sgthrs(&g_tmc1, (uint8_t)TMC_SGT_L1); }
             else if (!strcmp(param, "SGT_L2"))    { TMC_SGT_L2 = clamp_i(iv, 0, 255); tmc_set_sgthrs(&g_tmc2, (uint8_t)TMC_SGT_L2); }
             else if (!strcmp(param, "TCOOLTHRS")) { TMC_TCOOLTHRS = clamp_i(iv, 0, 0xFFFFF); tmc_set_tcoolthrs(&g_tmc1, (uint32_t)TMC_TCOOLTHRS); tmc_set_tcoolthrs(&g_tmc2, (uint32_t)TMC_TCOOLTHRS); }
@@ -2359,7 +2331,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "SYNC_MIN"))     snprintf(out, sizeof(out), "SYNC_MIN:%.1f", (double)sps_to_mm_per_min(SYNC_MIN_SPS));
         else if (!strcmp(param, "SYNC_UP"))      snprintf(out, sizeof(out), "SYNC_UP:%d", SYNC_RAMP_UP_SPS);
         else if (!strcmp(param, "SYNC_DN"))      snprintf(out, sizeof(out), "SYNC_DN:%d", SYNC_RAMP_DN_SPS);
-        else if (!strcmp(param, "SYNC_RATIO"))   snprintf(out, sizeof(out), "SYNC_RATIO:%.3f", (double)SYNC_RATIO);
         else if (!strcmp(param, "PRE_RAMP"))     snprintf(out, sizeof(out), "PRE_RAMP:%.1f", (double)sps_to_mm_per_min(PRE_RAMP_SPS));
         else if (!strcmp(param, "BUF_TRAVEL"))   snprintf(out, sizeof(out), "BUF_TRAVEL:%.3f", (double)BUF_HALF_TRAVEL_MM);
         else if (!strcmp(param, "BUF_HYST"))     snprintf(out, sizeof(out), "BUF_HYST:%d", BUF_HYST_MS);
@@ -2382,6 +2353,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "SYNC_KP"))      snprintf(out, sizeof(out), "SYNC_KP:%.1f", (double)sps_to_mm_per_min(SYNC_KP_SPS));
         else if (!strcmp(param, "TS_BUF_MS"))    snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
         else if (!strcmp(param, "STARTUP_MS"))   snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
+        else if (!strcmp(param, "STALL_MS"))     snprintf(out, sizeof(out), "STALL_MS:%d", STALL_RECOVERY_MS);
         else if (!strcmp(param, "SGT_L1"))    snprintf(out, sizeof(out), "SGT_L1:%d", TMC_SGT_L1);
         else if (!strcmp(param, "SGT_L2"))    snprintf(out, sizeof(out), "SGT_L2:%d", TMC_SGT_L2);
         else if (!strcmp(param, "TCOOLTHRS")) snprintf(out, sizeof(out), "TCOOLTHRS:%d", TMC_TCOOLTHRS);
@@ -2399,8 +2371,14 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "MM_PER_STEP"))  snprintf(out, sizeof(out), "MM_PER_STEP:%.5f", (double)MM_PER_STEP);
         else if (!strcmp(param, "RUN_CURRENT_MA") && idx >= 0)  snprintf(out, sizeof(out), "RUN_CURRENT_MA:%d:%d", lane, TMC_RUN_CURRENT_MA[idx]);
         else if (!strcmp(param, "HOLD_CURRENT_MA") && idx >= 0) snprintf(out, sizeof(out), "HOLD_CURRENT_MA:%d:%d", lane, TMC_HOLD_CURRENT_MA[idx]);
-        else if (!strcmp(param, "RUN_CURRENT_MA") && !lane_param)  snprintf(out, sizeof(out), "RUN_CURRENT_MA:%d", TMC_RUN_CURRENT_MA[lane_to_idx(active_lane)]);
-        else if (!strcmp(param, "HOLD_CURRENT_MA") && !lane_param) snprintf(out, sizeof(out), "HOLD_CURRENT_MA:%d", TMC_HOLD_CURRENT_MA[lane_to_idx(active_lane)]);
+        else if (!strcmp(param, "RUN_CURRENT_MA") && !lane_param) {
+            if (active_lane != 1 && active_lane != 2) handled = false;
+            else snprintf(out, sizeof(out), "RUN_CURRENT_MA:%d", TMC_RUN_CURRENT_MA[lane_to_idx(active_lane)]);
+        }
+        else if (!strcmp(param, "HOLD_CURRENT_MA") && !lane_param) {
+            if (active_lane != 1 && active_lane != 2) handled = false;
+            else snprintf(out, sizeof(out), "HOLD_CURRENT_MA:%d", TMC_HOLD_CURRENT_MA[lane_to_idx(active_lane)]);
+        }
         else handled = false;
         if (handled) cmd_reply("OK", out);
         else cmd_reply("ER", "GET:UNKNOWN_PARAM");
