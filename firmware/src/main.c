@@ -1121,7 +1121,7 @@ static void tc_tick(uint32_t now_ms) {
         case TC_ISS_WAIT_Y:
             // Old filament tail exited OUT; wait for it to clear the Y-splitter
             // before starting the standby lane.
-            if (!on_al(&g_y_split)) {
+            if (!on_al(&g_y_split) || ISS_Y_TIMEOUT_MS == 0) {
                 char lane_s[2] = { (char)('0' + g_tc_ctx.target_lane), 0 };
                 set_active_lane(g_tc_ctx.target_lane);
                 lane_t *NL = lane_ptr(active_lane);
@@ -1129,9 +1129,6 @@ static void tc_tick(uint32_t now_ms) {
                 // State 1: fast approach — contact detected by SG derivative.
                 lane_start(NL, TASK_FEED, ISS_JOIN_SPS, true, now_ms, 0);
                 // Arm stall immediately — STARTUP_MS warmup is for sync mode.
-                // During ISS approach we intentionally run into the old tail; a
-                // calibrated SGTHRS won't false-trigger on free-spin ramp-up
-                // because SG is suppressed by TCOOLTHRS until speed is high enough.
                 NL->stall_armed = true;
                 NL->autoload_deadline_ms = now_ms + (uint32_t)TC_TIMEOUT_LOAD_MS;
                 // Zero ISS ctx fields for fresh approach.
