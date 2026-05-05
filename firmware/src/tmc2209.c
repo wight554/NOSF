@@ -76,10 +76,14 @@ static void tmc_uart_send_bytes(tmc_t *t, const uint8_t *buf, size_t len) {
     uint64_t timeout_us = time_us_64() + 2000;
     while (!pio_sm_is_tx_fifo_empty(t->pio, t->sm_tx) && time_us_64() < timeout_us) tight_loop_contents();
     
-    // Wait for the state machine to finish shifting and stall at the 'pull' instruction.
-    // 'pull' is the very first instruction at t->offset_tx.
+    // Wait for the state machine to stall at the 'pull' instruction (offset_tx).
+    // NOTE: the PC advances to 'pull' the moment it fetches the stop-bit instruction,
+    // before the 7-cycle [7] delay executes. So the SM stalls at pull ~21us BEFORE
+    // the stop bit actually finishes on the wire. We add a mandatory 30us inter-frame
+    // gap here so back-to-back calls never collide on the bus.
     timeout_us = time_us_64() + 2000;
     while (pio_sm_get_pc(t->pio, t->sm_tx) != t->offset_tx && time_us_64() < timeout_us) tight_loop_contents();
+    busy_wait_us_32(30); // inter-frame gap: ensures stop bit fully clears the wire
 }
 
 bool tmc_write(tmc_t *t, uint8_t reg, uint32_t val) {
@@ -109,14 +113,16 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
 
     // Clear RX FIFO before starting to remove any old junk
     pio_sm_clear_fifos(t->pio, t->sm_rx);
+    // Also force-reset the ISR to zero. If the RX SM was mid-frame receiving noise
+    // when clear_fifos was called, the ISR could have stale bits that would corrupt
+    // the MSB of the first received byte. MOV ISR, NULL zeroes it cleanly.
+    pio_sm_exec(t->pio, t->sm_rx, pio_encode_mov(pio_isr, pio_null));
 
     tmc_uart_send_bytes(t, req, 4);
 
-    // TX has finished its last instruction (but the stop bit delay is still counting down).
-    // Wait 40us (> 1 bit time) to guarantee the RX SM has completely finished 
-    // processing the stop bit and pushed the final echo byte. The TMC2209 waits 
-    // ~200us before replying, so this is perfectly safe.
-    busy_wait_us_32(40);
+    // tmc_uart_send_bytes includes a 30us inter-frame gap covering the stop bit.
+    // Add 10 more us to ensure the RX SM has pushed the final echo byte to FIFO.
+    busy_wait_us_32(10);
     
     // Completely drain the RX FIFO of all echo bytes and any preceding garbage
     while (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
@@ -165,10 +171,12 @@ int tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t *buf_out) {
 
     // Clear RX FIFO before starting to remove any old junk
     pio_sm_clear_fifos(t->pio, t->sm_rx);
+    pio_sm_exec(t->pio, t->sm_rx, pio_encode_mov(pio_isr, pio_null));
     tmc_uart_send_bytes(t, req, 4);
     
-    // Wait 40us to ensure the RX SM has completed pushing the final echo byte
-    busy_wait_us_32(40);
+    // 30us inter-frame gap is already built into tmc_uart_send_bytes.
+    // 10us extra to ensure the RX SM has pushed the final echo byte.
+    busy_wait_us_32(10);
     
     // Completely drain the RX FIFO of all echo bytes and any preceding garbage
     while (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
