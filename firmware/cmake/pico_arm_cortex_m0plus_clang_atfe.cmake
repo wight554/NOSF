@@ -164,6 +164,9 @@ endif ()
 
 
 
+# --- Compiler flags ---
+set(_common_flags "--target=${_pico_target_triple} -mfloat-abi=soft -march=armv6m ${_pico_extra_flags} --sysroot=${PICO_COMPILER_SYSROOT} -fno-exceptions -fno-rtti")
+
 # On Linux/Pi, Clang often needs help finding the C++ machine-specific headers
 # (like bits/c++config.h) and the GCC runtime (libgcc.a).
 if (NOT PICO_COMPILER_SYSROOT_IS_ATFE AND PICO_COMPILER_SYSROOT)
@@ -172,7 +175,7 @@ if (NOT PICO_COMPILER_SYSROOT_IS_ATFE AND PICO_COMPILER_SYSROOT)
     if (_cpp_headers)
         list(GET _cpp_headers 0 _cpp_base)
         if (EXISTS "${_cpp_base}/arm-none-eabi")
-            set(_pico_extra_cpp_include "-isystem ${_cpp_base}/arm-none-eabi")
+            string(APPEND _common_flags " -isystem ${_cpp_base}/arm-none-eabi")
         endif()
     endif()
 
@@ -195,19 +198,11 @@ if (NOT PICO_COMPILER_SYSROOT_IS_ATFE AND PICO_COMPILER_SYSROOT)
     if (_libgcc_file AND EXISTS "${_libgcc_file}")
         get_filename_component(_libgcc_dir "${_libgcc_file}" DIRECTORY)
         message(STATUS "ARM clang: found libgcc at ${_libgcc_dir}")
-        string(APPEND _common_flags " -L${_libgcc_dir}")
+        string(APPEND _common_flags " -L${_libgcc_dir} -lgcc")
     else()
         message(STATUS "ARM clang: libgcc.a not found via arm-none-eabi-gcc or glob.")
     endif()
 endif()
-
-# --- Compiler flags ---
-# --target              : exact triple expected by clang + multilib.yaml
-# -mfloat-abi=soft      : software FP ABI (no FPU on Cortex-M0+)
-# -march=armv6m         : ARMv6-M ISA (Thumb-only, matches the RP2040)
-# -mfpu=none            : explicit for ATfE multilib matching (set in _pico_extra_flags)
-# --sysroot             : headers/libs; for ATfE this is the clang-runtimes parent
-set(_common_flags "--target=${_pico_target_triple} -mfloat-abi=soft -march=armv6m ${_pico_extra_flags} --sysroot=${PICO_COMPILER_SYSROOT} -fno-exceptions -fno-rtti ${_pico_extra_cpp_include}")
 
 # Inject include_patches/ before the SDK include search path so that our
 # hardware/sync.h wrapper (which uses #include_next) is found first.  The
