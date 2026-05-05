@@ -120,7 +120,7 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
         }
     }
 
-    if (received < 8) return false;
+    if (received < 8) { printf("EV:DEBUG: received %d\n", received); return false; } else { printf("EV:DEBUG: %02X %02X %02X %02X %02X %02X %02X %02X\n", rep[0], rep[1], rep[2], rep[3], rep[4], rep[5], rep[6], rep[7]); }
     
     if (rep[0] != 0x05 || rep[1] != 0xFF || (rep[2] & 0x7Fu) != reg) {
         return false;
