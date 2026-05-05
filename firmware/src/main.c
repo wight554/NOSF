@@ -63,6 +63,8 @@ static float BUF_THR = CONF_BUF_THR;
 static float BUF_ANALOG_ALPHA = CONF_BUF_ANALOG_ALPHA;
 static int SYNC_KP_SPS = CONF_SYNC_KP_SPS;
 static int TS_BUF_FALLBACK_MS = CONF_TS_BUF_FALLBACK_MS;
+static bool SYNC_STEALTH = CONF_SYNC_STEALTH;
+static bool SYNC_SG = CONF_SYNC_SG;
 
 static int SERVO_OPEN_US = CONF_SERVO_OPEN_US;
 static int SERVO_CLOSE_US = CONF_SERVO_CLOSE_US;
@@ -543,13 +545,13 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     motor_set_dir(&L->m, forward);
     motor_set_rate_sps(&L->m, L->current_sps);
 
-    // Hybrid mode: Use StealthChop and ISS_CURRENT_MA ONLY for automatic ISS/Sync tasks
-    // AND only if StallGuard is actually enabled.
-    bool sg_active = (ISS_SG_TARGET > 0.0f || ISS_SG_DERIV > 0 || TMC_SGT_L1 > 0 || TMC_SGT_L2 > 0);
-    bool is_iss_sensitive = (t == TASK_FEED && g_tc_ctx.state != TC_IDLE && sg_active);
+    // Hybrid mode: Use StealthChop and ISS_CURRENT_MA for sync tasks.
+    bool is_sync = (t == TASK_FEED);
+    bool is_iss = (is_sync && g_tc_ctx.state != TC_IDLE);
+    bool use_stealth = is_iss || (is_sync && SYNC_STEALTH);
 
-    bool run_spreadcycle = TMC_SPREADCYCLE && !is_iss_sensitive;
-    int current_ma = is_iss_sensitive ? TMC_ISS_CURRENT_MA : TMC_RUN_CURRENT_MA[L->lane_id-1];
+    bool run_spreadcycle = TMC_SPREADCYCLE && !use_stealth;
+    int current_ma = is_sync ? TMC_ISS_CURRENT_MA : TMC_RUN_CURRENT_MA[L->lane_id-1];
 
     tmc_set_spreadcycle(L->tmc, run_spreadcycle);
     tmc_set_run_current_ma(L->tmc, current_ma, TMC_HOLD_CURRENT_MA[L->lane_id-1]);
@@ -1572,6 +1574,7 @@ static void sync_tick(uint32_t now_ms) {
     if ((now_ms - sync_last_tick_ms) < (uint32_t)SYNC_TICK_MS) return;
 
     sync_last_tick_ms = now_ms;
+    lane_t *A = lane_ptr(active_lane);
 
     buf_state_t s = g_buf.state;  // kept current by buf_sensor_tick()
 
@@ -1596,6 +1599,24 @@ static void sync_tick(uint32_t now_ms) {
         if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
 
         int target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, SYNC_MAX_SPS);
+
+        // Experimental: StallGuard scaling for normal sync.
+        if (SYNC_SG && ISS_SG_TARGET > 0.1f) {
+            if (A && A->task == TASK_FEED) {
+                uint16_t sg_raw;
+                if (tmc_read_sg_result(A->tmc, &sg_raw)) {
+                    g_tc_ctx.sg_ma_buf[g_tc_ctx.sg_ma_idx] = (float)sg_raw;
+                    g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_ISS_SG_MA_LEN;
+                    if (g_tc_ctx.sg_ma_fill < CONF_ISS_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
+                    float sum = 0.0f;
+                    for (int i = 0; i < CONF_ISS_SG_MA_LEN; i++)
+                        sum += g_tc_ctx.sg_ma_buf[i];
+                    g_sg_load = sum / (float)CONF_ISS_SG_MA_LEN;
+                }
+            }
+            float sg_frac = clamp_f(g_sg_load / ISS_SG_TARGET, 0.0f, 1.0f);
+            target = (int)((float)target * sg_frac);
+        }
 
         if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
         else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
@@ -1672,7 +1693,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 18u
+#define SETTINGS_VERSION 19u
 
 typedef struct {
     uint32_t magic;
@@ -1729,6 +1750,8 @@ typedef struct {
     bool enable_cutter;
     bool spreadcycle;
     bool iss_mode;
+    bool sync_stealth;
+    bool sync_sg;
 
     uint32_t crc32;
 } settings_t;
@@ -1819,6 +1842,8 @@ static void settings_defaults(void) {
     ISS_SG_DERIV = CONF_ISS_SG_DERIV;
     ISS_SG_TARGET = CONF_ISS_SG_TARGET;
     ISS_FOLLOW_TIMEOUT_MS = CONF_ISS_FOLLOW_TIMEOUT_MS;
+    SYNC_STEALTH = CONF_SYNC_STEALTH;
+    SYNC_SG = CONF_SYNC_SG;
 }
 
 static void settings_save(void) {
@@ -1897,6 +1922,8 @@ static void settings_save(void) {
     s.iss_sg_deriv = ISS_SG_DERIV;
     s.iss_sg_target = ISS_SG_TARGET;
     s.iss_follow_timeout_ms = ISS_FOLLOW_TIMEOUT_MS;
+    s.sync_stealth = SYNC_STEALTH;
+    s.sync_sg = SYNC_SG;
 
     s.crc32 = crc32_buf((const uint8_t *)&s, offsetof(settings_t, crc32));
 
@@ -2013,6 +2040,8 @@ static void settings_load(void) {
     ISS_SG_DERIV = s->iss_sg_deriv;
     ISS_SG_TARGET = s->iss_sg_target;
     ISS_FOLLOW_TIMEOUT_MS = s->iss_follow_timeout_ms;
+    SYNC_STEALTH = s->sync_stealth;
+    SYNC_SG = s->sync_sg;
 
     // Motor parameters always come from compile-time config (tune.h / config.ini).
     // Flash values for these fields are ignored so reflashing always takes effect.
@@ -2340,6 +2369,8 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "TS_BUF_MS"))    TS_BUF_FALLBACK_MS = clamp_i(iv, 0, 30000);
             else if (!strcmp(param, "STARTUP_MS"))   MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
             else if (!strcmp(param, "STALL_MS"))     STALL_RECOVERY_MS = clamp_i(iv, 0, 10000);
+            else if (!strcmp(param, "SYNC_STEALTH")) SYNC_STEALTH = (iv != 0);
+            else if (!strcmp(param, "SYNC_SG"))      SYNC_SG = (iv != 0);
             else if (!strcmp(param, "SGT_L1"))    { TMC_SGT_L1 = clamp_i(iv, 0, 255); tmc_set_sgthrs(&g_tmc1, (uint8_t)TMC_SGT_L1); }
             else if (!strcmp(param, "SGT_L2"))    { TMC_SGT_L2 = clamp_i(iv, 0, 255); tmc_set_sgthrs(&g_tmc2, (uint8_t)TMC_SGT_L2); }
             else if (!strcmp(param, "TCOOLTHRS")) { TMC_TCOOLTHRS = clamp_i(iv, 0, 0xFFFFF); tmc_set_tcoolthrs(&g_tmc1, (uint32_t)TMC_TCOOLTHRS); tmc_set_tcoolthrs(&g_tmc2, (uint32_t)TMC_TCOOLTHRS); }
@@ -2401,6 +2432,8 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "TS_BUF_MS"))    snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
         else if (!strcmp(param, "STARTUP_MS"))   snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
         else if (!strcmp(param, "STALL_MS"))     snprintf(out, sizeof(out), "STALL_MS:%d", STALL_RECOVERY_MS);
+        else if (!strcmp(param, "SYNC_STEALTH")) snprintf(out, sizeof(out), "SYNC_STEALTH:%d", SYNC_STEALTH ? 1 : 0);
+        else if (!strcmp(param, "SYNC_SG"))      snprintf(out, sizeof(out), "SYNC_SG:%d", SYNC_SG ? 1 : 0);
         else if (!strcmp(param, "SGT_L1"))    snprintf(out, sizeof(out), "SGT_L1:%d", TMC_SGT_L1);
         else if (!strcmp(param, "SGT_L2"))    snprintf(out, sizeof(out), "SGT_L2:%d", TMC_SGT_L2);
         else if (!strcmp(param, "TCOOLTHRS")) snprintf(out, sizeof(out), "TCOOLTHRS:%d", TMC_TCOOLTHRS);

@@ -104,6 +104,8 @@ DEFAULTS = {
     "iss_press_rate": "1275",
     "iss_sg_ma_len": "5",
     "iss_follow_timeout_ms": "10000",
+    "sync_stealth": "False",
+    "sync_sg": "False",
 }
 
 
@@ -270,6 +272,8 @@ def main():
         f"#define CONF_ISS_TRAILING_SPS   {mm_min_to_sps(get('iss_trailing_rate'))}",
         f"#define CONF_ISS_SG_MA_LEN      {get('iss_sg_ma_len')}",
         f"#define CONF_ISS_FOLLOW_TIMEOUT_MS {get('iss_follow_timeout_ms')}",
+        f"#define CONF_SYNC_STEALTH           {'true' if get_bool('sync_stealth') else 'false'}",
+        f"#define CONF_SYNC_SG                {'true' if get_bool('sync_sg') else 'false'}",
         "",
     ]
 
