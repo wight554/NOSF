@@ -76,7 +76,7 @@ static int RAMP_TICK_MS = CONF_RAMP_TICK_MS;
 static int TMC_RUN_CURRENT_MA[2] = {CONF_RUN_CURRENT_MA, CONF_RUN_CURRENT_MA};
 static int TMC_HOLD_CURRENT_MA[2] = {CONF_HOLD_CURRENT_MA, CONF_HOLD_CURRENT_MA};
 static int TMC_MICROSTEPS = CONF_MICROSTEPS;
-static bool TMC_SPREADCYCLE = CONF_SPREADCYCLE; // StealthChop REQUIRED for StallGuard4 on TMC2209
+static bool TMC_SPREADCYCLE = CONF_SPREADCYCLE;
 static int TMC_SGT_L1 = CONF_SGT_L1;
 static int TMC_SGT_L2 = CONF_SGT_L2;
 static int TMC_TCOOLTHRS = CONF_TCOOLTHRS;
@@ -540,6 +540,8 @@ static void lane_stop(lane_t *L) {
     L->current_sps = 0;
     L->target_sps = 0;
     motor_stop(&L->m);
+    // Revert to global default mode when idle.
+    tmc_set_spreadcycle(L->tmc, TMC_SPREADCYCLE);
 }
 
 static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_ms, int autoload_timeout_ms) {
@@ -563,6 +565,11 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     motor_enable(&L->m, true);
     motor_set_dir(&L->m, forward);
     motor_set_rate_sps(&L->m, L->current_sps);
+
+    // Hybrid mode: Use StealthChop for TASK_FEED (Sync/ISS/Tune) to enable StallGuard4.
+    // If TMC_SPREADCYCLE is false, we stay in StealthChop for everything.
+    bool run_spreadcycle = TMC_SPREADCYCLE && (t != TASK_FEED);
+    tmc_set_spreadcycle(L->tmc, run_spreadcycle);
 }
 
 static void lane_tick(lane_t *L, uint32_t now_ms) {
