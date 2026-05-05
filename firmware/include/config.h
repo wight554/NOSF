@@ -23,7 +23,7 @@
 #define CONF_SYNC_MIN_SPS       0
 
 // ----- Motion -----
-#define CONF_MOTION_STARTUP_MS  10000   // TUNE: bowden length dependent
+#define CONF_MOTION_STARTUP_MS  1000   // TUNE: delay before stall/runout detection active
 
 // ----- Ramp -----
 #define CONF_RAMP_STEP_SPS      200
