@@ -5,7 +5,7 @@ It can run without a host plugin and handles lane switching, buffer-driven feed,
 and TMC2209 register/config tuning over USB serial.
 
 ## Tested Configuration
-*   **Motors**: [FYSETC G36HSY4405-6D-1200](https://github.com/FYSETC/FYSETC-MOTORS/blob/main/G36HSY4405-6D-1200/G36HSY4405-6D-1200.pdf) (Commonly included in kits)
+*   **Motors**: [FYSETC G36HSY4405-6D-1200](https://github.com/FYSETC/FYSETC-MOTORS/blob/main/G36HSY4405-6D-1200/G36HSY4405-6D-1200.pdf) (Included in Fysetc NightOwl kits)
 *   **Buffer**: [QuattroSync](https://github.com/Batalhoti/QuattroSync) (Superior tension management via springs vs. TurtleNeck design)
 
 ## What Is In This Repo
@@ -110,6 +110,7 @@ python3 scripts/nosf_test.py "SV:"
 - `scripts/sg_monitor.py`: Real-time StallGuard monitor
 - `scripts/klipper_tune.py`: Apply/read Klipper-style parameters
 - `scripts/tmc_chopconf.py`: Direct CHOPCONF read/write utility
+- `STALLGUARD.md`: Deep-dive guide on StallGuard & ISS tuning
 - `scripts/nosf_cmd.py`: Single-command serial helper for Klipper integration
 - `scripts/nosf_test.py`: Send arbitrary serial commands quickly
 
