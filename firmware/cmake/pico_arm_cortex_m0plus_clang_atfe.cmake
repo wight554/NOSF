@@ -182,7 +182,7 @@ if (NOT PICO_COMPILER_SYSROOT_IS_ATFE AND PICO_COMPILER_SYSROOT)
         endif()
     endif()
 
-    # 2. Find libgcc.a (Linker flags)
+    # 2. Find library multilib paths
     execute_process(COMMAND arm-none-eabi-gcc -mcpu=cortex-m0plus -print-libgcc-file-name
                     OUTPUT_VARIABLE _libgcc_file
                     OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -202,6 +202,23 @@ if (NOT PICO_COMPILER_SYSROOT_IS_ATFE AND PICO_COMPILER_SYSROOT)
         get_filename_component(_libgcc_dir "${_libgcc_file}" DIRECTORY)
         message(STATUS "ARM clang: found libgcc at ${_libgcc_dir}")
         set(_pico_extra_link_flags "-L${_libgcc_dir} -lgcc")
+        
+        # Also try to find the corresponding libc.a multilib directory in the sysroot
+        # Usually /usr/lib/arm-none-eabi/lib/thumb/v6-m/nofp/
+        set(_multilib_suffix "")
+        if (_libgcc_dir MATCHES "thumb/v6-m/nofp")
+            set(_multilib_suffix "thumb/v6-m/nofp")
+        elseif (_libgcc_dir MATCHES "armv6-m")
+            set(_multilib_suffix "armv6-m")
+        endif()
+        
+        if (_multilib_suffix)
+            set(_libc_dir "${PICO_COMPILER_SYSROOT}/lib/${_multilib_suffix}")
+            if (EXISTS "${_libc_dir}/libc.a")
+                message(STATUS "ARM clang: found libc at ${_libc_dir}")
+                string(APPEND _pico_extra_link_flags " -L${_libc_dir}")
+            endif()
+        endif()
     else()
         message(STATUS "ARM clang: libgcc.a not found via arm-none-eabi-gcc or glob.")
     endif()
