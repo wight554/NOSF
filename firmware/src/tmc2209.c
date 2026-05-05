@@ -3,15 +3,24 @@
 #include "hardware/gpio.h"
 #include "hardware/sync.h"
 #include "pico/stdlib.h"
-#include <stdio.h>
 #include "hardware/pio.h"
 #include "tmc_uart.pio.h"
 
 #define TMC_BAUD    40000u
 
-static bool pio_loaded = false;
-static uint global_offset_tx;
-static uint global_offset_rx;
+// PIO program cache — keyed per PIO block (index 0 = pio0, 1 = pio1)
+// Allows both PIO blocks to be used independently by different TMC instances.
+typedef struct {
+    bool loaded;
+    uint offset_tx;
+    uint offset_rx;
+} tmc_pio_cache_t;
+
+static tmc_pio_cache_t pio_cache[2];
+
+static int pio_block_index(PIO pio) {
+    return pio == pio1 ? 1 : 0;
+}
 
 uint8_t tmc_crc8(const uint8_t *data, uint8_t len) {
     uint8_t crc = 0;
@@ -35,18 +44,21 @@ bool tmc_init(tmc_t *t, uint tx_pin, uint rx_pin, uint8_t addr) {
     t->addr = addr;
     t->pio = pio0; 
 
-    if (!pio_loaded) {
+    int pidx = pio_block_index(t->pio);
+    tmc_pio_cache_t *cache = &pio_cache[pidx];
+
+    if (!cache->loaded) {
         if (pio_can_add_program(t->pio, &tmc_uart_tx_program) && pio_can_add_program(t->pio, &tmc_uart_rx_program)) {
-            global_offset_tx = pio_add_program(t->pio, &tmc_uart_tx_program);
-            global_offset_rx = pio_add_program(t->pio, &tmc_uart_rx_program);
-            pio_loaded = true;
+            cache->offset_tx = pio_add_program(t->pio, &tmc_uart_tx_program);
+            cache->offset_rx = pio_add_program(t->pio, &tmc_uart_rx_program);
+            cache->loaded = true;
         } else {
             return false;
         }
     }
 
-    t->offset_tx = global_offset_tx;
-    t->offset_rx = global_offset_rx;
+    t->offset_tx = cache->offset_tx;
+    t->offset_rx = cache->offset_rx;
 
     t->sm_tx = pio_claim_unused_sm(t->pio, true);
     t->sm_rx = pio_claim_unused_sm(t->pio, true);
@@ -111,54 +123,52 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
     req[2] = reg & 0x7Fu;
     req[3] = tmc_crc8(req, 3);
 
-    // Clear RX FIFO before starting to remove any old junk
-    pio_sm_clear_fifos(t->pio, t->sm_rx);
-    // Also force-reset the ISR to zero. If the RX SM was mid-frame receiving noise
-    // when clear_fifos was called, the ISR could have stale bits that would corrupt
-    // the MSB of the first received byte. MOV ISR, NULL zeroes it cleanly.
-    pio_sm_exec(t->pio, t->sm_rx, pio_encode_mov(pio_isr, pio_null));
+    for (int attempt = 0; attempt < 2; attempt++) {
+        // Clear RX FIFO before starting to remove any old junk
+        pio_sm_clear_fifos(t->pio, t->sm_rx);
+        // Also force-reset the ISR to zero. If the RX SM was mid-frame receiving noise
+        // when clear_fifos was called, the ISR could have stale bits that would corrupt
+        // the MSB of the first received byte. MOV ISR, NULL zeroes it cleanly.
+        pio_sm_exec(t->pio, t->sm_rx, pio_encode_mov(pio_isr, pio_null));
 
-    tmc_uart_send_bytes(t, req, 4);
+        tmc_uart_send_bytes(t, req, 4);
 
-    // tmc_uart_send_bytes includes a 30us inter-frame gap covering the stop bit.
-    // Add 10 more us to ensure the RX SM has pushed the final echo byte to FIFO.
-    busy_wait_us_32(10);
-    
-    // Completely drain the RX FIFO of all echo bytes and any preceding garbage
-    while (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
-        pio_sm_get(t->pio, t->sm_rx);
-    }
-
-    // Now release the pin to INPUT so the TMC2209 can reply. 
-    // (Requires internal pull-up and pdn_disable=1 so it stays HIGH during idle)
-    pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, false);
-
-    uint64_t timeout_us = time_us_64() + 5000;
-    int received = 0;
-    
-    while (received < 8 && time_us_64() < timeout_us) {
-        if (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
-            rep[received++] = (uint8_t)(pio_sm_get(t->pio, t->sm_rx) >> 24); // Right-shifted 32-bit pull puts LSB at bit 24
+        // tmc_uart_send_bytes includes a 30us inter-frame gap covering the stop bit.
+        // Add 10 more us to ensure the RX SM has pushed the final echo byte to FIFO.
+        busy_wait_us_32(10);
+        
+        // Completely drain the RX FIFO of all echo bytes and any preceding garbage
+        while (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
+            pio_sm_get(t->pio, t->sm_rx);
         }
-    }
 
-    // Restore pin to OUTPUT HIGH
-    pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, true);
+        // Now release the pin to INPUT so the TMC2209 can reply. 
+        // (Requires internal pull-up and pdn_disable=1 so it stays HIGH during idle)
+        pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, false);
 
-    if (received < 8) return false;
-    
-    if (rep[0] != 0x05 || rep[1] != 0xFF || (rep[2] & 0x7Fu) != reg) {
-        return false;
-    }
-    if (tmc_crc8(rep, 7) != rep[7]) {
-        return false;
-    }
+        uint64_t timeout_us = time_us_64() + 5000;
+        int received = 0;
+        
+        while (received < 8 && time_us_64() < timeout_us) {
+            if (!pio_sm_is_rx_fifo_empty(t->pio, t->sm_rx)) {
+                rep[received++] = (uint8_t)(pio_sm_get(t->pio, t->sm_rx) >> 24);
+            }
+        }
 
-    *out = ((uint32_t)rep[3] << 24) |
-           ((uint32_t)rep[4] << 16) |
-           ((uint32_t)rep[5] << 8) |
-           (uint32_t)rep[6];
-    return true;
+        // Restore pin to OUTPUT HIGH
+        pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, true);
+
+        if (received < 8) continue;
+        if (rep[0] != 0x05 || rep[1] != 0xFF || (rep[2] & 0x7Fu) != reg) continue;
+        if (tmc_crc8(rep, 7) != rep[7]) continue;
+
+        *out = ((uint32_t)rep[3] << 24) |
+               ((uint32_t)rep[4] << 16) |
+               ((uint32_t)rep[5] << 8) |
+               (uint32_t)rep[6];
+        return true;
+    }
+    return false;
 }
 
 int tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t *buf_out) {
