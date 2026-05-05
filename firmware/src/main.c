@@ -806,9 +806,8 @@ static void cutter_abort(void) {
         motor_stop(&g_cut.lane->m);
     }
     servo_set_us(PIN_SERVO, SERVO_OPEN_US);
-    sleep_ms(50);
-    servo_idle(PIN_SERVO);
-    g_cut.state = CUT_IDLE;
+    g_cut.phase_start_ms = to_ms_since_boot(get_absolute_time());
+    g_cut.state = CUT_OPEN_WAIT;
     g_cut.repeats_done = 0;
 }
 
@@ -1598,7 +1597,7 @@ static void lane_fault(lane_t *L, fault_t f) {
     L->stall_armed = false;
 }
 
-static void stall_irq(uint gpio, uint32_t events) {
+static void __not_in_flash_func(stall_irq)(uint gpio, uint32_t events) {
     if (!(events & GPIO_IRQ_EDGE_RISE)) return;
 
     if (gpio == PIN_M1_DIAG && g_lane1.stall_armed) {
