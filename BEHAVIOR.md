@@ -302,6 +302,27 @@ error: the fault is cleared and speed drops to `ISS_TRAILING_SPS`.
 With an analog buffer sensor the arm position provides continuous pressure
 feedback; SG_RESULT is not sampled.  SGTHRS/DIAG still fires on hard jams.
 
+### ISS StallGuard Tuning Example (FYSETC G36HSY4405-6D-1200)
+
+For the recommended **FYSETC G36HSY4405-6D-1200** motor at **800mA**, these "Golden State" tunables provide a highly sensitive, quiet, and responsive follow:
+
+```bash
+# Target just below free-air SG value (approx 350 at 800mA)
+SET:ISS_SG_TARGET:320
+
+# Full power for both manual and ISS tasks
+SET:ISS_CURRENT_MA:800
+
+# Quiet trailing: motor crawls softly (21mm/min) when blocked
+SET:ISS_TRAILING_SPS:500
+
+# High sensitivity fallback (DIAG fires at SG ≤ 100)
+SET:SGT_L1:50
+SET:SGT_L2:50
+```
+
+With these settings, the motor will begin slowing down the moment filament tension increases (when the SG ratio drops below 1.0), providing a "soft" follow that prevents grinding.
+
 ### Tuning ISS StallGuard (`ISS_SG_TARGET`, `ISS_SG_DERIV_THR`, `SGT_L1`/`SGT_L2`)
 
 Use `scripts/tune_iss_sg.py`.

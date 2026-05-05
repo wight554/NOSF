@@ -4,6 +4,10 @@ NOSF is a standalone dual-lane filament controller for ERB v2.0 (RP2040).
 It can run without a host plugin and handles lane switching, buffer-driven feed,
 and TMC2209 register/config tuning over USB serial.
 
+## Recommended Hardware
+*   **Motors**: [FYSETC G36HSY4405-6D-1200](https://github.com/FYSETC/FYSETC-MOTORS/blob/main/G36HSY4405-6D-1200/G36HSY4405-6D-1200.pdf) (Excellent StallGuard back-EMF)
+*   **Buffer**: [QuattroSync](https://github.com/Batalhoti/QuattroSync) (Designed for Infinite Spool)
+
 ## What Is In This Repo
 
 - `firmware/`: RP2040 firmware (C, Pico SDK)
