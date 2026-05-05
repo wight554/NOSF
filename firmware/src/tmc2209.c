@@ -3,6 +3,7 @@
 #include "hardware/gpio.h"
 #include "hardware/sync.h"
 #include "pico/stdlib.h"
+#include <stdio.h>
 #include "hardware/pio.h"
 #include "tmc_uart.pio.h"
 
@@ -61,7 +62,7 @@ bool tmc_init(tmc_t *t, uint tx_pin, uint rx_pin, uint8_t addr) {
     gpio_pull_up(t->tx_pin);
 
     // Guarantee the pin is actively driven HIGH (OUTPUT) while idle
-    pio_sm_set_pindirs_with_mask(t->pio, t->sm_tx, 1u << t->tx_pin, 1u << t->tx_pin);
+    pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, true);
 
     return true;
 }
@@ -124,7 +125,7 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
 
     // Now release the pin to INPUT so the TMC2209 can reply. 
     // (Requires internal pull-up and pdn_disable=1 so it stays HIGH during idle)
-    pio_sm_set_pindirs_with_mask(t->pio, t->sm_tx, 0, 1u << t->tx_pin);
+    pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, false);
 
     uint64_t timeout_us = time_us_64() + 5000;
     int received = 0;
@@ -136,10 +137,14 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
     }
 
     // Restore pin to OUTPUT HIGH
-    pio_sm_set_pindirs_with_mask(t->pio, t->sm_tx, 1u << t->tx_pin, 1u << t->tx_pin);
+    pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, true);
 
-    if (received < 8) return false;
-    
+    if (received < 8) {
+        printf("EV:DEBUG: received %d bytes\n", received);
+        return false;
+    }
+    printf("EV:DEBUG: rep: %02X %02X %02X %02X %02X %02X %02X %02X\n", rep[0], rep[1], rep[2], rep[3], rep[4], rep[5], rep[6], rep[7]);
+
     if (rep[0] != 0x05 || rep[1] != 0xFF || (rep[2] & 0x7Fu) != reg) {
         return false;
     }
@@ -176,7 +181,7 @@ int tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t *buf_out) {
     }
 
     // Now release the pin to INPUT so the TMC2209 can reply.
-    pio_sm_set_pindirs_with_mask(t->pio, t->sm_tx, 0, 1u << t->tx_pin);
+    pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, false);
 
     uint64_t timeout_us = time_us_64() + 5000;
     int n = 0;
@@ -188,7 +193,7 @@ int tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t *buf_out) {
     }
 
     // Restore pin to OUTPUT HIGH
-    pio_sm_set_pindirs_with_mask(t->pio, t->sm_tx, 1u << t->tx_pin, 1u << t->tx_pin);
+    pio_sm_set_consecutive_pindirs(t->pio, t->sm_tx, t->tx_pin, 1, true);
 
     return n;
 }
