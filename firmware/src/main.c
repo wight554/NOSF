@@ -676,11 +676,15 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         if (toolhead_has_filament) {
             lane_stop(L);
             cmd_event("LOADED", lane_s);
-        } else if (!lane_in_present(L) &&
-                   (int32_t)(now_ms - L->motion_started_ms) >= 1000) {
-            // Filament tail passed IN before OUT — nothing on the spool.
-            lane_stop(L);
-            cmd_event("RUNOUT", lane_s);
+        } else if (!lane_in_present(L) && (int32_t)(now_ms - L->motion_started_ms) >= 1000) {
+            if (lane_out_present(L)) {
+                // Tail between IN and OUT: keep pushing until OUT clears or 10s timeout.
+                L->iss_tail_ms = now_ms;
+            } else {
+                lane_stop(L);
+                cmd_event("RUNOUT", lane_s);
+                if (ISS_MODE && tc_state() == TC_IDLE) iss_trigger(L->lane_id, now_ms);
+            }
         } else if (!L->unload_sensor_latch &&
                    (int32_t)(now_ms - L->motion_started_ms) >= 10000) {
             // OUT not seen after 10 s — motor likely free-spinning (tail stuck at IN
@@ -702,36 +706,34 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
     }
 
     if ((L->task == TASK_FEED || L->task == TASK_AUTOLOAD) && !lane_in_present(L)) {
-        if ((int32_t)(now_ms - L->motion_started_ms) >= MOTION_STARTUP_MS &&
+        if ((int32_t)(now_ms - L->motion_started_ms) >= 1000 &&
             (int32_t)(now_ms - L->runout_block_until_ms) >= 0) {
-            bool was_feed = (L->task == TASK_FEED);
-            if (ISS_MODE && was_feed && tc_state() == TC_IDLE && lane_out_present(L)) {
-                // Filament tail still between IN and OUT — keep motor running.
-                // ISS switch fires when OUT clears, buffer→ADVANCE, or 10 s elapsed.
+            if (lane_out_present(L)) {
                 L->iss_tail_ms = now_ms;
                 L->runout_block_until_ms = now_ms + 30000u;
             } else {
                 char lane_s[2] = { (char)('0' + L->lane_id), 0 };
                 cmd_event("RUNOUT", lane_s);
                 L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
-                if (was_feed) set_toolhead_filament(false);
+                if (L->task == TASK_FEED) set_toolhead_filament(false);
                 lane_stop(L);
-                if (ISS_MODE && was_feed && tc_state() == TC_IDLE)
+                if (ISS_MODE && L->task == TASK_FEED && tc_state() == TC_IDLE)
                     iss_trigger(L->lane_id, now_ms);
             }
         }
     }
 
-    if (ISS_MODE && L->iss_tail_ms != 0 && L->task == TASK_FEED) {
+    if (L->iss_tail_ms != 0 && (L->task == TASK_FEED || L->task == TASK_LOAD_FULL || L->task == TASK_AUTOLOAD)) {
         uint32_t tail_age = now_ms - L->iss_tail_ms;
         if (!lane_out_present(L) || g_buf.state == BUF_ADVANCE || tail_age >= 10000u) {
             char lane_s[2] = { (char)('0' + L->lane_id), 0 };
             L->iss_tail_ms = 0;
             L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
             cmd_event("RUNOUT", lane_s);
-            set_toolhead_filament(false);
+            if (L->task == TASK_FEED) set_toolhead_filament(false);
+            bool was_iss = (ISS_MODE && L->task == TASK_FEED && tc_state() == TC_IDLE);
             lane_stop(L);
-            iss_trigger(L->lane_id, now_ms);
+            if (was_iss) iss_trigger(L->lane_id, now_ms);
         }
     }
 }
