@@ -112,7 +112,7 @@ def read_flat_ini(path):
         content = f.read()
     if not any(line.strip().startswith("[") for line in content.splitlines()):
         content = "[DEFAULT]\n" + content
-    cfg = configparser.ConfigParser(strict=False)
+    cfg = configparser.ConfigParser(strict=False, inline_comment_prefixes=('#', ';'))
     cfg.read_string(content)
     params = dict(cfg.defaults())
     for section in cfg.sections():
