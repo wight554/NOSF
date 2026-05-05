@@ -74,6 +74,7 @@ static int RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
 static int RAMP_TICK_MS = CONF_RAMP_TICK_MS;
 
 static int TMC_RUN_CURRENT_MA[2] = {CONF_RUN_CURRENT_MA, CONF_RUN_CURRENT_MA};
+static int TMC_ISS_CURRENT_MA = CONF_ISS_CURRENT_MA;
 static int TMC_HOLD_CURRENT_MA[2] = {CONF_HOLD_CURRENT_MA, CONF_HOLD_CURRENT_MA};
 static int TMC_MICROSTEPS = CONF_MICROSTEPS;
 static bool TMC_SPREADCYCLE = CONF_SPREADCYCLE;
@@ -567,9 +568,11 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     motor_set_rate_sps(&L->m, L->current_sps);
 
     // Hybrid mode: Use StealthChop for TASK_FEED (Sync/ISS/Tune) to enable StallGuard4.
-    // If TMC_SPREADCYCLE is false, we stay in StealthChop for everything.
+    // Also use the lower ISS_CURRENT_MA for sensitive load sensing.
     bool run_spreadcycle = TMC_SPREADCYCLE && (t != TASK_FEED);
+    int current_ma = (t == TASK_FEED) ? TMC_ISS_CURRENT_MA : TMC_RUN_CURRENT_MA[L->lane_id-1];
     tmc_set_spreadcycle(L->tmc, run_spreadcycle);
+    tmc_set_run_current(L->tmc, current_ma);
 }
 
 static void lane_tick(lane_t *L, uint32_t now_ms) {
@@ -1652,7 +1655,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 15u
+#define SETTINGS_VERSION 16u
 
 typedef struct {
     uint32_t magic;
@@ -1671,7 +1674,7 @@ typedef struct {
     int sgt_l1, sgt_l2;
     int tcoolthrs;
 
-    int run_current_ma[2], hold_current_ma[2];
+    int run_current_ma[2], iss_current_ma, hold_current_ma[2];
     int microsteps;
 
     int servo_open_us, servo_close_us, servo_block_us;
@@ -1754,6 +1757,7 @@ static void settings_defaults(void) {
 
     TMC_RUN_CURRENT_MA[0] = CONF_RUN_CURRENT_MA;
     TMC_RUN_CURRENT_MA[1] = CONF_RUN_CURRENT_MA;
+    TMC_ISS_CURRENT_MA = CONF_ISS_CURRENT_MA;
     TMC_HOLD_CURRENT_MA[0] = CONF_HOLD_CURRENT_MA;
     TMC_HOLD_CURRENT_MA[1] = CONF_HOLD_CURRENT_MA;
     TMC_MICROSTEPS = CONF_MICROSTEPS;
@@ -1829,6 +1833,7 @@ static void settings_save(void) {
 
     s.run_current_ma[0] = TMC_RUN_CURRENT_MA[0];
     s.run_current_ma[1] = TMC_RUN_CURRENT_MA[1];
+    s.iss_current_ma = TMC_ISS_CURRENT_MA;
     s.hold_current_ma[0] = TMC_HOLD_CURRENT_MA[0];
     s.hold_current_ma[1] = TMC_HOLD_CURRENT_MA[1];
     s.microsteps = TMC_MICROSTEPS;
@@ -1992,6 +1997,7 @@ static void settings_load(void) {
     // Flash values for these fields are ignored so reflashing always takes effect.
     TMC_RUN_CURRENT_MA[0] = CONF_RUN_CURRENT_MA;
     TMC_RUN_CURRENT_MA[1] = CONF_RUN_CURRENT_MA;
+    TMC_ISS_CURRENT_MA = CONF_ISS_CURRENT_MA;
     TMC_HOLD_CURRENT_MA[0] = CONF_HOLD_CURRENT_MA;
     TMC_HOLD_CURRENT_MA[1] = CONF_HOLD_CURRENT_MA;
     TMC_MICROSTEPS = CONF_MICROSTEPS;
@@ -2294,6 +2300,11 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "ISS_JOIN_SPS"))     ISS_JOIN_SPS = clamp_i(iv, 1000, 50000);
             else if (!strcmp(param, "ISS_PRESS_SPS"))    ISS_PRESS_SPS = clamp_i(iv, 1000, 50000);
             else if (!strcmp(param, "ISS_TRAILING_SPS")) ISS_TRAILING_SPS = clamp_i(iv, 0, 50000);
+            else if (!strcmp(param, "ISS_CURRENT_MA")) {
+                TMC_ISS_CURRENT_MA = clamp_i(iv, 100, 1200);
+                if (g_lane1.task == TASK_FEED) tmc_set_run_current(&g_tmc1, TMC_ISS_CURRENT_MA);
+                if (g_lane2.task == TASK_FEED) tmc_set_run_current(&g_tmc2, TMC_ISS_CURRENT_MA);
+            }
             else if (!strcmp(param, "ISS_SG_DERIV_THR")) ISS_SG_DERIV_THR = clamp_i(iv, 0, 500);
             else if (!strcmp(param, "ISS_SG_TARGET"))    ISS_SG_TARGET = clamp_f(fv, 0.0f, 1023.0f);
             else if (!strcmp(param, "BASELINE"))         g_baseline_sps = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
@@ -2352,6 +2363,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "ISS_JOIN_SPS"))     snprintf(out, sizeof(out), "ISS_JOIN_SPS:%d", ISS_JOIN_SPS);
         else if (!strcmp(param, "ISS_PRESS_SPS"))    snprintf(out, sizeof(out), "ISS_PRESS_SPS:%d", ISS_PRESS_SPS);
         else if (!strcmp(param, "ISS_TRAILING_SPS")) snprintf(out, sizeof(out), "ISS_TRAILING_SPS:%d", ISS_TRAILING_SPS);
+        else if (!strcmp(param, "ISS_CURRENT_MA"))   snprintf(out, sizeof(out), "ISS_CURRENT_MA:%d", TMC_ISS_CURRENT_MA);
         else if (!strcmp(param, "ISS_SG_DERIV_THR")) snprintf(out, sizeof(out), "ISS_SG_DERIV_THR:%d", ISS_SG_DERIV_THR);
         else if (!strcmp(param, "ISS_SG_TARGET"))    snprintf(out, sizeof(out), "ISS_SG_TARGET:%.1f", (double)ISS_SG_TARGET);
         else if (!strcmp(param, "BASELINE"))     snprintf(out, sizeof(out), "BASELINE:%.1f", (double)sps_to_mm_per_min(g_baseline_sps));

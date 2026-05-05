@@ -18,6 +18,7 @@
 // At MM_PER_STEP=0.001417: 25000 SPS ≈ 35 mm/s, 50000 SPS ≈ 71 mm/s
 #define CONF_FEED_SPS           25000
 #define CONF_REV_SPS            25000
+#define CONF_ISS_CURRENT_MA     400    // TUNE: StallGuard-sensitive current for ISS/Sync
 #define CONF_AUTO_SPS           25000
 #define CONF_SYNC_MAX_SPS       30000
 #define CONF_SYNC_MIN_SPS       0
