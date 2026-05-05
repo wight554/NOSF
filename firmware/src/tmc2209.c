@@ -53,21 +53,16 @@ bool tmc_init(tmc_t *t, uint tx_pin, uint rx_pin, uint8_t addr) {
     tmc_uart_tx_program_init(t->pio, t->sm_tx, t->offset_tx, t->tx_pin, TMC_BAUD);
     tmc_uart_rx_program_init(t->pio, t->sm_rx, t->offset_rx, t->tx_pin, TMC_BAUD);
 
-    pio_sm_set_enabled(t->pio, t->sm_tx, false);
+    pio_sm_set_enabled(t->pio, t->sm_tx, true); // Keep TX SM enabled permanently to manage pin direction
     pio_sm_set_enabled(t->pio, t->sm_rx, false);
     
-    // Default to input with pull-up
-    pio_sm_set_pindirs_with_mask(t->pio, t->sm_tx, 0, 1u << t->tx_pin);
+    // Enable pull-up for the idle HIGH state
     gpio_pull_up(t->tx_pin);
 
     return true;
 }
 
 static void tmc_uart_send_bytes(tmc_t *t, const uint8_t *buf, size_t len) {
-    // Enable TX output mode
-    pio_sm_set_pindirs_with_mask(t->pio, t->sm_tx, 1u << t->tx_pin, 1u << t->tx_pin);
-    pio_sm_set_enabled(t->pio, t->sm_tx, true);
-    
     for (size_t i = 0; i < len; i++) {
         pio_sm_put_blocking(t->pio, t->sm_tx, buf[i]);
     }
@@ -75,12 +70,9 @@ static void tmc_uart_send_bytes(tmc_t *t, const uint8_t *buf, size_t len) {
     // Wait for FIFO to empty
     while (!pio_sm_is_tx_fifo_empty(t->pio, t->sm_tx)) tight_loop_contents();
     
-    // At 40000 baud, one byte (10 bits) takes 250us. Wait long enough for the last byte to shift out.
-    busy_wait_us_32(300);
-    
-    pio_sm_set_enabled(t->pio, t->sm_tx, false);
-    // Switch to input mode for RX
-    pio_sm_set_pindirs_with_mask(t->pio, t->sm_tx, 0, 1u << t->tx_pin);
+    // Wait for the state machine to finish shifting and stall at the 'pull' instruction.
+    // 'pull' is the very first instruction at t->offset_tx.
+    while (pio_sm_get_pc(t->pio, t->sm_tx) != t->offset_tx) tight_loop_contents();
 }
 
 bool tmc_write(tmc_t *t, uint8_t reg, uint32_t val) {

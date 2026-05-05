@@ -3,20 +3,22 @@
 
 ; TX encoding: 1 start bit, 8 data bits, 1 stop bit
 ; Pin direction is controlled by side-set to allow high-Z for RX mode
-; When side-set is 1, pin is OUTPUT.
 
-pull       side 1 [7]  ; Assert stop bit, or stall with line in output mode
-set x, 7   side 1 [7]  ; Preload bit counter, then delay until next bit
+    ; Start in INPUT mode. Wait for data.
+    pull       side 0 [7]  
+    
+    ; Data received. Switch to OUTPUT mode (drive HIGH).
+    set x, 7   side 1 [7]  
 
-; start bit
-set pins, 0 side 1 [7]
+    ; start bit
+    set pins, 0 side 1 [7]
 
 bitloop:
-out pins, 1 side 1 [5]
-jmp x-- bitloop   [1]
+    out pins, 1 side 1 [5]
+    jmp x-- bitloop   [1]
 
-; stop bit
-set pins, 1 side 1 [7]
+    ; stop bit
+    set pins, 1 side 1 [7]
 
 
 .program tmc_uart_rx
