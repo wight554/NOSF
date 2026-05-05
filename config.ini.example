@@ -18,4 +18,4 @@ run_current:
 # driver_TOFF: 3
 # driver_HSTRT: 5
 # driver_HEND: 0
-# stealthchop_threshold: 0       # 0 = SpreadCycle always on (recommended for MMU)
+# stealthchop_threshold: 999999       # 0 = SpreadCycle always on (recommended for MMU)

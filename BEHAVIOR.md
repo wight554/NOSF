@@ -308,8 +308,8 @@ Use `scripts/tune_iss_sg.py`.
 
 **Prerequisites for tuning:**
 1. **Filament must be present** at the `IN` sensor. If the sensor is clear, the `FD:` command used for tuning will trigger a runout stop after 1 second, and StallGuard will stop updating.
-2. **Motor must be running** at a speed covered by `TCOOLTHRS`. StallGuard only updates when `TSTEP ≤ TCOOLTHRS` (i.e., at medium to high speeds).
-3. **SpreadCycle must be enabled** (`CONF_SPREADCYCLE = true` in `config.ini`). StallGuard2 does not function in StealthChop mode.
+2. **Motor must be running** at a speed covered by `TCOOLTHRS`. SG active in StealthChop when SPS >= CLK/TCOOLTHRS (~12500 at default TCOOLTHRS=1000).
+3. **StealthChop must be enabled** (`stealthchop_threshold: 999999` in `config.ini`). StallGuard4 on the TMC2209 only functions in StealthChop mode.
 
 ```bash
 # Step 0 — observe free-air SG and verify StallGuard is active:
