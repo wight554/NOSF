@@ -77,9 +77,9 @@
 #define CONF_SGT_L1             0
 #define CONF_SGT_L2             0
 // TCOOLTHRS: StallGuard active when TSTEP <= TCOOLTHRS. TSTEP = CLK/SPS
-// (~12.5 MHz / 25000 SPS ≈ 500). Set above max operating TSTEP so SG is
-// active across the full speed range when SGTHRS > 0.
-#define CONF_TCOOLTHRS          1000
+// (~12.5 MHz / SPS). Default 0xFFFFF (max) ensures StallGuard is active
+// at all operating speeds, which is required for ISS follow-sync.
+#define CONF_TCOOLTHRS          0xFFFFF
 
 // ----- Analog buffer sensor (PSF / Hall-effect) -----
 // Set BUF_SENSOR_TYPE=1 to enable; wire signal pin to GP26–GP29.

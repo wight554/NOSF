@@ -133,7 +133,7 @@ All speed parameters use **mm/min** (same as Klipper `F`). Defaults are hardware
 | `ISS_SG_TARGET` | ISS follow sync SG setpoint: motor speed scales from `ISS_PRESS_SPS` (SG ≥ target) to 0 (SG = 0) (2-endstop only; 0 = disabled) | 7 |
 | `SGT_L1` | Lane 1 SGTHRS — DIAG fires when SG_RESULT ≤ 2 × value; arms immediately at ISS approach start; 0 = disabled | 0 |
 | `SGT_L2` | Lane 2 SGTHRS — DIAG fires when SG_RESULT ≤ 2 × value; arms immediately at ISS approach start; 0 = disabled | 0 |
-| `TCOOLTHRS` | StallGuard activation: SG active when TSTEP ≤ this value (TSTEP = ~12.5 MHz ÷ SPS). **Increasing** this value allows StallGuard to work at **slower** speeds. Default 1000 ≈ 12,500 SPS. | 1000 |
+| `TCOOLTHRS` | StallGuard activation: SG active when TSTEP ≤ this value (TSTEP = ~12.5 MHz ÷ SPS). Default `0xFFFFF` (max) ensures StallGuard is active at all speeds. | 0xFFFFF |
 
 ### Per-lane
 

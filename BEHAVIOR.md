@@ -356,13 +356,11 @@ Min SPS ≈ 12,500,000 / TCOOLTHRS
 | `TCOOLTHRS` | Min Speed (SPS) | Min Speed (mm/min)* |
 |-------------|-----------------|---------------------|
 | 500         | 25,000          | ≈ 2,125             |
-| 1000 (def)  | 12,500          | ≈ 1,060             |
-| 2000        | 6,250           | ≈ 530               |
-| 4000        | 3,125           | ≈ 265               |
-*\*Assuming default MM_PER_STEP = 0.001417*
+| 1000        | 12,500          | ≈ 1,060             |
+| 0xFFFFF (def)| ~12            | ≈ 1 (Always ON)    |
 
 **Tuning Tip:**
-If you run `sg_monitor.py` at a slow speed and the SG value is stuck at 0 or a fixed noise floor, your speed is likely below the `TCOOLTHRS` gate. Either increase the speed of the test or increase `TCOOLTHRS` (e.g., `SET:TCOOLTHRS:2000`).
+We default `TCOOLTHRS` to its maximum value (`0xFFFFF`) because ISS mode requires StallGuard to be active even at the slow end of the follow-sync range. You should generally leave this at its maximum unless you specifically want to disable StallGuard at slow speeds to avoid noise.
 
 **Why `contact_floor / 2` for SGTHRS:**
 TMC fires DIAG when `SG_RESULT ≤ 2 × SGTHRS`.  Setting `SGTHRS = contact_floor / 2`
