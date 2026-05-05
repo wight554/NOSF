@@ -10,7 +10,7 @@ This guide covers the automated workflow for calibrating StallGuard thresholds (
 |--------|---------|
 | `scripts/gcode_marker.py` | Injects flow-aware sync markers into G-code files. |
 | `scripts/sg_tuner.py` | Live-sweeps `SGT`, records data, and fits a physics-based model. |
-| `scripts/motors.ini` | Database of motor constants used for normalization and $K_e$ calculation. |
+| `scripts/motors.ini` | Database of motor constants and tuning baselines. |
 
 ---
 
@@ -36,65 +36,47 @@ Standard linear speed is not enough for accurate tuning because back-pressure de
 python3 scripts/gcode_marker.py my_model.gcode
 ```
 
-This creates `my_model_geo.gcode` containing markers like:
-`M118 NOSF_TUNE:Inner wall:V249.5:W0.50:H0.25 (Q:10.00)`
-
 ---
 
 ## Step 3: Run the Live Tuner
 
-1.  **Start the print** (`my_model_geo.gcode`) in Klipper.
-2.  **Start the tuner script** on your PC/Pi:
+The tuner uses an **Automated Sync Workflow**. You don't need to manually enable sync on the MMU.
+
+1.  **Load Filament**: Run the `FL` command on the MMU. It will push filament until it hits the extruder gears and stops automatically.
+2.  **Start Print**: Start the marked G-code in Klipper.
+3.  **Start Tuner**: Run the tuner script on your PC/Pi.
 
 ```bash
+# Example: Fine-tuning a Fysetc kit motor
 python3 scripts/sg_tuner.py \
-  --lane 1 \
-  --klipper-log /tmp/printer \
-  --motor fysetc-g36hsy4405-6d-1200
+  --baseline fysetc-g36hsy4405-6d-1200 \
+  --fine-tune \
+  --klipper-log /tmp/printer
 ```
 
-### What happens during the run:
-*   **Sync**: The script tails the Klipper log and matches StallGuard readings to the current feature (Infill, Wall, etc.).
-*   **Sweep**: Every 2 seconds, the script adjusts `SGT` by ±1 to explore the sensitivity of your motor at that specific flow rate.
-*   **Recording**: Data is saved to a CSV file (e.g., `sg_tuner_data_20260505.csv`).
+### How Synchronization Happens:
+*   **Pull-to-Sync**: When Klipper starts the print, the extruder pulls the filament.
+*   **Auto-Trigger**: The MMU detects this pull (Buffer `ADVANCE`) and immediately starts syncing.
+*   **Proactive Setup**: The `sg_tuner.py` script automatically configures the controller's TMC settings and `SYNC_SG_INTERP` mode for the duration of the run.
 
 ---
 
 ## Step 4: Analysis & Recommendation
 
-Once the print (or a representative section) is finished, stop the script with `Ctrl+C`. It will automatically perform a non-linear regression analysis.
+The tuner script monitors for a `FINISH` marker in the G-code and will automatically stop and analyze the data when the print ends.
 
 ### Recommendation Output Example:
 ```
 --- Analysis Results (Flow-Aware) ---
 Noise Floor (σ): 12.42 SG units
-Features mapped: Inner wall, Outer wall, Solid infill
-
-Recommended SGT values (Sensitivity Target: 200-400):
+Recommended SGT values:
  Speed (mm/min) | Flow (mm3/s) |   Rec SGT
 ---------------------------------------------
             500 |          2.0 |         18
            1000 |          4.0 |         14
            2000 |          8.0 |          8
-           3000 |         12.0 |          2
 ```
 
 ### How to apply:
-1.  Look at the `Rec SGT` for your typical printing speeds.
-2.  Update your `config.ini` with the new `sgt` value.
-3.  Run `scripts/gen_config.py` and reflash/rebuild.
-
----
-
-## Motor Normalization (Optional)
-
-If you are using a new motor, add it to `scripts/motors.ini`. The tuner uses `holding_torque` and `max_current` to calculate the Back-EMF constant ($K_e$), which allows it to predict StallGuard behavior even at speeds you haven't tested yet.
-
-```ini
-[my-new-motor]
-resistance: 2.0
-inductance: 0.003
-holding_torque: 0.45
-max_current: 1.5
-steps_per_revolution: 200
-```
+1.  Update your `config.ini` with the new `sgt` value.
+2.  Run `scripts/gen_config.py` and rebuild/flash.
