@@ -256,7 +256,7 @@ endforeach()
 #                 memmap_default.ld does not define.  The Pico SDK provides
 #                 its own startup code (pico_crt0/crt0.S), so suppress the
 #                 default startup files from the C library.
-set(_link_flags "--target=${_pico_target_triple} --sysroot=${PICO_COMPILER_SYSROOT} -nostartfiles -nostdlib++ ${_pico_extra_link_flags}")
+set(_link_flags "-Qunused-arguments --target=${_pico_target_triple} --sysroot=${PICO_COMPILER_SYSROOT} -nostartfiles -nostdlib++ ${_pico_extra_link_flags}")
 foreach(TYPE IN ITEMS EXE SHARED MODULE)
     set(CMAKE_${TYPE}_LINKER_FLAGS_INIT "${_link_flags}")
 endforeach()
