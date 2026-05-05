@@ -30,11 +30,9 @@ DEFAULTS = {
     "driver_hstrt": "5",
     "driver_hend": "0",
     "stealthchop_threshold": "0",
-    "m1_dir_invert": "0",
-    "m2_dir_invert": "0",
+    "dir_invert": "0",
     "tcoolthrs": "0xFFFFF",
-    "sgt_l1": "0",
-    "sgt_l2": "0",
+    "sgt": "0",
 
     # Speeds (mm/min)
     "feed_rate": "2100",
@@ -204,7 +202,8 @@ def main():
         # BUT our internal logic uses TMC_SPREADCYCLE=true for SpreadCycle.
         spreadcycle = (gm("stealthchop_threshold", "0") == "0")
         
-        # StallGuard / CoolStep
+        # Direction / StallGuard / CoolStep
+        dir_invert = int(gm("dir_invert", "0"))
         sgt = int(gm("sgt", "0"))
         tcoolthrs = int(gm("tcoolthrs", "0xFFFFF"), 0)
         sg_current_ma = int(gm("sg_current_ma", "800"))
@@ -227,6 +226,7 @@ def main():
             "hend": hend,
             "mm_per_step": mm_per_step,
             "spreadcycle": spreadcycle,
+            "dir_invert": dir_invert,
             "sgt": sgt,
             "tcoolthrs": tcoolthrs,
             "sg_current_ma": sg_current_ma
@@ -284,8 +284,8 @@ def main():
         f"#define CONF_M2_SG_CURRENT_MA      {m2['sg_current_ma']}",
         "",
         "// --- Global Motor Settings ---",
-        f"#define CONF_M1_DIR_INVERT      {get('m1_dir_invert')}",
-        f"#define CONF_M2_DIR_INVERT      {get('m2_dir_invert')}",
+        f"#define CONF_M1_DIR_INVERT      {m1['dir_invert']}",
+        f"#define CONF_M2_DIR_INVERT      {m2['dir_invert']}",
         "",
         "// --- Speeds (converted to SPS using Lane 1 baseline) ---",
         f"#define CONF_FEED_SPS           {mm_min_to_sps(get('feed_rate'), m1)}",

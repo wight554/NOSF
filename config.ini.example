@@ -1,33 +1,42 @@
-# NOSF config - copy this file to config.ini and fill in your values.
-# After editing run: python3 scripts/gen_config.py
+# NOSF config — copy to config.ini and fill in your values.
+# After editing: python3 scripts/gen_config.py
 # This regenerates firmware/include/tune.h which is compiled into the firmware.
+#
+# All motor parameters accept a single value (applies to both lanes)
+# or a comma-separated list (Lane 1, Lane 2). Examples:
+#   microsteps: 16              → both lanes use 16
+#   microsteps: 16, 32          → Lane 1 = 16, Lane 2 = 32
+#   rotation_distance: 23.0     → both lanes
+#   run_current: 0.8, 1.0       → different currents per lane
 
-# --- Required ---
+# ─── Required ────────────────────────────────────────────────────────────────
 microsteps:
 rotation_distance:
 run_current:
 
-# --- Optional (defaults shown) ---
-# Parameters can be single values (apply to all lanes) 
-# or comma-separated lists (e.g. 16, 32 for Lane 1 and Lane 2).
-# Lane-prefixed overrides (m1_..., m2_...) take priority.
-
+# ─── Motor / TMC (per-lane capable) ─────────────────────────────────────────
 # full_steps_per_rotation: 200
 # gear_ratio: 1:1
-# hold_current:                  # defaults to run_current / 2 if omitted
-# sense_resistor: 0.110
+# hold_current:               # defaults to run_current / 2 if omitted
+# dir_invert: 0               # invert motor direction (0/1, comma-list ok)
 # interpolate: True
+# stealthchop_threshold: 0    # 0 = SpreadCycle always on (recommended for MMU)
+
+# ─── TMC Chopper (per-lane capable) ─────────────────────────────────────────
 # driver_TBL: 2
 # driver_TOFF: 3
 # driver_HSTRT: 5
 # driver_HEND: 0
-# stealthchop_threshold: 0       # 0 = SpreadCycle always on (recommended for MMU)
-# m1_dir_invert: 0
-# m2_dir_invert: 0
-# tcoolthrs: 0xFFFFF
-# sgt: 0                         # StallGuard threshold (-64 to 63)
 
-# --- Speeds (mm/min) ---
+# ─── StallGuard / CoolStep (per-lane capable) ────────────────────────────────
+# sgt: 0                      # StallGuard threshold (-64 to 63)
+# tcoolthrs: 0xFFFFF          # SG activation threshold (TSTEP); 0xFFFFF = always active
+# sg_current_ma: 800          # current when SG is active (RELOAD or SYNC_SG=1)
+
+# ─── Hardware ────────────────────────────────────────────────────────────────
+# sense_resistor: 0.110
+
+# ─── Speeds (mm/min) ─────────────────────────────────────────────────────────
 # feed_rate: 2100
 # rev_rate: 2100
 # auto_rate: 2100
@@ -35,13 +44,13 @@ run_current:
 # sync_min_rate: 0
 # pre_ramp_rate: 35
 
-# --- Motion / Ramp ---
+# ─── Motion / Ramp ───────────────────────────────────────────────────────────
 # motion_startup_ms: 1000
 # ramp_step_rate: 17
 # ramp_tick_ms: 5
 # stall_recovery_ms: 3000
 
-# --- Buffer Sync ---
+# ─── Buffer Sync ─────────────────────────────────────────────────────────────
 # buf_half_travel_mm: 5.0
 # buf_hyst_ms: 30
 # sync_ramp_up_rate: 25
@@ -51,7 +60,7 @@ run_current:
 # buf_predict_thr_ms: 250
 # sync_kp_rate: 850
 
-# --- Cutter / Servo ---
+# ─── Cutter / Servo ──────────────────────────────────────────────────────────
 # servo_open_us: 500
 # servo_close_us: 1400
 # servo_block_us: 950
@@ -60,39 +69,40 @@ run_current:
 # cut_length_mm: 10
 # cut_amount: 1
 
-# --- Toolchange Timeouts ---
+# ─── Toolchange Timeouts ─────────────────────────────────────────────────────
 # tc_timeout_cut_ms: 5000
 # tc_timeout_unload_ms: 60000
 # tc_timeout_th_ms: 3000
 # tc_timeout_load_ms: 60000
 # tc_timeout_y_ms: 5000
 
-# --- Safety / Swap ---
+# ─── Safety / Swap ───────────────────────────────────────────────────────────
 # low_delay_ms: 400
 # swap_cooldown_ms: 500
 # runout_cooldown_ms: 12000
 # require_y_empty_swap: True
 
-# --- Analog Buffer Sensor ---
+# ─── Analog Buffer Sensor ─────────────────────────────────────────────────────
 # buf_sensor_type: 0
 # buf_neutral: 0.5
 # buf_range: 0.45
 # buf_thr: 0.30
 # buf_analog_alpha: 0.20
 
-# --- TS Fallback ---
+# ─── TS Fallback ─────────────────────────────────────────────────────────────
 # ts_buf_fallback_ms: 2000
 
-# --- Sync / StallGuard Tuning ---
-# reload_mode: 0
-# reload_y_timeout_ms: 10000     # max time to wait for Y-splitter to clear after tail exits OUT
-# sg_target: 320.0               # target SG value for follow-sync (G36HSY4405-6D-1200 @ 800mA)
-# sg_deriv: 3                  # derivative threshold for approach contact (0 = disabled)
-# sg_current_ma: 800           # motor current used only when StallGuard is active (RELOAD or SYNC_SG=1)
-# trailing_rate: 42            # coasting speed when buffer is stalled (trailing)
-# sg_ma_len: 5                  # MA window for SG filtering
-# join_rate: 2100               # fast approach speed (mm/min)
-# press_rate: 1275              # top speed in follow-sync (mm/min)
-# follow_timeout_ms: 10000      # max time in follow/sync before error
-# sync_sg_interp: False                 # experimental: use StallGuard interpolation during normal sync
-# reload_sg_interp: True               # use StallGuard interpolation during RELOAD follow
+# ─── Reload / RELOAD Mode ────────────────────────────────────────────────────
+# reload_mode: 0              # 0 = MMU (manual), 1 = RELOAD (auto-switch on runout)
+# reload_y_timeout_ms: 10000  # max wait for Y-splitter to clear after tail exits OUT
+
+# ─── RELOAD StallGuard Tuning ────────────────────────────────────────────────
+# sg_target: 320.0            # target SG value for follow-sync
+# sg_deriv: 3                 # approach contact threshold (0 = disabled)
+# trailing_rate: 42           # coasting speed when buffer is stalled (mm/min)
+# sg_ma_len: 5                # SG moving-average window
+# join_rate: 2100             # fast approach speed (mm/min)
+# press_rate: 1275            # top speed in follow-sync (mm/min)
+# follow_timeout_ms: 10000    # max time in follow/sync before error
+# sync_sg_interp: False       # experimental: SG interpolation during normal sync
+# reload_sg_interp: True      # SG interpolation during RELOAD follow
