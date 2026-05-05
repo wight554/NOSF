@@ -125,7 +125,7 @@
 #define CONF_ISS_PRESS_SPS      15000
 // ISS_TRAILING_SPS: coasting speed when buffer is TRAILING.
 // Set well below print speed: extruder pulling faster creates SG-detectable tension.
-#define CONF_ISS_TRAILING_SPS   8000
+#define CONF_ISS_TRAILING_SPS   1000
 // ISS_SG_TARGET: desired filtered SG value in follow sync.
 // Must be > 0 (crash) and < free-air SG (~14). Typical starting point: ~7.
 // Motor speed is proportionally interpolated between 0 (SG=0) and ISS_PRESS_SPS (SG≥target).

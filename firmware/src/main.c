@@ -404,6 +404,8 @@ typedef struct {
     float    sg_ma_prev;                        // MA from previous tick (for derivative)
     // State 2 follow sync
     int      iss_current_sps;                   // current ramped speed in TC_ISS_FOLLOW
+    int      iss_stall_count;                   // consecutive stalls in State 2
+    uint32_t last_iss_stall_ms;                 // for stall frequency tracking
 } tc_ctx_t;
 
 typedef enum {
@@ -963,6 +965,7 @@ static void iss_trigger(int runout_lane, uint32_t now_ms) {
     g_tc_ctx.target_lane    = other;
     g_tc_ctx.from_lane      = runout_lane;
     g_tc_ctx.phase_start_ms = now_ms;
+    g_tc_ctx.iss_stall_count = 0;
     g_tc_ctx.state          = TC_ISS_WAIT_Y;
 }
 
@@ -1312,10 +1315,22 @@ static void tc_tick(uint32_t now_ms) {
                 } else if (A->task == TASK_FEED) {
                     lane_stop(A);
                 }
-                // Stall during follow: contact spike, not a jam — clear and continue.
+                // Stall during follow: contact spike or hard obstruction.
                 if (A->fault == FAULT_STALL) {
                     A->fault = FAULT_NONE;
+                    // Reset count if stalls are far apart (> 2s).
+                    if ((int32_t)(now_ms - g_tc_ctx.last_iss_stall_ms) > 2000)
+                        g_tc_ctx.iss_stall_count = 0;
+                    
+                    g_tc_ctx.iss_stall_count++;
+                    g_tc_ctx.last_iss_stall_ms = now_ms;
                     g_tc_ctx.iss_current_sps = ISS_TRAILING_SPS;
+
+                    if (g_tc_ctx.iss_stall_count >= 3) {
+                        tc_enter_error("FOLLOW_JAM");
+                        lane_stop(A);
+                        break;
+                    }
                 }
             }
             break;
