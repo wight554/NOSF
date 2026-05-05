@@ -116,7 +116,7 @@
 #define CONF_ISS_SG_MA_LEN      5
 // ISS_SG_DERIV_THR: |drop in filtered SG per tick| that signals tip-to-tail contact.
 // Tune: free-air SG ≈ 14, full crash ≈ 0 → threshold ≈ 3–5 SG units/tick.
-#define CONF_ISS_SG_DERIV_THR   3
+#define CONF_ISS_SG_DERIV_THR   0
 
 // --- State 2: Follow Sync (TC_ISS_FOLLOW) ---
 // ISS_PRESS_SPS: top speed in follow sync (ADVANCE or MID, SG near free-air).
@@ -129,7 +129,7 @@
 // ISS_SG_TARGET: desired filtered SG value in follow sync.
 // Must be > 0 (crash) and < free-air SG (~14). Typical starting point: ~7.
 // Motor speed is proportionally interpolated between 0 (SG=0) and ISS_PRESS_SPS (SG≥target).
-#define CONF_ISS_SG_TARGET      7
+#define CONF_ISS_SG_TARGET      0
 
 // ----- Firmware version -----
 #define CONF_FW_VERSION         "NOSF_ERB_0.2.0"
