@@ -2,7 +2,7 @@
 
 This document covers connecting Klipper to the NOSF: serial
 setup, the shell command helper, toolhead sensor and toolchange macros, and the
-advance profiling workflow for sync tuning.
+advanced profiling workflow for StallGuard tuning (see `STALLGUARD_TUNING.md`).
 
 For the NOSF command reference see `MANUAL.md`; for behavioral details see
 `BEHAVIOR.md`.
