@@ -598,16 +598,30 @@ static int sync_apply_scaling(lane_t *L, int base_sps, bool use_sg) {
         float frac = clamp_f((g_buf_pos + 1.0f) * 0.5f, 0.0f, 1.0f);
         return (int)(TRAILING_SPS + (float)(base_sps - TRAILING_SPS) * frac);
     }
+
     int idx = lane_to_idx(L->lane_id);
+    int target = base_sps;
+
+    // 1. Calculate SG-based target if enabled
     if (use_sg && SG_TARGET[idx] > 0.1f) {
-        float sg_frac = clamp_f(g_sg_load / SG_TARGET[idx], 0.0f, 1.0f);
-        int target = (int)((float)base_sps * sg_frac);
-        if (g_buf.state == BUF_TRAILING) return MIN(target, TRAILING_SPS);
-        return target;
+        // Linear scaling based on target load. 
+        // 0.5 headroom (1.5 max) allows the MMU to accelerate to catch up 
+        // even if the buffer is still in MID.
+        float sg_frac = clamp_f(g_sg_load / SG_TARGET[idx], 0.0f, 1.5f);
+        target = (int)((float)base_sps * sg_frac);
     }
-    // Digital bang-bang
-    if (g_buf.state == BUF_TRAILING) return TRAILING_SPS;
-    return base_sps;
+
+    // 2. Sensor Fusion: Buffer Override (Priority)
+    // The buffer provides the "Ground Truth" for absolute limits.
+    if (g_buf.state == BUF_ADVANCE) {
+        // Extruder is pulling. We MUST at least match base_sps (or baseline+KP).
+        if (target < base_sps) target = base_sps;
+    } else if (g_buf.state == BUF_TRAILING) {
+        // Buffer is empty. We MUST NOT exceed TRAILING_SPS.
+        if (target > TRAILING_SPS) target = TRAILING_SPS;
+    }
+
+    return target;
 }
 
 static void lane_tick(lane_t *L, uint32_t now_ms) {
