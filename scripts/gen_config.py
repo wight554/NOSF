@@ -68,11 +68,9 @@ DEFAULTS = {
     "cut_length_mm": "10",
     "cut_amount": "1",
 
-    # Toolchange Timeouts
+    # Toolchange / Safety
     "tc_timeout_cut_ms": "5000",
-    "tc_timeout_unload_ms": "60000",
     "tc_timeout_th_ms": "3000",
-    "tc_timeout_load_ms": "60000",
     "tc_timeout_y_ms": "5000",
 
     # Safety / Swap
@@ -80,6 +78,11 @@ DEFAULTS = {
     "swap_cooldown_ms": "500",
     "runout_cooldown_ms": "12000",
     "require_y_empty_swap": "True",
+    "load_max_mm": "3000",
+    "unload_max_mm": "3000",
+    "autoload_max_mm": "600",
+    "auto_load_max_mm": "2000",
+    "approach_max_mm": "2000",
 
     # Analog Buffer Sensor
     "buf_sensor_type": "0",
@@ -336,10 +339,13 @@ def main():
         "",
         "// --- Toolchange Timeouts ---",
         f"#define CONF_TC_TIMEOUT_CUT_MS      {get('tc_timeout_cut_ms')}",
-        f"#define CONF_TC_TIMEOUT_UNLOAD_MS   {get('tc_timeout_unload_ms')}",
         f"#define CONF_TC_TIMEOUT_TH_MS       {get('tc_timeout_th_ms')}",
-        f"#define CONF_TC_TIMEOUT_LOAD_MS     {get('tc_timeout_load_ms')}",
         f"#define CONF_TC_TIMEOUT_Y_MS        {get('tc_timeout_y_ms')}",
+        f"#define CONF_LOAD_MAX_MM            {get('load_max_mm')}",
+        f"#define CONF_UNLOAD_MAX_MM          {get('unload_max_mm')}",
+        f"#define CONF_AUTOLOAD_MAX_MM        {get('autoload_max_mm')}",
+        f"#define CONF_AUTO_LOAD_MAX_MM       {get('auto_load_max_mm')}",
+        f"#define CONF_APPROACH_MAX_MM        {get('approach_max_mm')}",
         "",
         "// --- Safety / Swap ---",
         f"#define CONF_LOW_DELAY_MS           {get('low_delay_ms')}",
@@ -359,7 +365,6 @@ def main():
         "",
         "// --- Reload Mode ---",
         f"#define CONF_RELOAD_MODE           {get('reload_mode')}",
-        f"#define CONF_RELOAD_Y_TIMEOUT_MS   {get('reload_y_timeout_ms')}",
         f"#define CONF_SG_CURRENT_MA     {get('sg_current_ma')}",
         f"#define CONF_JOIN_SPS           {mm_min_to_sps(get('join_rate'), m1)}",
         f"#define CONF_PRESS_SPS          {mm_min_to_sps(get('press_rate'), m1)}",
