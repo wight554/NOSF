@@ -33,6 +33,13 @@ KLIPPER_DEFAULTS = {
     "driver_hstrt": "5",
     "driver_hend": "0",
     "stealthchop_threshold": "0",
+    "iss_sg_target": "0",
+    "iss_sg_deriv_thr": "0",
+    "iss_current_ma": "400",
+    "iss_trailing_sps": "1000",
+    "iss_join_sps": "25000",
+    "iss_press_sps": "15000",
+    "iss_follow_timeout_ms": "10000",
 }
 
 
@@ -94,6 +101,13 @@ def main():
     hend = int(get("driver_hend") or "0")
     stealthchop = int(get("stealthchop_threshold") or "0")
     spreadcycle = (stealthchop == 0)
+    iss_sg_target = float(get("iss_sg_target") or "0")
+    iss_sg_deriv_thr = int(get("iss_sg_deriv_thr") or "0")
+    iss_current_ma = int(get("iss_current_ma") or "400")
+    iss_trailing_sps = int(get("iss_trailing_sps") or "1000")
+    iss_join_sps = int(get("iss_join_sps") or "25000")
+    iss_press_sps = int(get("iss_press_sps") or "15000")
+    iss_follow_timeout_ms = int(get("iss_follow_timeout_ms") or "10000")
 
     mm_per_step = rotation_distance / (full_steps * microsteps * gear_ratio)
     run_ma = int(round(run_current * 1000))
@@ -117,6 +131,13 @@ def main():
         f"#define CONF_HEND               {hend}",
         f"#define CONF_INTPOL             {intpol_str}",
         f"#define CONF_SPREADCYCLE        {spreadcycle_str}",
+        f"#define CONF_ISS_CURRENT_MA     {iss_current_ma}",
+        f"#define CONF_ISS_JOIN_SPS       {iss_join_sps}",
+        f"#define CONF_ISS_PRESS_SPS      {iss_press_sps}",
+        f"#define CONF_ISS_SG_TARGET      {iss_sg_target:.1f}f",
+        f"#define CONF_ISS_SG_DERIV_THR   {iss_sg_deriv_thr}",
+        f"#define CONF_ISS_TRAILING_SPS   {iss_trailing_sps}",
+        f"#define CONF_ISS_FOLLOW_TIMEOUT_MS {iss_follow_timeout_ms}",
         "",
     ]
 

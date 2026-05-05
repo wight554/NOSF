@@ -69,6 +69,7 @@ static int ISS_PRESS_SPS = CONF_ISS_PRESS_SPS;
 static int ISS_TRAILING_SPS = CONF_ISS_TRAILING_SPS;
 static int ISS_SG_DERIV_THR = CONF_ISS_SG_DERIV_THR;
 static float ISS_SG_TARGET = CONF_ISS_SG_TARGET;
+static int ISS_FOLLOW_TIMEOUT_MS = CONF_ISS_FOLLOW_TIMEOUT_MS;
 
 static int RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
 static int RAMP_TICK_MS = CONF_RAMP_TICK_MS;
@@ -1346,7 +1347,7 @@ static void tc_tick(uint32_t now_ms) {
             // Safety timeout: if buffer stays in TRAILING for > 10s, abort.
             if (g_buf.state == BUF_TRAILING) {
                 if (g_tc_ctx.last_trailing_ms == 0) g_tc_ctx.last_trailing_ms = now_ms;
-                if ((now_ms - g_tc_ctx.last_trailing_ms) > 10000u) {
+                if ((now_ms - g_tc_ctx.last_trailing_ms) > (uint32_t)ISS_FOLLOW_TIMEOUT_MS) {
                     tc_enter_error("FOLLOW_TIMEOUT");
                     lane_stop(A);
                     break;
@@ -1701,7 +1702,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 16u
+#define SETTINGS_VERSION 17u
 
 typedef struct {
     uint32_t magic;
@@ -1750,6 +1751,7 @@ typedef struct {
     int iss_trailing_sps;
     int iss_sg_deriv_thr;
     float iss_sg_target;
+    int iss_follow_timeout_ms;
 
     // Grouped booleans — packed together to avoid per-field padding.
     bool buf_invert;
@@ -1846,6 +1848,7 @@ static void settings_defaults(void) {
     ISS_TRAILING_SPS = CONF_ISS_TRAILING_SPS;
     ISS_SG_DERIV_THR = CONF_ISS_SG_DERIV_THR;
     ISS_SG_TARGET = CONF_ISS_SG_TARGET;
+    ISS_FOLLOW_TIMEOUT_MS = CONF_ISS_FOLLOW_TIMEOUT_MS;
 }
 
 static void settings_save(void) {
@@ -1923,6 +1926,7 @@ static void settings_save(void) {
     s.iss_trailing_sps = ISS_TRAILING_SPS;
     s.iss_sg_deriv_thr = ISS_SG_DERIV_THR;
     s.iss_sg_target = ISS_SG_TARGET;
+    s.iss_follow_timeout_ms = ISS_FOLLOW_TIMEOUT_MS;
 
     s.crc32 = crc32_buf((const uint8_t *)&s, offsetof(settings_t, crc32));
 
@@ -2038,6 +2042,7 @@ static void settings_load(void) {
     ISS_TRAILING_SPS = s->iss_trailing_sps;
     ISS_SG_DERIV_THR = s->iss_sg_deriv_thr;
     ISS_SG_TARGET = s->iss_sg_target;
+    ISS_FOLLOW_TIMEOUT_MS = s->iss_follow_timeout_ms;
 
     // Motor parameters always come from compile-time config (tune.h / config.ini).
     // Flash values for these fields are ignored so reflashing always takes effect.
@@ -2353,6 +2358,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             }
             else if (!strcmp(param, "ISS_SG_DERIV_THR")) ISS_SG_DERIV_THR = clamp_i(iv, 0, 500);
             else if (!strcmp(param, "ISS_SG_TARGET"))    ISS_SG_TARGET = clamp_f(fv, 0.0f, 1023.0f);
+            else if (!strcmp(param, "ISS_FOLLOW_MS"))    ISS_FOLLOW_TIMEOUT_MS = clamp_i(iv, 1000, 60000);
             else if (!strcmp(param, "BASELINE"))         g_baseline_sps = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
             else if (!strcmp(param, "BUF_SENSOR"))   BUF_SENSOR_TYPE = clamp_i(iv, 0, 1);
             else if (!strcmp(param, "BUF_NEUTRAL"))  BUF_NEUTRAL = clamp_f(fv, 0.0f, 1.0f);
@@ -2412,6 +2418,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "ISS_CURRENT_MA"))   snprintf(out, sizeof(out), "ISS_CURRENT_MA:%d", TMC_ISS_CURRENT_MA);
         else if (!strcmp(param, "ISS_SG_DERIV_THR")) snprintf(out, sizeof(out), "ISS_SG_DERIV_THR:%d", ISS_SG_DERIV_THR);
         else if (!strcmp(param, "ISS_SG_TARGET"))    snprintf(out, sizeof(out), "ISS_SG_TARGET:%.1f", (double)ISS_SG_TARGET);
+        else if (!strcmp(param, "ISS_FOLLOW_MS"))    snprintf(out, sizeof(out), "ISS_FOLLOW_MS:%d", ISS_FOLLOW_TIMEOUT_MS);
         else if (!strcmp(param, "BASELINE"))     snprintf(out, sizeof(out), "BASELINE:%.1f", (double)sps_to_mm_per_min(g_baseline_sps));
         else if (!strcmp(param, "BUF_SENSOR"))   snprintf(out, sizeof(out), "BUF_SENSOR:%d", BUF_SENSOR_TYPE);
         else if (!strcmp(param, "BUF_NEUTRAL"))  snprintf(out, sizeof(out), "BUF_NEUTRAL:%.3f", (double)BUF_NEUTRAL);
