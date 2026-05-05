@@ -134,19 +134,8 @@ else ()
             set(PICO_COMPILER_SYSROOT "/usr/arm-none-eabi")
         endif()
         
-        # On Linux/Pi, Clang often needs help finding the C++ machine-specific headers
-        # (like bits/c++config.h) which are buried in a subdirectory.
-        if (PICO_COMPILER_SYSROOT)
-            file(GLOB _cpp_headers "/usr/lib/arm-none-eabi/include/c++/*")
-            if (_cpp_headers)
-                list(GET _cpp_headers 0 _cpp_base)
-                if (EXISTS "${_cpp_base}/arm-none-eabi")
-                    set(CMAKE_CXX_FLAGS_INIT "${CMAKE_CXX_FLAGS_INIT} -isystem ${_cpp_base}/arm-none-eabi")
-                endif()
-            endif()
-        endif()
     endif()
-endif ()
+endif()
 
 if (NOT PICO_COMPILER_SYSROOT)
     message(FATAL_ERROR
@@ -180,6 +169,18 @@ endif ()
 # -mfpu=none            : explicit for ATfE multilib matching (set in _pico_extra_flags)
 # --sysroot             : headers/libs; for ATfE this is the clang-runtimes parent
 set(_common_flags "--target=${_pico_target_triple} -mfloat-abi=soft -march=armv6m ${_pico_extra_flags} --sysroot=${PICO_COMPILER_SYSROOT} -fno-exceptions -fno-rtti")
+
+# On Linux/Pi, Clang often needs help finding the C++ machine-specific headers
+# (like bits/c++config.h) which are buried in a subdirectory.
+if (NOT PICO_COMPILER_SYSROOT_IS_ATFE AND PICO_COMPILER_SYSROOT)
+    file(GLOB _cpp_headers "/usr/lib/arm-none-eabi/include/c++/*")
+    if (_cpp_headers)
+        list(GET _cpp_headers 0 _cpp_base)
+        if (EXISTS "${_cpp_base}/arm-none-eabi")
+            string(APPEND _common_flags " -isystem ${_cpp_base}/arm-none-eabi")
+        endif()
+    endif()
+endif()
 
 # Inject include_patches/ before the SDK include search path so that our
 # hardware/sync.h wrapper (which uses #include_next) is found first.  The
