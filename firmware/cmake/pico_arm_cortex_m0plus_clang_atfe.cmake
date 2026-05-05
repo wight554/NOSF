@@ -232,16 +232,16 @@ foreach(LANG IN ITEMS C CXX ASM)
 endforeach()
 
 # Clang drives the linker:
-#   --sysroot   : must match the compiler sysroot so the linker finds the same
-#                 multilib.yaml (for ATfE) or the same lib/ directory (others).
+#   --target / --sysroot : required so the linker finds the correct libraries.
 #   -nostartfiles: picolibc's crt0.o (which would be auto-linked from the
 #                 sysroot) references picolibc-specific linker symbols like
 #                 __stack and __arm32_tls_tcb_offset that the Pico SDK's
 #                 memmap_default.ld does not define.  The Pico SDK provides
 #                 its own startup code (pico_crt0/crt0.S), so suppress the
 #                 default startup files from the C library.
+set(_link_flags "--target=${_pico_target_triple} --sysroot=${PICO_COMPILER_SYSROOT} -nostartfiles -nostdlib++ ${_pico_extra_link_flags}")
 foreach(TYPE IN ITEMS EXE SHARED MODULE)
-    set(CMAKE_${TYPE}_LINKER_FLAGS_INIT "-nostartfiles -nostdlib++ ${_pico_extra_link_flags}")
+    set(CMAKE_${TYPE}_LINKER_FLAGS_INIT "${_link_flags}")
 endforeach()
 
 # try_compile needs -nostdlib to avoid undefined _exit symbols.
