@@ -98,6 +98,7 @@ static int PRE_RAMP_SPS = CONF_PRE_RAMP_SPS;
 static int BUF_HYST_MS = CONF_BUF_HYST_MS;
 static int BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
 static float BUF_HALF_TRAVEL_MM = CONF_BUF_HALF_TRAVEL_MM;
+static int SYNC_AUTO_STOP_MS = 2000;
 static bool BUF_INVERT = false;
 static bool AUTO_PRELOAD = true;
 static int AUTOLOAD_RETRACT_MM = 10;
@@ -434,6 +435,8 @@ static int active_lane = 0;
 static bool toolhead_has_filament = false;
 
 static bool sync_enabled = false;
+static bool sync_auto_started = false;
+static uint32_t sync_idle_since_ms = 0;
 static int sync_current_sps = 0;
 static int g_baseline_sps = CONF_BASELINE_SPS;
 static float g_baseline_alpha = CONF_BASELINE_ALPHA;
@@ -708,9 +711,22 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         }
 
         char lane_s[2] = { (char)('0' + L->lane_id), 0 };
-        if (toolhead_has_filament) {
+        // Success Triggers: 
+        // 1. Host reported TS:1
+        // 2. Buffer Advance (Extruder is pulling)
+        // 3. Buffer Trailing (Filament reached gears/blockage) AFTER passing OUT sensor
+        bool loaded = toolhead_has_filament || (g_buf.state == BUF_ADVANCE) || 
+                     (L->unload_sensor_latch && g_buf.state == BUF_TRAILING);
+
+        if (loaded) {
             lane_stop(L);
             cmd_event("LOADED", lane_s);
+            // Automatically enable sync if we are in RELOAD_MODE
+            if (RELOAD_MODE) {
+                sync_enabled = true;
+                sync_auto_started = true;
+                sync_idle_since_ms = 0;
+            }
         } else if (!lane_in_present(L) && (int32_t)(now_ms - L->motion_started_ms) >= 1000) {
             if (lane_out_present(L)) {
                 // Tail between IN and OUT: keep pushing until OUT clears or 10s timeout.
@@ -1599,13 +1615,41 @@ static void buf_sensor_tick(uint32_t now_ms) {
 }
 
 static void sync_tick(uint32_t now_ms) {
-    if (!sync_enabled || tc_state() != TC_IDLE) return;
+    lane_t *A = lane_ptr(active_lane);
+    if (!A || tc_state() != TC_IDLE) return;
+
+    buf_state_t s = g_buf.state;
+
+    // 1. Automated Start (RELOAD_MODE=1)
+    if (RELOAD_MODE && !sync_enabled && s == BUF_ADVANCE) {
+        sync_enabled = true;
+        sync_auto_started = true;
+        sync_idle_since_ms = 0;
+        cmd_event("SYNC", "AUTO_START");
+    }
+
+    if (!sync_enabled) return;
+
+    // 2. Automated Stop (if auto-started)
+    if (sync_auto_started) {
+        if (s == BUF_ADVANCE) {
+            sync_idle_since_ms = 0;
+        } else {
+            if (sync_idle_since_ms == 0) sync_idle_since_ms = now_ms;
+            if (SYNC_AUTO_STOP_MS > 0 && (now_ms - sync_idle_since_ms) > (uint32_t)SYNC_AUTO_STOP_MS) {
+                sync_enabled = false;
+                sync_auto_started = false;
+                sync_current_sps = 0;
+                sync_apply_to_active();
+                cmd_event("SYNC", "AUTO_STOP");
+                return;
+            }
+        }
+    }
+
     if ((now_ms - sync_last_tick_ms) < (uint32_t)SYNC_TICK_MS) return;
 
     sync_last_tick_ms = now_ms;
-    lane_t *A = lane_ptr(active_lane);
-
-    buf_state_t s = g_buf.state;  // kept current by buf_sensor_tick()
 
     if (s == BUF_FAULT) {
         sync_current_sps = 0;
@@ -1709,7 +1753,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 27u
+#define SETTINGS_VERSION 28u
 
 typedef struct {
     uint32_t magic;
@@ -1719,6 +1763,7 @@ typedef struct {
     int sync_max_sps, sync_min_sps;
     int sync_ramp_up, sync_ramp_dn;
     int sync_tick_ms, pre_ramp_sps;
+    int sync_auto_stop_ms;
     float buf_half_travel_mm;
     int buf_hyst_ms, buf_predict_thr_ms;
     float baseline_alpha;
@@ -1800,6 +1845,7 @@ static void settings_defaults(void) {
     SYNC_RAMP_DN_SPS = CONF_SYNC_RAMP_DN_SPS;
     SYNC_TICK_MS = CONF_SYNC_TICK_MS;
     PRE_RAMP_SPS = CONF_PRE_RAMP_SPS;
+    SYNC_AUTO_STOP_MS = 2000;
     BUF_HALF_TRAVEL_MM = CONF_BUF_HALF_TRAVEL_MM;
     BUF_HYST_MS = CONF_BUF_HYST_MS;
     BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
@@ -1911,6 +1957,7 @@ static void settings_save(void) {
     s.sync_ramp_dn = SYNC_RAMP_DN_SPS;
     s.sync_tick_ms = SYNC_TICK_MS;
     s.pre_ramp_sps = PRE_RAMP_SPS;
+    s.sync_auto_stop_ms = SYNC_AUTO_STOP_MS;
     s.buf_half_travel_mm = BUF_HALF_TRAVEL_MM;
     s.buf_hyst_ms = BUF_HYST_MS;
     s.buf_predict_thr_ms = BUF_PREDICT_THR_MS;
@@ -2058,6 +2105,7 @@ static void settings_load(void) {
     SYNC_RAMP_DN_SPS = s->sync_ramp_dn;
     SYNC_TICK_MS = s->sync_tick_ms;
     PRE_RAMP_SPS = s->pre_ramp_sps;
+    SYNC_AUTO_STOP_MS = s->sync_auto_stop_ms;
     BUF_HALF_TRAVEL_MM = s->buf_half_travel_mm;
     BUF_HYST_MS = s->buf_hyst_ms;
     BUF_PREDICT_THR_MS = s->buf_predict_thr_ms;
@@ -2332,6 +2380,8 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         int v = atoi(p);
         if (v == 0 || v == 1) {
             sync_enabled = (v == 1);
+            sync_auto_started = false; // Host control overrides auto-stop
+            if (v == 0) sync_current_sps = 0;
             cmd_reply("OK", NULL);
         } else {
             cmd_reply("ER", "ARG");
@@ -2457,6 +2507,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "BUF_THR"))      BUF_THR = clamp_f(fv, 0.01f, 0.99f);
         else if (!strcmp(base_param, "BUF_ALPHA"))    BUF_ANALOG_ALPHA = clamp_f(fv, 0.01f, 1.0f);
         else if (!strcmp(base_param, "SYNC_KP_RATE"))      SYNC_KP_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
+        else if (!strcmp(base_param, "SYNC_AUTO_STOP"))   SYNC_AUTO_STOP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "TS_BUF_MS"))    TS_BUF_FALLBACK_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "STARTUP_MS"))   MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "STALL_MS"))     STALL_RECOVERY_MS = clamp_i(iv, 0, 10000);
@@ -2524,7 +2575,8 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "BUF_RANGE"))    snprintf(out, sizeof(out), "BUF_RANGE:%.3f", (double)BUF_RANGE);
         else if (!strcmp(param, "BUF_THR"))      snprintf(out, sizeof(out), "BUF_THR:%.3f", (double)BUF_THR);
         else if (!strcmp(param, "BUF_ALPHA"))    snprintf(out, sizeof(out), "BUF_ALPHA:%.3f", (double)BUF_ANALOG_ALPHA);
-        else if (!strcmp(param, "SYNC_KP_RATE")) snprintf(out, sizeof(out), "SYNC_KP_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_KP_SPS, idx));
+        else if (!strcmp(param, "SYNC_KP_RATE"))     snprintf(out, sizeof(out), "SYNC_KP_RATE:%.1f", (double)sps_to_mm_per_min(SYNC_KP_SPS));
+        else if (!strcmp(param, "SYNC_AUTO_STOP"))   snprintf(out, sizeof(out), "SYNC_AUTO_STOP:%d", SYNC_AUTO_STOP_MS);
         else if (!strcmp(param, "TS_BUF_MS"))    snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
         else if (!strcmp(param, "STARTUP_MS"))   snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
         else if (!strcmp(param, "STALL_MS"))     snprintf(out, sizeof(out), "STALL_MS:%d", STALL_RECOVERY_MS);
