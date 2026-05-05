@@ -56,6 +56,7 @@ run_current:
 # sync_ramp_up_rate: 25
 # sync_ramp_dn_rate: 13
 # sync_tick_ms: 20
+# baseline_rate: 2100        # starting sync speed (mm/min); set to your print feed rate
 # baseline_alpha: 0.15
 # buf_predict_thr_ms: 250
 # sync_kp_rate: 850
