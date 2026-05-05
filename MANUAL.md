@@ -15,11 +15,11 @@ Events:    EV:TYPE:DATA\n  (unsolicited, emitted any time)
 
 | Command | Description |
 |---------|-------------|
-| `LO:` | Load active lane — runs forward at `AUTO` speed until OUT sensor triggers, then retracts `RETRACT_MM`. Parks filament at OUT position. |
-| `FD:` | Manual continuous forward feed at `FEED` speed. Runs until `ST:`. No auto-stop. |
-| `FL:` | Full load to toolhead — runs forward at `FEED` speed until host sends `TS:1` (toolhead sensor). Guards: IN sensor must be present, other lane OUT must be clear. Timeout = `TC_LOAD_MS`. Emits `EV:LOADED:<lane>` on success, `EV:LOAD_TIMEOUT` on timeout. |
-| `UL:` | Unload from extruder — runs reverse at `REV` speed until OUT sensor clears. Use when tip is past OUT (in bowden / extruder). Returns `ER:NOT_LOADED` if OUT is not triggered (use `UM:` instead). |
-| `UM:` | Unload from MMU — runs reverse at `REV` speed until IN sensor clears. Use when tip is inside the MMU path. |
+| `LO:` | Load active lane — runs forward at `AUTO_RATE` speed until OUT sensor triggers, then retracts `RETRACT_MM`. Parks filament at OUT position. |
+| `FD:` | Manual continuous forward feed at `FEED_RATE` speed. Runs until `ST:`. No auto-stop. |
+| `FL:` | Full load to toolhead — runs forward at `FEED_RATE` speed until host sends `TS:1` (toolhead sensor). Guards: IN sensor must be present, other lane OUT must be clear. Timeout = `TC_LOAD_MS`. Emits `EV:LOADED:<lane>` on success, `EV:LOAD_TIMEOUT` on timeout. |
+| `UL:` | Unload from extruder — runs reverse at `REV_RATE` speed until OUT sensor clears. Use when tip is past OUT (in bowden / extruder). Returns `ER:NOT_LOADED` if OUT is not triggered (use `UM:` instead). |
+| `UM:` | Unload from MMU — runs reverse at `REV_RATE` speed until IN sensor clears. Use when tip is inside the MMU path. |
 | `MV:<mm>:<f>` | Move active lane exactly `mm` millimetres at feed rate `f` mm/min (Klipper `F` units). Positive `mm` = forward, negative = reverse. Motor ramps up then runs for the computed duration, then stops. Emits `EV:MOVE_DONE:<lane>` on completion. Disables sync mode. Example: `MV:-10:300` = retract 10 mm at 5 mm/s (equivalent to `G1 E-10 F300`). |
 | `CU:` | Run cutter sequence on active lane. Returns `ER:CUTTER_DISABLED` if `CUTTER` toggle is off. |
 | `ST:` | Stop all motion immediately. Aborts toolchange and cutter. |
@@ -33,7 +33,7 @@ Both `UL:` and `UM:` stop automatically when the target sensor clears and emit `
 | Command | Description |
 |---------|-------------|
 | `T:<1\|2>` | Set active lane without motion. |
-| `TC:<1\|2>` | Full toolchange to lane N. Unloads current lane (cuts if `CUTTER=1`), swaps, then runs the new lane forward at `FEED` speed until toolhead sensor (`TS:1`). Returns `ER:NO_ACTIVE_LANE` if active lane is unknown. |
+| `TC:<1\|2>` | Full toolchange to lane N. Unloads current lane (cuts if `CUTTER=1`), swaps, then runs the new lane forward at `FEED_RATE` speed until toolhead sensor (`TS:1`). Returns `ER:NO_ACTIVE_LANE` if active lane is unknown. |
 
 ---
 
@@ -66,7 +66,7 @@ I2,O2          Lane 2 IN/OUT sensor
 TH:<n>         Toolhead filament (from TS:)
 YS:<n>         Y-splitter sensor
 BUF:<state>    Buffer state (MID/ADVANCE/TRAILING/FAULT)
-SPS:<n>        Current sync speed (mm/min)
+RATE:<n>       Current sync speed (mm/min)
 BL:<n>         Baseline sync speed (mm/min)
 BP:<n>         Normalised buffer position (-1.0 = full trailing … +1.0 = full advance)
 SM:<n>         Sync mode enabled
@@ -87,14 +87,14 @@ SET:<param>:<value>
 GET:<param>
 ```
 
-All speed parameters use **mm/min** (same as Klipper `F`). Defaults are hardware-dependent and scale with `MM_PER_STEP`; values below assume `MM_PER_STEP=0.001417`.
+All speed parameters use **mm/min** (same as Klipper `F`).
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `FEED` | Feed speed for `FL:`, `FD:`, TC load (mm/min) | ≈2126 |
-| `REV` | Reverse speed for `UL:`, `UM:` (mm/min) | ≈2126 |
-| `AUTO` | Autoload / `LO:` speed (mm/min) | ≈2126 |
-| `STARTUP_MS` | Stall arm delay after motion start (ms) | 10000 |
+| `FEED_RATE` | Feed speed for `FL:`, `FD:`, TC load (mm/min) | 2100 |
+| `REV_RATE` | Reverse speed for `UL:`, `UM:` (mm/min) | 2100 |
+| `AUTO_RATE` | Autoload / `LO:` speed (mm/min) | 2100 |
+| `STARTUP_MS` | Stall arm delay after motion start (ms) | 1000 |
 | `AUTO_PRELOAD` | Auto-start preload on IN insert (`0`/`1`) | 1 |
 | `RETRACT_MM` | Back-off distance after OUT trigger on autoload (mm) | 10 |
 | `CUTTER` | Enable cutter (`0`/`1`) | 0 |
@@ -110,29 +110,32 @@ All speed parameters use **mm/min** (same as Klipper `F`). Defaults are hardware
 | `TC_Y_MS` | Wait for Y-splitter to clear after unload (ms, 0 = skip) | 5000 |
 | `TC_TH_MS` | Wait for `TS:` from host (ms, 0 = skip) | 3000 |
 | `TC_LOAD_MS` | Toolchange load timeout (ms) | 60000 |
-| `SYNC_MAX` | Max sync speed (mm/min) | ≈2551 |
-| `SYNC_MIN` | Min sync speed (mm/min) | 0 |
-| `SYNC_KP` | Proportional gain: speed correction at full buffer deflection (mm/min per unit) | ≈851 |
-| `SYNC_UP` | Sync ramp-up increment (SPS per 20 ms tick) — increase for faster printers: ~600 at 20 mm/s, ~1200 at 40 mm/s | 300 |
-| `SYNC_DN` | Sync ramp-down increment (SPS per 20 ms tick) when speed target decreases | 150 |
+| `SYNC_MAX_RATE` | Max sync speed (mm/min) | 2500 |
+| `SYNC_MIN_RATE` | Min sync speed (mm/min) | 0 |
+| `SYNC_KP_RATE` | Proportional gain: speed correction at full buffer deflection (mm/min per unit) | 850 |
+| `SYNC_UP_RATE` | Sync ramp-up increment (mm/min per 20 ms tick) | 25 |
+| `SYNC_DN_RATE` | Sync ramp-down increment (mm/min per 20 ms tick) | 13 |
+| `RAMP_STEP_RATE` | Normal motion ramp increment (mm/min per 5 ms tick) | 17 |
 | `SYNC_RATIO` | Buffer arm velocity → speed scale factor | 1.0 |
-| `PRE_RAMP` | Pre-advance speed offset (mm/min) | ≈34 |
+| `PRE_RAMP_RATE` | Pre-advance speed offset (mm/min) | 35 |
 | `BUF_TRAVEL` | Half-travel of buffer arm (mm) | 5.0 |
 | `BUF_HYST` | Buffer zone debounce (ms) | 30 |
-| `BASELINE` | Baseline sync speed override (mm/min) | adaptive |
+| `BASELINE_RATE` | Baseline sync speed override (mm/min) | adaptive |
 | `BUF_SENSOR` | Buffer sensor type: `0` = dual endstop, `1` = analog PSF | 0 |
 | `BUF_NEUTRAL` | Analog sensor: ADC fraction at mechanical neutral (0.0–1.0) | 0.5 |
 | `BUF_RANGE` | Analog sensor: ADC fraction from neutral to full deflection | 0.45 |
 | `BUF_THR` | Analog sensor: normalised threshold to declare ADVANCE/TRAILING | 0.30 |
 | `BUF_ALPHA` | Analog sensor: EMA filter weight (higher = faster response) | 0.20 |
 | `TS_BUF_MS` | Buffer-based TS:1 fallback: ms buffer must hold TRAILING after OUT seen — tip pressed against extruder gears (0 = disabled) | 2000 |
-| `ISS_JOIN_SPS` | ISS approach speed (steps/s); must exceed max print speed | 25000 |
-| `ISS_PRESS_SPS` | ISS follow sync top speed (steps/s) — used when buffer is MID/ADVANCE | 15000 |
-| `ISS_TRAILING_SPS` | ISS follow sync coast speed (steps/s) — used when buffer is TRAILING | 8000 |
-| `ISS_SG_DERIV_THR` | ISS approach SG derivative threshold: drop/tick that fires contact detection (2-endstop only) | 3 |
-| `ISS_SG_TARGET` | ISS follow sync SG setpoint: motor speed scales from `ISS_PRESS_SPS` (SG ≥ target) to 0 (SG = 0) (2-endstop only; 0 = disabled) | 7 |
-| `SGT_L1` | Lane 1 SGTHRS — DIAG fires when SG_RESULT ≤ 2 × value; arms immediately at ISS approach start; 0 = disabled | 0 |
-| `SGT_L2` | Lane 2 SGTHRS — DIAG fires when SG_RESULT ≤ 2 × value; arms immediately at ISS approach start; 0 = disabled | 0 |
+| `ISS_JOIN_RATE` | ISS approach speed (mm/min); must exceed max print speed | 2100 |
+| `ISS_PRESS_RATE` | ISS follow sync top speed (mm/min) — used when buffer is MID/ADVANCE | 1275 |
+| `ISS_TRAILING_RATE` | ISS follow sync coast speed (mm/min) — used when buffer is TRAILING | 42 |
+| `ISS_SG_DERIV` | ISS approach SG derivative threshold: drop/tick that fires contact detection | 3 |
+| `ISS_SG_TARGET` | ISS follow sync SG setpoint: motor speed scales from `ISS_PRESS_RATE` (SG ≥ target) to 0 (SG = 0) (0 = disabled) | 0.0 |
+| `ISS_SG_MA_LEN` | ISS StallGuard moving average window length | 5 |
+| `ISS_FOLLOW_MS` | ISS follow sync timeout (ms) before error | 10000 |
+| `SGT_L1` | Lane 1 SGTHRS — DIAG fires when SG_RESULT ≤ 2 × value; 0 = disabled | 0 |
+| `SGT_L2` | Lane 2 SGTHRS — DIAG fires when SG_RESULT ≤ 2 × value; 0 = disabled | 0 |
 | `TCOOLTHRS` | StallGuard activation: SG active when TSTEP ≤ this value (TSTEP = ~12.5 MHz ÷ SPS). Default `0xFFFFF` (max) ensures StallGuard is active at all speeds. | 0xFFFFF |
 
 ### Per-lane
@@ -207,26 +210,26 @@ Events are emitted without being requested. Format: `EV:<type>:<data>\n`.
 
 ```bash
 # Status
-python3 scripts/nosf_test.py "?:"
+python3 scripts/nosf_cmd.py "?:"
 
 # Load lane 1
-python3 scripts/nosf_test.py "T:1" "LO:"
+python3 scripts/nosf_cmd.py "T:1" "LO:"
 
 # Unload from extruder (tip past OUT sensor)
-python3 scripts/nosf_test.py "UL:"
+python3 scripts/nosf_cmd.py "UL:"
 
 # Unload from MMU (tip inside MMU, before OUT sensor)
-python3 scripts/nosf_test.py "UM:"
+python3 scripts/nosf_cmd.py "UM:"
 
 # Toolchange to lane 2
-python3 scripts/nosf_test.py "TC:2"
+python3 scripts/nosf_cmd.py "TC:2"
 
 # Monitor StallGuard on lane 1
 python3 scripts/sg_monitor.py --lane 1
 
 # Save settings
-python3 scripts/nosf_test.py "SV:"
+python3 scripts/nosf_cmd.py "SV:"
 
 # Reboot to BOOTSEL
-python3 scripts/nosf_test.py "BOOT:"
+python3 scripts/nosf_cmd.py "BOOT:"
 ```

@@ -3,7 +3,7 @@
 NOSF — SG Monitor
 Feeds a lane at a fixed speed and continuously prints StallGuard values.
 Use this to characterise free-air SG, observe contact drops, and verify
-ISS_SG_TARGET / ISS_SG_DERIV_THR / SGT_L1 / SGT_L2 before or after tuning.
+ISS_SG_TARGET / ISS_SG_DERIV / SGT_L1 / SGT_L2 before or after tuning.
 """
 import argparse
 import serial
@@ -64,29 +64,24 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Speed selection:
-  --iss       Read ISS_JOIN_SPS from device and use it as feed speed.
+  --iss       Read ISS_JOIN_RATE from device and use it as feed speed.
               This is the recommended mode for SGT calibration — it matches
               the exact speed used during ISS approach.
-  --speed S   Explicit feed speed in mm/min (use if --iss is unavailable).
+  --speed S   Explicit feed speed in mm/min.
 
 Examples:
   # SGT calibration at ISS approach speed (auto-read from device):
   python3 scripts/sg_monitor.py --lane 1 --iss
 
   # Free-air observation at explicit speed:
-  python3 scripts/sg_monitor.py --lane 1 --speed 2120
+  python3 scripts/sg_monitor.py --lane 1 --speed 2100
 
   # Bowden friction characterisation at slow speed:
   python3 scripts/sg_monitor.py --lane 1 --speed 600
 
-Tip: the bar scales to the highest SG seen since start.  Let the motor settle
+Tip: the bar scales to the highest SG seen since start. Let the motor settle
 for a few seconds before touching the filament so the bar is calibrated to
 the free-air baseline.
-
-Note: SG_RESULT is computed by the TMC2209 whenever TSTEP <= TCOOLTHRS —
-independent of SGTHRS.  If values are stuck at 0, verify TCOOLTHRS covers
-your operating speed (default CONF_TCOOLTHRS=1000 covers the full speed
-range at typical SPS values).
 """)
     parser.add_argument("--port",     help="Serial port (auto-detected if omitted)")
     parser.add_argument("--lane",     type=int, choices=[1, 2], default=1,
@@ -98,7 +93,7 @@ range at typical SPS values).
     speed_group.add_argument("--speed", type=float,
                              help="Feed speed in mm/min")
     speed_group.add_argument("--iss",   action="store_true",
-                             help="Read ISS_JOIN_SPS from device and derive mm/min")
+                             help="Read ISS_JOIN_RATE from device")
     args = parser.parse_args()
 
     port = args.port or find_port()
@@ -112,25 +107,26 @@ range at typical SPS values).
 
     try:
         if args.iss:
-            sps_str = get_value(ser, "ISS_JOIN_SPS")
-            mps_str = get_value(ser, "MM_PER_STEP")
-            if sps_str is None:
-                print("Could not read ISS_JOIN_SPS from device. Use --speed instead.")
+            speed_str = get_value(ser, "ISS_JOIN_RATE")
+            if speed_str is None:
+                # Fallback for old firmware key
+                speed_str = get_value(ser, "ISS_JOIN")
+                
+            if speed_str is None:
+                print("Could not read ISS_JOIN_RATE from device. Use --speed instead.")
                 sys.exit(1)
-            iss_join_sps = int(sps_str)
-            mm_per_step  = float(mps_str) if mps_str else 0.001417
-            speed = iss_join_sps * mm_per_step * 60.0
-            print(f"ISS_JOIN_SPS = {iss_join_sps} SPS  →  {speed:.0f} mm/min")
+            speed = float(speed_str)
+            print(f"ISS_JOIN_RATE = {speed:.0f} mm/min")
         else:
             speed = args.speed
 
         print(f"Lane {args.lane}  |  {speed:.0f} mm/min  |  Ctrl+C to stop\n")
         resp = send_wait(ser, f"T:{args.lane}")
-        print(f"  T:{args.lane}        → {resp}")
-        resp = send_wait(ser, f"SET:FEED:{speed:.0f}")
-        print(f"  SET:FEED:{speed:.0f} → {resp}")
+        print(f"  T:{args.lane}             → {resp}")
+        resp = send_wait(ser, f"SET:FEED_RATE:{speed:.0f}")
+        print(f"  SET:FEED_RATE:{speed:.0f} → {resp}")
         resp = send_wait(ser, "FD:")
-        print(f"  FD:        → {resp}")
+        print(f"  FD:             → {resp}")
         if resp == "timeout" or resp.startswith("ER:"):
             print("Error: Could not start motor. Check active lane and filament sensors.")
             sys.exit(1)
@@ -175,9 +171,6 @@ range at typical SPS values).
                 print(f"  Observed drop                : {sg_peak - sg_floor}  ({drop_pct}%)")
                 print(f"  Suggested SGT_L{args.lane}           : {suggested_sgt}"
                       f"  (DIAG fires at SG ≤ {suggested_sgt * 2})")
-                print(f"  Note: suggestion uses absolute floor (full-stall territory).")
-                print(f"  If you observed a stable jam plateau above {sg_floor},")
-                print(f"  use that value instead: SGT_L{args.lane} = <plateau> / 2")
     finally:
         send_wait(ser, "ST:")
         ser.close()

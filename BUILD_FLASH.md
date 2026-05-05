@@ -87,7 +87,7 @@ picotool reboot
 
 ## 5) Tuning and Validation Helpers
 
-Please see `README.md` for the full list of tuning and validation helper scripts (like `scripts/tune_iss_sg.py` and `scripts/nosf_test.py`).
+Please see `README.md` for the full list of tuning and validation helper scripts (like `scripts/tune_iss_sg.py` and `scripts/nosf_cmd.py`).
 
 ## Troubleshooting
 
@@ -107,7 +107,7 @@ PICOTOOL=/path/to/picotool bash scripts/flash_nosf.sh
 
 1. Replug USB cable.
 2. Ensure firmware built with USB stdio enabled.
-3. Run `python3 scripts/nosf_test.py --port <port> "VR:"`.
+3. Run `python3 scripts/nosf_cmd.py --port <port> "VR:"`.
 
 ### BOOTSEL trigger fails
 

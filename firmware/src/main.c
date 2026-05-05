@@ -37,7 +37,7 @@ static int ISS_Y_TIMEOUT_MS = CONF_ISS_Y_TIMEOUT_MS;
 static int ISS_JOIN_SPS = CONF_ISS_JOIN_SPS;
 static int ISS_PRESS_SPS = CONF_ISS_PRESS_SPS;
 static int ISS_TRAILING_SPS = CONF_ISS_TRAILING_SPS;
-static int ISS_SG_DERIV_THR = CONF_ISS_SG_DERIV_THR;
+static int ISS_SG_DERIV = CONF_ISS_SG_DERIV;
 static float ISS_SG_TARGET = CONF_ISS_SG_TARGET;
 static int ISS_FOLLOW_TIMEOUT_MS = CONF_ISS_FOLLOW_TIMEOUT_MS;
 
@@ -545,7 +545,7 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
 
     // Hybrid mode: Use StealthChop and ISS_CURRENT_MA ONLY for automatic ISS/Sync tasks
     // AND only if StallGuard is actually enabled.
-    bool sg_active = (ISS_SG_TARGET > 0.0f || ISS_SG_DERIV_THR > 0 || TMC_SGT_L1 > 0 || TMC_SGT_L2 > 0);
+    bool sg_active = (ISS_SG_TARGET > 0.0f || ISS_SG_DERIV > 0 || TMC_SGT_L1 > 0 || TMC_SGT_L2 > 0);
     bool is_iss_sensitive = (t == TASK_FEED && g_tc_ctx.state != TC_IDLE && sg_active);
 
     bool run_spreadcycle = TMC_SPREADCYCLE && !is_iss_sensitive;
@@ -1170,7 +1170,7 @@ static void tc_tick(uint32_t now_ms) {
 
                             float deriv = sg_ma - g_tc_ctx.sg_ma_prev;
                             g_tc_ctx.sg_ma_prev = sg_ma;
-                            if (ISS_SG_DERIV_THR > 0 && deriv < -(float)ISS_SG_DERIV_THR)
+                            if (ISS_SG_DERIV > 0 && deriv < -(float)ISS_SG_DERIV)
                                 contacted = true;
                         } else {
                             g_tc_ctx.sg_ma_prev = (float)sg_raw;
@@ -1672,7 +1672,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 17u
+#define SETTINGS_VERSION 18u
 
 typedef struct {
     uint32_t magic;
@@ -1719,7 +1719,7 @@ typedef struct {
     int iss_join_sps;
     int iss_press_sps;
     int iss_trailing_sps;
-    int iss_sg_deriv_thr;
+    int iss_sg_deriv;
     float iss_sg_target;
     int iss_follow_timeout_ms;
 
@@ -1816,7 +1816,7 @@ static void settings_defaults(void) {
     ISS_JOIN_SPS = CONF_ISS_JOIN_SPS;
     ISS_PRESS_SPS = CONF_ISS_PRESS_SPS;
     ISS_TRAILING_SPS = CONF_ISS_TRAILING_SPS;
-    ISS_SG_DERIV_THR = CONF_ISS_SG_DERIV_THR;
+    ISS_SG_DERIV = CONF_ISS_SG_DERIV;
     ISS_SG_TARGET = CONF_ISS_SG_TARGET;
     ISS_FOLLOW_TIMEOUT_MS = CONF_ISS_FOLLOW_TIMEOUT_MS;
 }
@@ -1894,7 +1894,7 @@ static void settings_save(void) {
     s.iss_join_sps = ISS_JOIN_SPS;
     s.iss_press_sps = ISS_PRESS_SPS;
     s.iss_trailing_sps = ISS_TRAILING_SPS;
-    s.iss_sg_deriv_thr = ISS_SG_DERIV_THR;
+    s.iss_sg_deriv = ISS_SG_DERIV;
     s.iss_sg_target = ISS_SG_TARGET;
     s.iss_follow_timeout_ms = ISS_FOLLOW_TIMEOUT_MS;
 
@@ -2010,7 +2010,7 @@ static void settings_load(void) {
     ISS_JOIN_SPS = s->iss_join_sps;
     ISS_PRESS_SPS = s->iss_press_sps;
     ISS_TRAILING_SPS = s->iss_trailing_sps;
-    ISS_SG_DERIV_THR = s->iss_sg_deriv_thr;
+    ISS_SG_DERIV = s->iss_sg_deriv;
     ISS_SG_TARGET = s->iss_sg_target;
     ISS_FOLLOW_TIMEOUT_MS = s->iss_follow_timeout_ms;
 
@@ -2327,7 +2327,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
                 if (g_lane1.task == TASK_FEED) tmc_set_run_current_ma(&g_tmc1, TMC_ISS_CURRENT_MA, TMC_HOLD_CURRENT_MA[0]);
                 if (g_lane2.task == TASK_FEED) tmc_set_run_current_ma(&g_tmc2, TMC_ISS_CURRENT_MA, TMC_HOLD_CURRENT_MA[1]);
             }
-            else if (!strcmp(param, "ISS_SG_DERIV")) ISS_SG_DERIV_THR = clamp_i(iv, 0, 1000);
+            else if (!strcmp(param, "ISS_SG_DERIV")) ISS_SG_DERIV = clamp_i(iv, 0, 1000);
             else if (!strcmp(param, "ISS_SG_TARGET"))    ISS_SG_TARGET = clamp_f(fv, 0.0f, 1023.0f);
             else if (!strcmp(param, "ISS_FOLLOW_MS"))    ISS_FOLLOW_TIMEOUT_MS = clamp_i(iv, 1000, 60000);
             else if (!strcmp(param, "BASELINE_RATE"))    g_baseline_sps = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
@@ -2384,20 +2384,20 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "CUTTER"))         snprintf(out, sizeof(out), "CUTTER:%d", ENABLE_CUTTER ? 1 : 0);
         else if (!strcmp(param, "ISS_MODE"))         snprintf(out, sizeof(out), "ISS_MODE:%d", ISS_MODE);
         else if (!strcmp(param, "ISS_Y_MS"))         snprintf(out, sizeof(out), "ISS_Y_MS:%d", ISS_Y_TIMEOUT_MS);
-        else if (!strcmp(param, "ISS_JOIN"))     snprintf(out, sizeof(out), "ISS_JOIN:%.1f", (double)sps_to_mm_per_min(ISS_JOIN_SPS));
-        else if (!strcmp(param, "ISS_PRESS"))    snprintf(out, sizeof(out), "ISS_PRESS:%.1f", (double)sps_to_mm_per_min(ISS_PRESS_SPS));
-        else if (!strcmp(param, "ISS_TRAILING")) snprintf(out, sizeof(out), "ISS_TRAILING:%.1f", (double)sps_to_mm_per_min(ISS_TRAILING_SPS));
+        else if (!strcmp(param, "ISS_JOIN_RATE"))     snprintf(out, sizeof(out), "ISS_JOIN_RATE:%.1f", (double)sps_to_mm_per_min(ISS_JOIN_SPS));
+        else if (!strcmp(param, "ISS_PRESS_RATE"))    snprintf(out, sizeof(out), "ISS_PRESS_RATE:%.1f", (double)sps_to_mm_per_min(ISS_PRESS_SPS));
+        else if (!strcmp(param, "ISS_TRAILING_RATE")) snprintf(out, sizeof(out), "ISS_TRAILING_RATE:%.1f", (double)sps_to_mm_per_min(ISS_TRAILING_SPS));
         else if (!strcmp(param, "ISS_CURRENT_MA"))   snprintf(out, sizeof(out), "ISS_CURRENT_MA:%d", TMC_ISS_CURRENT_MA);
-        else if (!strcmp(param, "ISS_SG_DERIV_THR")) snprintf(out, sizeof(out), "ISS_SG_DERIV_THR:%d", ISS_SG_DERIV_THR);
+        else if (!strcmp(param, "ISS_SG_DERIV")) snprintf(out, sizeof(out), "ISS_SG_DERIV:%d", ISS_SG_DERIV);
         else if (!strcmp(param, "ISS_SG_TARGET"))    snprintf(out, sizeof(out), "ISS_SG_TARGET:%.1f", (double)ISS_SG_TARGET);
         else if (!strcmp(param, "ISS_FOLLOW_MS"))    snprintf(out, sizeof(out), "ISS_FOLLOW_MS:%d", ISS_FOLLOW_TIMEOUT_MS);
-        else if (!strcmp(param, "BASELINE"))     snprintf(out, sizeof(out), "BASELINE:%.1f", (double)sps_to_mm_per_min(g_baseline_sps));
+        else if (!strcmp(param, "BASELINE_RATE"))     snprintf(out, sizeof(out), "BASELINE_RATE:%.1f", (double)sps_to_mm_per_min(g_baseline_sps));
         else if (!strcmp(param, "BUF_SENSOR"))   snprintf(out, sizeof(out), "BUF_SENSOR:%d", BUF_SENSOR_TYPE);
         else if (!strcmp(param, "BUF_NEUTRAL"))  snprintf(out, sizeof(out), "BUF_NEUTRAL:%.3f", (double)BUF_NEUTRAL);
         else if (!strcmp(param, "BUF_RANGE"))    snprintf(out, sizeof(out), "BUF_RANGE:%.3f", (double)BUF_RANGE);
         else if (!strcmp(param, "BUF_THR"))      snprintf(out, sizeof(out), "BUF_THR:%.3f", (double)BUF_THR);
         else if (!strcmp(param, "BUF_ALPHA"))    snprintf(out, sizeof(out), "BUF_ALPHA:%.3f", (double)BUF_ANALOG_ALPHA);
-        else if (!strcmp(param, "SYNC_KP"))      snprintf(out, sizeof(out), "SYNC_KP:%.1f", (double)sps_to_mm_per_min(SYNC_KP_SPS));
+        else if (!strcmp(param, "SYNC_KP_RATE"))      snprintf(out, sizeof(out), "SYNC_KP_RATE:%.1f", (double)sps_to_mm_per_min(SYNC_KP_SPS));
         else if (!strcmp(param, "TS_BUF_MS"))    snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
         else if (!strcmp(param, "STARTUP_MS"))   snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
         else if (!strcmp(param, "STALL_MS"))     snprintf(out, sizeof(out), "STALL_MS:%d", STALL_RECOVERY_MS);

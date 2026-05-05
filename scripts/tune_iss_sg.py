@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ISS StallGuard Tuning — NOSF
-Calibrates ISS_SG_TARGET and ISS_SG_DERIV_THR for Endless Spool contact detection.
+Calibrates ISS_SG_TARGET and ISS_SG_DERIV for Endless Spool contact detection.
 
 StallGuard (SG) in NOSF is used ONLY in ISS (Endless Spool) mode:
   - TC_ISS_APPROACH: SG moving-average derivative detects tip-to-tail contact at
@@ -57,7 +57,7 @@ def read_sg(ser, lane, timeout=1.0):
                     pass
     return None
 
-def get_int(ser, key):
+def get_value(ser, key):
     ser.reset_input_buffer()
     ser.write(f"GET:{key}\n".encode())
     deadline = time.time() + 2.0
@@ -66,7 +66,9 @@ def get_int(ser, key):
             line = ser.readline().decode(errors='ignore').strip()
             if line.startswith(f"OK:{key}:"):
                 try:
-                    return int(line.split(':', 2)[2])
+                    # Handle both int and float response
+                    val_str = line.split(':', 2)[2]
+                    return float(val_str)
                 except (ValueError, IndexError):
                     pass
     return None
@@ -83,18 +85,17 @@ def sample_sg(ser, lane, duration=3.0, interval=0.02):
 
 # ── Tuning phases ─────────────────────────────────────────────────────────────
 
-def phase_free_air(ser, lane, join_sps):
-    feed_mm_min = int(join_sps * 0.001417 * 60)
+def phase_free_air(ser, lane, join_rate):
     print(f"\n{'='*60}")
     print("Phase 1 — Free-Air Baseline")
     print(f"{'='*60}")
-    print(f"Motor will run at ISS_JOIN_SPS = {join_sps} SPS  ({feed_mm_min} mm/min).")
+    print(f"Motor will run at ISS_JOIN_RATE = {join_rate:.0f} mm/min.")
     print("Make sure the filament tip for this lane is free:")
     print("  hanging in air, inside PTFE, or parked before any contact point.")
     input("Press Enter to start measurement...")
 
     send_wait(ser, f"T:{lane}")
-    send_wait(ser, f"SET:FEED:{feed_mm_min}")
+    send_wait(ser, f"SET:FEED_RATE:{join_rate:.0f}")
     send_wait(ser, "FD:")
     time.sleep(0.8)  # let ramp settle
 
@@ -105,7 +106,7 @@ def phase_free_air(ser, lane, join_sps):
 
     if len(samples) < 5:
         print(f"\nERROR: Only {len(samples)} SG readings received.")
-        print("Check that CONF_SGT_L1 / CONF_SGT_L2 is non-zero (SGTHRS > 0 in config.h)")
+        print("Check that SGT_L1 / SGT_L2 is non-zero (SGTHRS > 0 in config.ini)")
         print("and that TCOOLTHRS is high enough to enable SG at this speed.")
         return None
 
@@ -117,12 +118,11 @@ def phase_free_air(ser, lane, join_sps):
     if stdev_sg > mean_sg * 0.3:
         print("  WARNING: high variability (σ > 30% of mean).")
         print("           Noisy SG can cause false approach triggers.")
-        print("           Consider increasing CONF_ISS_SG_MA_LEN in config.h.")
+        print("           Consider increasing iss_sg_ma_len in config.ini.")
 
     return mean_sg, stdev_sg
 
-def phase_contact(ser, lane, join_sps, free_air_sg):
-    feed_mm_min = int(join_sps * 0.001417 * 60)
+def phase_contact(ser, lane, join_rate, free_air_sg):
     print(f"\n{'='*60}")
     print("Phase 2 — Contact Calibration (optional)")
     print(f"{'='*60}")
@@ -135,7 +135,7 @@ def phase_contact(ser, lane, join_sps, free_air_sg):
     input("Press Enter to start motor, then apply pressure...")
 
     send_wait(ser, f"T:{lane}")
-    send_wait(ser, f"SET:FEED:{feed_mm_min}")
+    send_wait(ser, f"SET:FEED_RATE:{join_rate:.0f}")
     send_wait(ser, "FD:")
     time.sleep(0.8)
 
@@ -162,12 +162,12 @@ def phase_contact(ser, lane, join_sps, free_air_sg):
 
 def compute_recommendations(free_air_sg, contact_floor=None):
     # ISS_SG_TARGET: midpoint between free-air and zero.
-    # At the target the motor runs at half ISS_PRESS_SPS — gentle push.
+    # At the target the motor runs at half ISS_PRESS_RATE — gentle push.
     # Below it speed scales toward 0 (hard contact → stop).
     target = max(1, round(free_air_sg * 0.5))
 
-    # ISS_SG_DERIV_THR: per-tick MA derivative that signals approach contact.
-    # Approach runs at ISS_JOIN_SPS; contact is abrupt (SG drops in 1–2 ticks).
+    # ISS_SG_DERIV: per-tick MA derivative that signals approach contact.
+    # Approach runs at ISS_JOIN_RATE; contact is abrupt (SG drops in 1–2 ticks).
     # Threshold = ~40 % of total observable drop per tick.
     if contact_floor is not None:
         total_drop = max(1.0, free_air_sg - contact_floor)
@@ -178,15 +178,13 @@ def compute_recommendations(free_air_sg, contact_floor=None):
 
     # SGT (SGTHRS): hard-contact DIAG fallback in ISS approach.
     # TMC fires DIAG when SG_RESULT ≤ 2 × SGTHRS.
-    # Set so DIAG fires at the hard-contact floor — catches jams missed by
-    # the SG derivative (e.g., very slow contact or noisy derivative signal).
     if contact_floor is not None:
         sgt = max(1, round(contact_floor / 2))
     else:
         # Without contact data: rough estimate — assume 70 % drop at hard crash.
         sgt = max(1, round(free_air_sg * 0.15))
 
-    return {'ISS_SG_TARGET': target, 'ISS_SG_DERIV_THR': deriv_thr, 'SGT': sgt}
+    return {'ISS_SG_TARGET': target, 'ISS_SG_DERIV': deriv_thr, 'SGT': sgt}
 
 def print_recommendations(recs, free_air_sg, contact_floor, lane):
     print(f"\n{'='*60}")
@@ -198,15 +196,15 @@ def print_recommendations(recs, free_air_sg, contact_floor, lane):
     print()
 
     tgt = recs['ISS_SG_TARGET']
-    dth = recs['ISS_SG_DERIV_THR']
+    dth = recs['ISS_SG_DERIV']
     sgt = recs['SGT']
 
-    print(f"  ISS_SG_TARGET    = {tgt}  (global)")
+    print(f"  ISS_SG_TARGET    = {tgt}")
     print(f"    Follow sync gentle-pressure setpoint.")
-    print(f"    Motor speed scales linearly from ISS_PRESS_SPS (SG ≥ {tgt})")
+    print(f"    Motor speed scales linearly from ISS_PRESS_RATE (SG ≥ {tgt})")
     print(f"    down to 0 (SG = 0). Adjust if pressure feels too light or too heavy.")
     print()
-    print(f"  ISS_SG_DERIV_THR = {dth}  (global)")
+    print(f"  ISS_SG_DERIV     = {dth}")
     print(f"    Approach contact sensitivity: SG drop > {dth}/tick triggers handoff")
     print(f"    from fast approach to follow sync.")
     print(f"    Lower → more sensitive (catches softer contacts).")
@@ -215,15 +213,9 @@ def print_recommendations(recs, free_air_sg, contact_floor, lane):
     print(f"  SGT_L{lane}          = {sgt}  (per-lane SGTHRS)")
     print(f"    Hard-contact DIAG fallback for lane {lane}.")
     print(f"    TMC fires DIAG when SG_RESULT ≤ {2*sgt}  (= 2 × {sgt}).")
-    print(f"    Catches jams the SG derivative misses (slow contact, noisy SG).")
-    print(f"    Also provides jam protection during TC_ISS_FOLLOW.")
-    print(f"    Lower → triggers on lighter contacts; Higher → only hard jams.")
     print()
-    print("NOTE: ISS_SG_TARGET and ISS_SG_DERIV_THR are global (both lanes).")
+    print("NOTE: ISS_SG_TARGET and ISS_SG_DERIV are global (both lanes).")
     print(f"  SGT_L{lane} is per-lane — run this script for each lane separately.")
-    print("  For global params, use the more conservative values across lanes:")
-    print("    ISS_SG_TARGET    → lower of the two")
-    print("    ISS_SG_DERIV_THR → lower of the two")
     print()
     print("Apply commands:")
     for k, v in recs.items():
@@ -234,10 +226,8 @@ def print_recommendations(recs, free_air_sg, contact_floor, lane):
     print("Fine-tuning:")
     print("  ISS_SG_TARGET too high → motor backs off too early (weak pressure)")
     print("  ISS_SG_TARGET too low  → motor pushes too hard    (jam risk)")
-    print("  ISS_SG_DERIV_THR too high → approach misses contacts (rare false-no)")
-    print("  ISS_SG_DERIV_THR too low  → approach triggers on noise (early handoff)")
-    print(f"  SGT_L{lane} too high → DIAG fires on light contacts (premature stop)")
-    print(f"  SGT_L{lane} too low  → DIAG misses real jams (no fallback protection)")
+    print("  ISS_SG_DERIV too high  → approach misses contacts (rare false-no)")
+    print("  ISS_SG_DERIV too low   → approach triggers on noise (early handoff)")
 
 def apply_settings(ser, recs, lane):
     print("\nApplying...")
@@ -252,21 +242,20 @@ def apply_settings(ser, recs, lane):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ISS StallGuard tuning — calibrates ISS_SG_TARGET and ISS_SG_DERIV_THR",
+        description="ISS StallGuard tuning — calibrates ISS_SG_TARGET and ISS_SG_DERIV",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Workflow:
   Step 1 — free-air baseline (always required):
     python3 scripts/tune_iss_sg.py --lane 1
 
-  Step 2 — contact calibration (improves ISS_SG_DERIV_THR accuracy):
+  Step 2 — contact calibration (improves ISS_SG_DERIV accuracy):
     python3 scripts/tune_iss_sg.py --lane 1 --contact
 
   Step 3 — apply and save:
     python3 scripts/tune_iss_sg.py --lane 1 --contact --apply
 
-SG is only active in ISS mode (BUF_SENSOR_TYPE=0).
-It is NOT used during normal buffer sync.
+SG is only active in ISS mode.
 """)
     parser.add_argument("--port", help="Serial port (auto-detected if omitted)")
     parser.add_argument("--lane", type=int, choices=[1, 2], default=1,
@@ -287,19 +276,23 @@ It is NOT used during normal buffer sync.
         sys.exit(1)
 
     try:
-        join_sps = get_int(ser, "ISS_JOIN_SPS")
-        if join_sps is None:
-            print("Could not read ISS_JOIN_SPS. Is NOSF firmware running?")
+        join_rate = get_value(ser, "ISS_JOIN_RATE")
+        if join_rate is None:
+            # Fallback for old firmware key
+            join_rate = get_value(ser, "ISS_JOIN")
+            
+        if join_rate is None:
+            print("Could not read ISS_JOIN_RATE from device. Is NOSF firmware running?")
             sys.exit(1)
 
-        result = phase_free_air(ser, args.lane, join_sps)
+        result = phase_free_air(ser, args.lane, join_rate)
         if result is None:
             sys.exit(1)
         free_air_sg, _ = result
 
         contact_floor = None
         if args.contact:
-            contact_floor = phase_contact(ser, args.lane, join_sps, free_air_sg)
+            contact_floor = phase_contact(ser, args.lane, join_rate, free_air_sg)
 
         recs = compute_recommendations(free_air_sg, contact_floor)
         print_recommendations(recs, free_air_sg, contact_floor, args.lane)

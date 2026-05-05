@@ -7,7 +7,7 @@ navigation guide at the bottom to load only the sections relevant to your task.
 
 ## Firmware Architecture
 
-All firmware logic lives in one file: `firmware/src/main.c` (~2600 lines).
+All firmware logic lives in one file: `firmware/src/main.c` (~2700 lines).
 There is no RTOS. The main loop calls a set of tick functions every iteration;
 each tick function is a non-blocking state machine that checks `now_ms` and
 returns immediately if nothing needs doing.
@@ -116,13 +116,9 @@ Every runtime parameter that must survive reboot goes through `settings_t`.
    block after `settings_load()` (search for `tmc_set_sgthrs` for an example)
 8. Add `SET:` handler (search for `!strcmp(param, "STARTUP_MS")` for location)
 9. Add `GET:` handler (search for `snprintf(out` block)
-10. **Bump `SETTINGS_VERSION`** at line ~1659 — if you skip this, saved
-    settings from a previous flash will be silently loaded with wrong values
+10. **Bump `SETTINGS_VERSION`** at line ~1659
 
-Current `SETTINGS_VERSION`: **13** (grep `main.c` to confirm before bumping)
-
-`settings_t` has a compile-time size check — it must fit in one flash page
-(256 bytes). Check the static assert near the `settings_t` definition.
+Current `SETTINGS_VERSION`: **17** (grep `main.c` to confirm before bumping)
 
 ---
 
@@ -153,47 +149,44 @@ NL->stall_armed = true;   // must come after lane_start, not before
 if (!sync_enabled || tc_state() != TC_IDLE) return;
 ```
 
-Buffer sync must not run during any toolchange or ISS state. Do not remove
-or widen this guard.
+Buffer sync must not run during any toolchange or ISS state.
 
 ### 3. `SG_RESULT` ≠ `SGTHRS`
 
-- **`SG_RESULT`** (0–511): continuous load measurement read via UART
-  (`tmc_read_sg_result()`). Active whenever `TSTEP ≤ TCOOLTHRS`. Used for
+- **`SG_RESULT`** (0–511): continuous load measurement read via UART. Used for
   ISS speed interpolation and derivative contact detection.
 - **`SGTHRS`** (0–255): threshold that controls the **DIAG pin** only.
-  `DIAG` fires when `SG_RESULT ≤ 2 × SGTHRS`. Does not affect whether
-  `SG_RESULT` is computed. Set per-lane via `TMC_SGT_L1` / `TMC_SGT_L2`.
+  `DIAG` fires when `SG_RESULT ≤ 2 × SGTHRS`.
 - **`TCOOLTHRS`**: gates both. SG active when `TSTEP ≤ TCOOLTHRS`.
-  At `ISS_JOIN_SPS = 25000`: `TSTEP ≈ 500`; default `TCOOLTHRS = 1000` → SG active.
 
 ### 4. ISS SG parameters — global vs per-lane
 
 | Parameter | Scope | Reason |
 |-----------|-------|--------|
 | `ISS_SG_TARGET` | Global | Speed interpolation setpoint |
-| `ISS_SG_DERIV_THR` | Global | Contact detection sensitivity |
+| `ISS_SG_DERIV` | Global | Contact detection sensitivity |
 | `TMC_SGT_L1` / `TMC_SGT_L2` | Per-lane | Lanes may have different bowden friction |
 | `TMC_TCOOLTHRS` | Global (both TMCs updated together) | Single threshold for both |
 
 ### 5. Stall handling differs by context
 
-- **During sync** (`stall_handle`): first stall → recovery mode (ramp back up);
+- **During sync**: first stall → recovery mode (ramp back up);
   second stall within `STALL_RECOVERY_MS` → `FAULT_STALL` hard stop.
 - **During `TC_ISS_APPROACH`**: stall = contact detected → clear fault,
   stop motor, transition to `TC_ISS_FOLLOW`.
 - **During `TC_ISS_FOLLOW`**: stall = pressure spike → clear fault, drop
   speed to `ISS_TRAILING_SPS`, continue.
 
-### 6. `MM_PER_STEP` conversion
+### 6. `MM_PER_STEP` and Speed Conversion
 
-Speed params exposed over serial are in **mm/min**. Internally all speeds are
-**SPS (steps per second)**. Helper functions:
+Speed params exposed over serial (SET/GET) are in **mm/min** and use the **`_RATE`** suffix. Internally all speeds are **SPS (steps per second)**. Helper functions in `main.c` handle the conversion:
+
 ```c
-int mm_per_min_to_sps(float mm_min);
-float sps_to_mm_per_min(int sps);
+static inline int mm_per_min_to_sps(float mm_per_min);
+static inline float sps_to_mm_per_min(int sps);
 ```
-`MM_PER_STEP` defaults to `0.001417` (tunable via `SET:MM_PER_STEP`).
+
+When adding a speed parameter, ensure the SET handler uses `mm_per_min_to_sps()` and the GET handler uses `sps_to_mm_per_min()`.
 
 ---
 
@@ -203,19 +196,15 @@ float sps_to_mm_per_min(int sps);
 
 Look for `!strcmp(param, "STARTUP_MS")` in the SET block and
 `snprintf(out, sizeof(out), "STARTUP_MS:%d"` in the GET block.
-Insert new handlers adjacent to related params. Pattern:
 
+Pattern for speed parameters:
 ```c
 // SET:
-else if (!strcmp(param, "MY_PARAM")) MY_PARAM = clamp_i(iv, 0, 9999);
+else if (!strcmp(param, "FEED_RATE")) FEED_SPS = mm_per_min_to_sps(fv);
 
 // GET:
-else if (!strcmp(param, "MY_PARAM")) snprintf(out, sizeof(out), "MY_PARAM:%d", MY_PARAM);
+else if (!strcmp(param, "FEED_RATE")) snprintf(out, sizeof(out), "FEED_RATE:%.1f", (double)sps_to_mm_per_min(FEED_SPS));
 ```
-
-For float params use `fv` (already parsed from the command string) and `clamp_f`.
-For params that must immediately update hardware, call the TMC function inside
-the SET handler (e.g. `tmc_set_sgthrs(&g_tmc1, ...)`).
 
 ### Emit an event
 
@@ -241,7 +230,7 @@ cmd_reply("ER", "REASON");          // → ER:REASON
 | Modify ISS approach or follow logic | `main.c` around `TC_ISS_APPROACH` / `TC_ISS_FOLLOW` cases + `BEHAVIOR.md` §StallGuard in ISS |
 | Modify buffer sync | `main.c` `sync_tick()` function + `BEHAVIOR.md` §Buffer sync speed control |
 | StallGuard tuning or calibration | `BEHAVIOR.md` §StallGuard + §Tuning ISS StallGuard |
-| Add a new serial command | `main.c` command dispatch block (search `} else if (!strcmp(cmd`) |
+| Add a new serial command | `main.c` command dispatch block |
 | Hardware pinout / sensor wiring | `HARDWARE.md` |
 | Klipper macros or shell helper | `KLIPPER.md` |
 | Full command / parameter reference | `MANUAL.md` |

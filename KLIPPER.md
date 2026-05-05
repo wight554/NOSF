@@ -32,11 +32,11 @@ sudo usermod -a -G dialout pi   # substitute your username if not 'pi'
 ## Shell command helper — nosf_cmd.py
 
 `scripts/nosf_cmd.py` sends a single NOSF command and blocks until the
-response arrives.  Simple commands (SET:, GET:, T:, SM:, TS:, SG:, FD:, ST:,
-…) return on the first `OK:`/`ER:`.  Long-running commands (`TC:`, `FL:`,
+response arrives. Simple commands (SET:, GET:, T:, SM:, TS:, SG:, FD:, ST:,
+…) return on the first `OK:`/`ER:`. Long-running commands (`TC:`, `FL:`,
 `UL:`, `UM:`) wait for their completion event (`EV:TC:DONE`, `EV:LOADED`,
-`EV:UNLOADED`, …) or the corresponding error/timeout event.  Exit code is 0 on
-success, 1 on error or timeout.  All received lines are printed so Klipper's
+`EV:UNLOADED`, …) or the corresponding error/timeout event. Exit code is 0 on
+success, 1 on error or timeout. All received lines are printed so Klipper's
 `VERBOSE` output shows them in the Mainsail / Fluidd console.
 
 Install the Klipper `gcode_shell_command` extension if not already present
@@ -51,7 +51,7 @@ timeout: 130.0
 verbose: True
 ```
 
-Adjust the path to match your Pi home directory.  Test:
+Adjust the path to match your Pi home directory. Test:
 ```
 RUN_SHELL_COMMAND CMD=nosf PARAMS="?:"
 ```
@@ -66,7 +66,7 @@ buffer sync.
 
 ### Option A — Physical sensor (recommended)
 
-Wire a microswitch or optical sensor to a free GPIO on the printer MCU.  Add to
+Wire a microswitch or optical sensor to a free GPIO on the printer MCU. Add to
 `printer.cfg`:
 
 ```ini
@@ -102,7 +102,7 @@ gcode:
 ## Toolchange macros — TC:
 
 `TC:<lane>` unloads the current lane (optionally cuts), swaps, loads the new
-lane, and waits for `TS:1`.  `nosf_cmd.py` blocks until `EV:TC:DONE` or
+lane, and waits for `TS:1`. `nosf_cmd.py` blocks until `EV:TC:DONE` or
 `EV:TC:ERROR`, so Klipper naturally pauses printing during the change.
 
 ```ini
@@ -123,7 +123,7 @@ gcode:
 
 > **Temperature management:** `gcode_shell_command` holds the Klipper scheduler
 > while the shell process runs — heaters stay regulated, but no additional G-code
-> is processed until the command returns.  Set `TC_LOAD_MS` and `TC_UNLOAD_MS`
+> is processed until the command returns. Set `TC_LOAD_MS` and `TC_UNLOAD_MS`
 > conservatively so a jam does not hold Klipper indefinitely.
 
 If `TC:` returns an error, `nosf_cmd.py` exits with code 1.
@@ -169,7 +169,7 @@ gcode:
 ## Sync mode
 
 Buffer sync enables automatically when `TS:1` is received and disables when
-unload starts.  No explicit `SM:` calls are normally needed.
+unload starts. No explicit `SM:` calls are normally needed.
 
 For manual override — e.g., before tip-shaping retraction moves:
 ```ini
@@ -186,34 +186,34 @@ gcode:
 
 ## Buffer sync tuning
 
-### SYNC_KP — proportional buffer correction
+### SYNC_KP_RATE — proportional buffer correction
 
-`SYNC_KP` (mm/min per unit arm deflection) is the main speed correction when
-the buffer arm deflects toward the extruder side.  Default ≈ 851 mm/min.
+`SYNC_KP_RATE` (mm/min per unit arm deflection) is the main speed correction when
+the buffer arm deflects toward the extruder side. Default 850 mm/min.
 
 Monitor buffer state during a print:
 ```bash
 # EV:BS lines print every 500 ms: zone, sync speed, normalised arm position
-python3 scripts/nosf_test.py "SM:1"
+python3 scripts/nosf_cmd.py "?:"
 ```
 
 A healthy steady-state print:
 ```
-EV:BS:MID,2125.5,0.01
-EV:BS:MID,2126.0,-0.02
-EV:BS:ADVANCE,2551.0,0.43    ← extruder accelerating
+EV:BS:MID,2100.0,0.01
+EV:BS:MID,2100.0,-0.02
+EV:BS:ADVANCE,2500.0,0.43    ← extruder accelerating
 EV:BS:MID,2250.0,0.11        ← settling back
 ```
 
-**If the arm stays at ADVANCE during steady extrusion:** increase `SYNC_KP`:
-```
-SET:SYNC_KP:1200
+**If the arm stays at ADVANCE during steady extrusion:** increase `SYNC_KP_RATE`:
+```bash
+python3 scripts/nosf_cmd.py "SET:SYNC_KP_RATE:1200"
 ```
 
-**If speed oscillates MID ↔ ADVANCE ↔ MID rapidly:** decrease `SYNC_KP`.
+**If speed oscillates MID ↔ ADVANCE ↔ MID rapidly:** decrease `SYNC_KP_RATE`.
 
 Target: arm at MID during steady extrusion, touching ADVANCE only on
-acceleration ramps.  For a stiff bowden or fast printer, 1000–2000 mm/min is
+acceleration ramps. For a stiff bowden or fast printer, 1000–2000 mm/min is
 typical.
 
 ### BUF_ALPHA — EMA weight for arm position
@@ -227,12 +227,8 @@ zone value (endstop sensors only).
 | 0.20      | ~200 ms                           | Default — balanced |
 | 0.40      | ~100 ms                           | Fast; some overshoot risk |
 
-Increase if ADVANCE correction builds too slowly.  Decrease if motor speed
+Increase if ADVANCE correction builds too slowly. Decrease if motor speed
 oscillates.
-
-> **TRAILING→MID:** Negative `g_buf_pos` is clamped to zero on return to MID,
-> so recovery after a TRAILING stop is controlled by `SYNC_UP` alone.
-> ADVANCE→MID retains the positive lag for smooth deceleration.
 
 ---
 
@@ -244,6 +240,6 @@ oscillates.
 | `TS:1` not reaching NOSF | Sensor wiring or config | Test: `RUN_SHELL_COMMAND CMD=nosf PARAMS="TS:1"` |
 | `TC:` times out | Bowden too long / jam | Increase `TC_LOAD_MS` / `TC_UNLOAD_MS` |
 | Sync not enabling after load | No `TS:1` sent | Check sensor or enable `TS_BUF_MS` fallback |
-| ISS approach never detects contact | `ISS_SG_DERIV_THR` too high or TCOOLTHRS too low | Run `tune_iss_sg.py --lane N --contact`; verify `CONF_TCOOLTHRS` covers operating speed |
-| ISS approach fires immediately (false trigger) | `ISS_SG_DERIV_THR` too low | Increase `ISS_SG_DERIV_THR`; or increase `CONF_ISS_SG_MA_LEN` to smooth noise |
-| ISS follow sync motor stops mid-bowden | SG dropping to 0 (hard friction) | Check PTFE routing; reduce `ISS_PRESS_SPS` |
+| ISS approach never detects contact | `ISS_SG_DERIV` too high or TCOOLTHRS too low | Run `tune_iss_sg.py --lane N --contact`; verify `TCOOLTHRS` covers operating speed |
+| ISS approach fires immediately (false trigger) | `ISS_SG_DERIV` too low | Increase `ISS_SG_DERIV`; or increase `iss_sg_ma_len` in config.ini |
+| ISS follow sync motor stops mid-bowden | SG dropping to 0 (hard friction) | Check PTFE routing; reduce `ISS_PRESS_RATE` |

@@ -93,15 +93,15 @@ Other runtime boolean state:
 Examples:
 
 ```bash
-python3 scripts/nosf_test.py "SET:AUTO_PRELOAD:1" "GET:AUTO_PRELOAD"
-python3 scripts/nosf_test.py "SET:SM:1" "GET:SM"
-python3 scripts/nosf_test.py "SET:BI:0" "GET:BI"
+python3 scripts/nosf_cmd.py "SET:AUTO_PRELOAD:1" "GET:AUTO_PRELOAD"
+python3 scripts/nosf_cmd.py "SET:SM:1" "GET:SM"
+python3 scripts/nosf_cmd.py "SET:BI:0" "GET:BI"
 ```
 
 Persist runtime values to flash:
 
 ```bash
-python3 scripts/nosf_test.py "SV:"
+python3 scripts/nosf_cmd.py "SV:"
 ```
 
 ## Tuning Scripts
@@ -111,8 +111,7 @@ python3 scripts/nosf_test.py "SV:"
 - `scripts/klipper_tune.py`: Apply/read Klipper-style parameters
 - `scripts/tmc_chopconf.py`: Direct CHOPCONF read/write utility
 - `STALLGUARD.md`: Deep-dive guide on StallGuard & ISS tuning
-- `scripts/nosf_cmd.py`: Single-command serial helper for Klipper integration
-- `scripts/nosf_test.py`: Send arbitrary serial commands quickly
+- `scripts/nosf_cmd.py`: Robust single-command serial helper for Klipper integration
 
 All scripts support `--port`; if omitted they auto-detect from available serial devices.
 
@@ -122,7 +121,7 @@ Examples:
 python3 scripts/klipper_tune.py --lane 1 read
 python3 scripts/klipper_tune.py --lane 2 apply config.ini
 python3 scripts/tmc_chopconf.py --lane 1 read
-python3 scripts/nosf_test.py "VR:" "?:"
+python3 scripts/nosf_cmd.py "VR:" "?:"
 ```
 
 ## Build Notes

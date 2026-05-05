@@ -9,9 +9,9 @@ This document provides a deep dive into tuning the **Infinite Spool System (ISS)
 Unlike a standard MMU, the ISS must match the speed of the printer's extruder. We use StallGuard as a "pressure sensor" to achieve this.
 
 1.  **Free-Air Baseline**: When the motor is spinning with no resistance, StallGuard reports a high value (the `SG_RESULT`).
-2.  **Contact/Tension**: As you pull against the filament (simulating the extruder pulling), the `SG_RESULT` drops.
+2.  **Contact/Tension**: As the extruder pulls the filament, the `SG_RESULT` drops.
 3.  **Speed Adjustment**: The firmware calculates the ratio: `sg_frac = SG_RESULT / ISS_SG_TARGET`.
-    *   If `sg_frac >= 1.0`: Motor runs at full speed (`ISS_PRESS_SPS`) to catch up.
+    *   If `sg_frac >= 1.0`: Motor runs at full speed (`ISS_PRESS_RATE`) to catch up.
     *   If `sg_frac < 1.0`: Motor slows down proportionally to match the tension.
 
 ---
@@ -25,10 +25,11 @@ This is the most important value. It defines the point where the motor *begins* 
 *   **Tuning Rule**: Set this to **~10% below your Free-Air SG reading**.
     *   Example: If `EV:BS` shows a ratio of `1.5` at idle with a target of `200`, your actual SG is `300`. Set `ISS_SG_TARGET` to `270`.
 
-### 2. `ISS_TRAILING_SPS` (The "Quiet Stop" Speed)
+### 2. `ISS_TRAILING_RATE` (The "Quiet Stop" Speed)
 When the buffer arm is fully deflected (trailing), the motor slows to this speed.
-*   **High (1000+)**: Motor may grind or "beep" loudly when it hits the physical limit.
-*   **Low (300–500)**: Motor crawls silently and gently when stalled. This is much more pleasant.
+*   **High (100+)**: Motor may grind or "beep" loudly when it hits the physical limit.
+*   **Low (30–50)**: Motor crawls silently and gently when stalled. This is much more pleasant.
+*   **Unit**: mm/min.
 
 ### 3. `ISS_CURRENT_MA` (Sensitivity vs. Torque)
 *   Higher current (800mA+) makes the motor stronger but can make the StallGuard signal "noisier."
@@ -43,13 +44,13 @@ This sets the sensitivity of the `DIAG` pin (the hard-stop).
 ## Debugging with `EV:BS`
 
 Use a serial monitor to watch the `BS` (Buffer Status) events during an ISS follow:
-`EV:BS:MID,1700.9,1.10`
+`EV:BS:MID,1275.0,1.10`
 
 *   **`MID`**: Buffer zone.
-*   **`1700.9`**: Current speed in mm/min.
+*   **`1275.0`**: Current speed in mm/min.
 *   **`1.10`**: The **StallGuard Ratio**. 
     *   **Goal**: This should be **1.05 to 1.15** when running in free air.
-    *   **Reaction**: It should drop smoothly to **0.50** when you apply medium pressure.
+    *   **Reaction**: It should drop smoothly to **0.50** when medium tension is applied.
 
 ---
 
@@ -57,7 +58,7 @@ Use a serial monitor to watch the `BS` (Buffer Status) events during an ISS foll
 
 ### "My motor is beeping at stall"
 This happens when the motor is forced to a halt but the firmware is still trying to drive it at a speed higher than its "slip" frequency. 
-*   **Fix**: Lower `ISS_TRAILING_SPS` to **500** or lower.
+*   **Fix**: Lower `ISS_TRAILING_RATE` to **42** (equivalent to ~500 SPS) or lower.
 
 ### "The motor doesn't slow down until I pull really hard"
 *   **Fix**: Your `ISS_SG_TARGET` is too low. Increase it until the idle `EV:BS` ratio is around **1.1**.
@@ -70,12 +71,13 @@ This happens when the motor is forced to a halt but the firmware is still trying
 ## The "Golden State" Reference
 For **FYSETC G36HSY4405-6D-1200** at **800mA**:
 ```bash
-SET:ISS_SG_TARGET:320
-SET:ISS_TRAILING_SPS:500
-SET:ISS_CURRENT_MA:800
-SET:SGT_L1:50
-SET:SGT_L2:50
+python3 scripts/nosf_cmd.py "SET:ISS_SG_TARGET:320"
+python3 scripts/nosf_cmd.py "SET:ISS_TRAILING_RATE:42"
+python3 scripts/nosf_cmd.py "SET:ISS_CURRENT_MA:800"
+python3 scripts/nosf_cmd.py "SET:SGT_L1:50"
+python3 scripts/nosf_cmd.py "SET:SGT_L2:50"
 
 # Safety timeout (10s)
-SET:ISS_FOLLOW_MS:10000
+python3 scripts/nosf_cmd.py "SET:ISS_FOLLOW_MS:10000"
+python3 scripts/nosf_cmd.py "SV:"
 ```
