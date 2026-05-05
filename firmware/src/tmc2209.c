@@ -56,6 +56,10 @@ bool tmc_init(tmc_t *t, uint tx_pin, uint rx_pin, uint8_t addr) {
     pio_sm_set_enabled(t->pio, t->sm_tx, true); // Keep TX SM enabled permanently to manage pin state
     pio_sm_set_enabled(t->pio, t->sm_rx, true); // Keep RX SM enabled permanently to autonomously track line state
 
+    // MUST enable internal pull-up so that when we switch to INPUT during reads,
+    // the line is held HIGH (if TMC2209 pdn_disable=1 turns off its internal pull-down)
+    gpio_pull_up(t->tx_pin);
+
     return true;
 }
 
@@ -115,6 +119,10 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
         }
     }
 
+    // Now release the pin to INPUT so the TMC2209 can reply. 
+    // (Requires internal pull-up and pdn_disable=1 so it stays HIGH during idle)
+    pio_sm_set_pindirs_with_mask(t->pio, t->sm_tx, 0, 1u << t->tx_pin);
+
     uint64_t timeout_us = time_us_64() + 5000;
     int received = 0;
     
@@ -123,6 +131,9 @@ bool tmc_read(tmc_t *t, uint8_t reg, uint32_t *out) {
             rep[received++] = (uint8_t)(pio_sm_get(t->pio, t->sm_rx) >> 24); // Right-shifted 32-bit pull puts LSB at bit 24
         }
     }
+
+    // Restore pin to OUTPUT HIGH
+    pio_sm_set_pindirs_with_mask(t->pio, t->sm_tx, 1u << t->tx_pin, 1u << t->tx_pin);
 
     if (received < 8) return false;
     
@@ -161,6 +172,9 @@ int tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t *buf_out) {
         }
     }
 
+    // Now release the pin to INPUT so the TMC2209 can reply.
+    pio_sm_set_pindirs_with_mask(t->pio, t->sm_tx, 0, 1u << t->tx_pin);
+
     uint64_t timeout_us = time_us_64() + 5000;
     int n = 0;
     
@@ -169,6 +183,9 @@ int tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t *buf_out) {
             buf_out[n++] = (uint8_t)(pio_sm_get(t->pio, t->sm_rx) >> 24);
         }
     }
+
+    // Restore pin to OUTPUT HIGH
+    pio_sm_set_pindirs_with_mask(t->pio, t->sm_tx, 1u << t->tx_pin, 1u << t->tx_pin);
 
     return n;
 }
