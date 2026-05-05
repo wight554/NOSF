@@ -572,7 +572,7 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     bool run_spreadcycle = TMC_SPREADCYCLE && (t != TASK_FEED);
     int current_ma = (t == TASK_FEED) ? TMC_ISS_CURRENT_MA : TMC_RUN_CURRENT_MA[L->lane_id-1];
     tmc_set_spreadcycle(L->tmc, run_spreadcycle);
-    tmc_set_run_current(L->tmc, current_ma);
+    tmc_set_run_current_ma(L->tmc, current_ma, TMC_HOLD_CURRENT_MA[L->lane_id-1]);
 }
 
 static void lane_tick(lane_t *L, uint32_t now_ms) {
@@ -2302,8 +2302,8 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             else if (!strcmp(param, "ISS_TRAILING_SPS")) ISS_TRAILING_SPS = clamp_i(iv, 0, 50000);
             else if (!strcmp(param, "ISS_CURRENT_MA")) {
                 TMC_ISS_CURRENT_MA = clamp_i(iv, 100, 1200);
-                if (g_lane1.task == TASK_FEED) tmc_set_run_current(&g_tmc1, TMC_ISS_CURRENT_MA);
-                if (g_lane2.task == TASK_FEED) tmc_set_run_current(&g_tmc2, TMC_ISS_CURRENT_MA);
+                if (g_lane1.task == TASK_FEED) tmc_set_run_current_ma(&g_tmc1, TMC_ISS_CURRENT_MA, TMC_HOLD_CURRENT_MA[0]);
+                if (g_lane2.task == TASK_FEED) tmc_set_run_current_ma(&g_tmc2, TMC_ISS_CURRENT_MA, TMC_HOLD_CURRENT_MA[1]);
             }
             else if (!strcmp(param, "ISS_SG_DERIV_THR")) ISS_SG_DERIV_THR = clamp_i(iv, 0, 500);
             else if (!strcmp(param, "ISS_SG_TARGET"))    ISS_SG_TARGET = clamp_f(fv, 0.0f, 1023.0f);
