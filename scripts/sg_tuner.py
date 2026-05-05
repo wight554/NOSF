@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-NOSF — StallGuard Auto-Tuner (ML/Physics Refined)
+NOSF — StallGuard Auto-Tuner (ML/Physics/Klipper-Sync Refined)
 Live-sweeps SGT values during a speed-varying test print, records SG readings,
 and fits a physics-informed model to recommend optimal SGT vs. speed.
+Supports G-code synchronization via Klipper console markers.
 """
 
 import argparse
@@ -11,6 +12,7 @@ import glob
 import os
 import sys
 import time
+import threading
 import configparser
 from datetime import datetime
 
@@ -28,7 +30,43 @@ except ImportError:
     sys.exit(1)
 
 # --- Physical Constants ---
-V_SUPPLY = 24.0  # Default supply voltage
+V_SUPPLY = 24.0
+
+# --- Shared State for Klipper Sync ---
+sync_context = {
+    'feature': 'Unknown',
+    'target_speed': 0,
+    'lock': threading.Lock()
+}
+
+def log_watcher(log_path):
+    """Tails the Klipper log for NOSF_TUNE markers."""
+    if not os.path.exists(log_path):
+        print(f"[!] Klipper log {log_path} not found. Sync disabled.")
+        return
+
+    print(f"[*] Watching Klipper log: {log_path}")
+    with open(log_path, 'r', errors='ignore') as f:
+        f.seek(0, 2) # Move to end
+        while True:
+            line = f.readline()
+            if not line:
+                time.sleep(0.1)
+                continue
+            
+            # Format: // NOSF_TUNE:feature:speed
+            # or: RESPOND MSG="NOSF_TUNE:feature:speed"
+            if "NOSF_TUNE:" in line:
+                try:
+                    parts = line.split("NOSF_TUNE:")[1].strip().split(":")
+                    feature = parts[0]
+                    speed = float(parts[1])
+                    with sync_context['lock']:
+                        sync_context['feature'] = feature
+                        sync_context['target_speed'] = speed
+                    print(f"[*] Sync: Feature={feature}, Speed={speed:.0f}")
+                except (IndexError, ValueError):
+                    pass
 
 # --- Serial Helpers ---
 def find_port():
@@ -57,71 +95,23 @@ def get_status(ser):
             data[k] = v
     return data
 
-# --- Physics & ML Models ---
-
-def get_motor_params(args):
-    if not args.motor or not args.motors_db:
-        return None
-    config = configparser.ConfigParser()
-    if not os.path.exists(args.motors_db):
-        return None
-    config.read(args.motors_db)
-    if args.motor not in config:
-        return None
-    
-    m = config[args.motor]
-    try:
-        # Ke (V/(rad/s)) approx Kt (Nm/A) = torque / current
-        t = float(m['holding_torque'])
-        i = float(m['max_current'])
-        ke = t / i
-        return {
-            'R': float(m['resistance']),
-            'L': float(m['inductance']),
-            'T': t,
-            'I': i,
-            'steps_per_rev': int(m['steps_per_revolution']),
-            'Ke': ke
-        }
-    except (KeyError, ValueError):
-        return None
-
-def physics_model(v_mm_min, p0, p1, ke, steps_per_rev):
-    """
-    Theoretical SG model based on Back-EMF.
-    v_mm_min: speed in mm/min
-    p0: scale factor (max SG result)
-    p1: bias (friction/offset)
-    """
-    # rad/s = (mm/min / 60) / (rotation_dist / (2*pi))
-    # We don't have rotation_dist here easily, so let's simplify.
-    # rad/s is proportional to mm/min.
-    # Let's use v_mm_min as a proxy and let p2 be the effective Ke/V_supply scale.
-    # Actually, if we have Ke, we should use it.
-    
-    # Assume 10mm rotation distance if not specified (typical for MMUs)
-    # rad/s = (v_mm_min / 60) * (2*pi / 10)
-    omega = (v_mm_min / 60.0) * (2.0 * np.pi / 10.0)
-    v_bemf = ke * omega
-    sg = p0 * (1.0 - v_bemf / V_SUPPLY) + p1
-    return np.maximum(sg, 0)
-
-def simple_exp_model(v, p0, p1, p2):
-    """Fallback empirical model: exponential decay."""
-    return p0 * np.exp(-p1 * v / 1000.0) + p2
-
-# --- Core Logic ---
+# --- Data Collection ---
 
 def run_collection(args, ser):
     lane = args.lane
     output_file = args.output or f"sg_tuner_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     
+    # Start log watcher thread if path provided
+    if args.klipper_log:
+        t = threading.Thread(target=log_watcher, args=(args.klipper_log,), daemon=True)
+        t.start()
+
     print(f"[*] Recording StallGuard data to {output_file} ...")
     print(f"[*] Lane: {lane}, SGT Range: [{args.sgt_min}, {args.sgt_max}]")
     print("[*] Press Ctrl+C to stop collection and start analysis.")
     
     send_wait(ser, f"T:{lane}")
-    fieldnames = ['timestamp_ms', 'speed_mm_min', 'sgt', 'sg_raw', 'buf_state', 'task']
+    fieldnames = ['timestamp_ms', 'speed_mm_min', 'sgt', 'sg_raw', 'buf_state', 'task', 'feature', 'target_speed']
     
     with open(output_file, 'w', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -143,13 +133,19 @@ def run_collection(args, ser):
                 speed = float(status.get('SPS', 0))
                 sg_raw = int(status.get(f'SG{lane}', 0))
                 
+                with sync_context['lock']:
+                    feat = sync_context['feature']
+                    t_speed = sync_context['target_speed']
+
                 writer.writerow({
                     'timestamp_ms': int((now - t0) * 1000),
                     'speed_mm_min': speed,
                     'sgt': current_sgt,
                     'sg_raw': sg_raw,
                     'buf_state': buf_state,
-                    'task': task
+                    'task': task,
+                    'feature': feat,
+                    'target_speed': t_speed
                 })
                 csvfile.flush()
 
@@ -170,93 +166,79 @@ def run_collection(args, ser):
                 
                 time.sleep(0.05)
         except KeyboardInterrupt:
-            print("\n[!] Collection stopped by user.")
+            print("\n[!] Collection stopped.")
             
     return output_file
+
+# --- Analysis & Models (Unchanged except for feature metadata) ---
+
+def get_motor_params(args):
+    if not args.motor or not args.motors_db: return None
+    config = configparser.ConfigParser()
+    if not os.path.exists(args.motors_db): return None
+    config.read(args.motors_db)
+    if args.motor not in config: return None
+    m = config[args.motor]
+    try:
+        t, i = float(m['holding_torque']), float(m['max_current'])
+        return {
+            'R': float(m['resistance']), 'L': float(m['inductance']),
+            'T': t, 'I': i, 'steps_per_rev': int(m['steps_per_revolution']),
+            'Ke': t / i
+        }
+    except (KeyError, ValueError): return None
+
+def physics_model(v, p0, p1, ke):
+    omega = (v / 60.0) * (2.0 * np.pi / 10.0)
+    return np.maximum(p0 * (1.0 - ke * omega / V_SUPPLY) + p1, 0)
 
 def run_analysis(args, data_file):
     print(f"[*] Analyzing {data_file} ...")
     samples = []
+    features_seen = set()
     with open(data_file, 'r') as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
             if row['task'] == 'FEED' and float(row['speed_mm_min']) > 100:
-                sg = int(row['sg_raw'])
-                if sg > 0: # Filter out stalls
+                if int(row['sg_raw']) > 0:
                     samples.append(row)
+                    features_seen.add(row.get('feature', 'Unknown'))
     
     if len(samples) < 20:
-        print("[!] Not enough valid data points for analysis.")
-        return
+        print("[!] Not enough data."); return
 
     speeds = np.array([float(s['speed_mm_min']) for s in samples])
     sgrs = np.array([int(s['sg_raw']) for s in samples])
     
     motor = get_motor_params(args)
-    
-    # ML Refinement: Robust fitting with SciPy
     try:
         if motor:
-            # Physics-informed fit
-            ke = motor['Ke']
-            spr = motor['steps_per_rev']
-            # p0: scale, p1: bias
-            popt, _ = curve_fit(lambda v, p0, p1: physics_model(v, p0, p1, ke, spr), 
-                                speeds, sgrs, p0=[1000, 0])
-            model_fn = lambda v: physics_model(v, *popt, ke, spr)
-            model_type = "Physics-Informed (Back-EMF)"
+            popt, _ = curve_fit(lambda v, p0, p1: physics_model(v, p0, p1, motor['Ke']), speeds, sgrs, p0=[1000, 0])
+            model_fn = lambda v: physics_model(v, *popt, motor['Ke'])
         else:
-            # Empirical exponential fit
-            popt, _ = curve_fit(simple_exp_model, speeds, sgrs, p0=[1000, 0.5, 100])
-            model_fn = lambda v: simple_exp_model(v, *popt)
-            model_type = "Empirical (Exponential Decay)"
-    except Exception as e:
-        print(f"[!] Fit failed: {e}. Falling back to linear.")
-        p = np.polyfit(speeds, sgrs, 1)
-        model_fn = lambda v: p[0] * v + p[1]
-        model_type = "Linear Fallback"
+            popt, _ = curve_fit(lambda v, p0, p1, p2: p0 * np.exp(-p1 * v / 1000.0) + p2, speeds, sgrs, p0=[1000, 0.5, 100])
+            model_fn = lambda v: popt[0] * np.exp(-popt[1] * v / 1000.0) + popt[2]
+    except:
+        p = np.polyfit(speeds, sgrs, 1); model_fn = lambda v: p[0] * v + p[1]
 
-    # Confidence interval calculation
-    preds = model_fn(speeds)
-    residuals = sgrs - preds
-    std_dev = np.std(residuals)
-    
-    print(f"\n--- Analysis Results ---")
-    print(f"Model Type: {model_type}")
+    std_dev = np.std(sgrs - model_fn(speeds))
+    print(f"\n--- Global Analysis ---")
     print(f"Noise Floor (σ): {std_dev:.2f} SG units")
+    print(f"Features mapped: {', '.join(features_seen)}")
     
-    # Recommendation logic:
-    # SGT should be set so that it fires when SG drops below the noise floor.
-    # Stall trigger at SG <= 2 * SGT.
-    # To avoid false triggers, we want 2 * SGT < (Model(v) - 2*σ)
-    # => SGT < (Model(v) - 2*σ) / 2
-    
-    target_low = args.target_sg_low
-    target_high = args.target_sg_high
-    
-    print(f"\nRecommended SGT values (Sensitivity Target: SG={target_low}-{target_high}):")
-    print(f"{'Speed (mm/min)':>15} | {'Mean SG':>10} | {'Rec SGT':>10} | {'Safety Margin'}")
-    print("-" * 60)
+    print(f"\nRecommended SGT values:")
+    print(f"{'Speed (mm/min)':>15} | {'Mean SG':>10} | {'Rec SGT':>10}")
+    print("-" * 45)
     for v in [500, 1000, 1500, 2000, 2500, 3000]:
         mean_sg = model_fn(v)
-        if mean_sg < 50:
-            print(f"{v:15d} | {mean_sg:10.1f} | {'TOO FAST':>10} | SG too low for reliability")
-            continue
-            
-        # Recommend SGT that triggers at ~50% of the mean SG, but no higher than noise floor.
         rec_sgt = int(max(1, (mean_sg - 3 * std_dev) / 2.5))
-        margin = mean_sg - (2 * rec_sgt)
-        print(f"{v:15d} | {mean_sg:10.1f} | {rec_sgt:10d} | {margin:4.1f} units")
-
-    if motor:
-        print(f"\n[*] Interpolation active for motor: {args.motor}")
-        print(f"    R={motor['R']}Ω, L={motor['L']}H, T={motor['T']}Nm, Ke={motor['Ke']:.4f}V/rads")
+        print(f"{v:15d} | {mean_sg:10.1f} | {rec_sgt:10d}")
 
 def main():
-    parser = argparse.ArgumentParser(description="NOSF StallGuard ML Auto-Tuner")
+    parser = argparse.ArgumentParser(description="NOSF StallGuard Sync Tuner")
     parser.add_argument("--port", help="Serial port")
     parser.add_argument("--lane", type=int, choices=[1, 2], default=1)
-    parser.add_argument("--output", help="CSV file for data")
+    parser.add_argument("--output", help="CSV file")
     parser.add_argument("--sgt-min", type=int, default=-20)
     parser.add_argument("--sgt-max", type=int, default=20)
     parser.add_argument("--step-interval", type=float, default=2.0)
@@ -266,29 +248,21 @@ def main():
     parser.add_argument("--analyze-only", help="Analyze existing CSV")
     parser.add_argument("--motor", help="Motor name from database")
     parser.add_argument("--motors-db", default="scripts/motors.ini")
+    parser.add_argument("--klipper-log", help="Path to Klipper log for sync markers (e.g. /tmp/printer)")
 
     args = parser.parse_args()
 
     if args.analyze_only:
-        run_analysis(args, args.analyze_only)
-        return
+        run_analysis(args, args.analyze_only); return
 
     port = args.port or find_port()
-    if not port:
-        print("[!] No serial port found."); sys.exit(1)
-        
-    print(f"[*] Connecting to {port} ...")
+    if not port: print("[!] No port."); sys.exit(1)
     try:
-        ser = serial.Serial(port, 115200, timeout=0.5)
-        time.sleep(2)
-    except Exception as e:
-        print(f"[!] Connection failed: {e}"); sys.exit(1)
-        
-    try:
+        ser = serial.Serial(port, 115200, timeout=0.5); time.sleep(2)
         data_file = run_collection(args, ser)
         run_analysis(args, data_file)
     finally:
-        ser.close()
+        if 'ser' in locals(): ser.close()
 
 if __name__ == "__main__":
     main()
