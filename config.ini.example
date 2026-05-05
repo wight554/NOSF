@@ -80,7 +80,7 @@ run_current:
 
 # --- Sync / StallGuard Tuning ---
 # reload_mode: 0
-# reload_y_timeout_ms: 10000
+# reload_y_timeout_ms: 10000     # max time to wait for Y-splitter to clear after tail exits OUT
 # sg_target: 320.0               # target SG value for follow-sync (G36HSY4405-6D-1200 @ 800mA)
 # sg_deriv: 3                  # derivative threshold for approach contact (0 = disabled)
 # sg_current_ma: 800           # motor current used only when StallGuard is active (RELOAD or SYNC_SG=1)

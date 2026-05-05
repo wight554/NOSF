@@ -106,7 +106,7 @@ All speed parameters use **mm/min** (same as Klipper `F`).
 | `CUT_LEN` | Cut stroke length (mm) | 10 |
 | `CUT_AMT` | Number of cut repetitions | 1 |
 | `RELOAD_MODE` | Operating mode: `0` = MMU (manual/Klipper), `1` = RELOAD (auto-switch) | 0 |
-| `RELOAD_Y_MS` | Wait for Y-splitter to clear after runout (ms) | 10000 |
+| `RELOAD_Y_MS` | Max time to wait for Y-splitter to clear after tail exits OUT (ms) | 10000 |
 | `TC_CUT_MS` | Toolchange cut timeout (ms) | 5000 |
 | `TC_UNLOAD_MS` | Toolchange unload timeout (ms) | 60000 |
 | `TC_Y_MS` | Wait for Y-splitter to clear after unload (ms, 0 = skip) | 5000 |
