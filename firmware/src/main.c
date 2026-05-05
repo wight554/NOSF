@@ -435,7 +435,7 @@ static bool toolhead_has_filament = false;
 
 static bool sync_enabled = false;
 static int sync_current_sps = 0;
-static int g_baseline_sps = 3000;
+static int g_baseline_sps = CONF_BASELINE_SPS;
 static float g_baseline_alpha = CONF_BASELINE_ALPHA;
 
 static buf_tracker_t g_buf = { .state = BUF_MID };
@@ -1795,6 +1795,7 @@ static void settings_defaults(void) {
     BUF_HALF_TRAVEL_MM = CONF_BUF_HALF_TRAVEL_MM;
     BUF_HYST_MS = CONF_BUF_HYST_MS;
     BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
+    g_baseline_sps   = CONF_BASELINE_SPS;
     g_baseline_alpha = CONF_BASELINE_ALPHA;
     BUF_INVERT = false;
     AUTO_PRELOAD = true;
