@@ -182,10 +182,12 @@ if (NOT PICO_COMPILER_SYSROOT_IS_ATFE AND PICO_COMPILER_SYSROOT)
                     OUTPUT_STRIP_TRAILING_WHITESPACE
                     ERROR_QUIET)
     if (NOT _libgcc_file OR NOT EXISTS "${_libgcc_file}")
-        # Fallback to filesystem search
-        file(GLOB_RECURSE _libgcc_path "/usr/lib/gcc/arm-none-eabi/*/libgcc.a")
-        if (_libgcc_path)
-            list(GET _libgcc_path 0 _libgcc_file)
+        # Fallback to broad filesystem search in common locations
+        file(GLOB_RECURSE _libgcc_candidates 
+             "/usr/lib/gcc/arm-none-eabi/*/armv6-m/*/libgcc.a"
+             "/usr/lib/gcc/arm-none-eabi/*/libgcc.a")
+        if (_libgcc_candidates)
+            list(GET _libgcc_candidates 0 _libgcc_file)
         endif()
     endif()
 
@@ -194,7 +196,7 @@ if (NOT PICO_COMPILER_SYSROOT_IS_ATFE AND PICO_COMPILER_SYSROOT)
         message(STATUS "ARM clang: found libgcc at ${_libgcc_dir}")
         string(APPEND _common_flags " -L${_libgcc_dir}")
     else()
-        message(WARNING "ARM clang: libgcc.a not found. Linker may fail with -lgcc.")
+        message(STATUS "ARM clang: libgcc.a not found via arm-none-eabi-gcc or glob.")
     endif()
 endif()
 
