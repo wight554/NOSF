@@ -89,58 +89,85 @@ GET:<param>
 
 All speed parameters use **mm/min** (same as Klipper `F`).
 
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `FEED_RATE` | Feed speed for `FL:`, `FD:`, TC load (mm/min) | 2100 |
-| `REV_RATE` | Reverse speed for `UL:`, `UM:` (mm/min) | 2100 |
-| `AUTO_RATE` | Autoload / `LO:` speed (mm/min) | 2100 |
-| `STARTUP_MS` | Stall arm delay after motion start (ms) | 1000 |
-| `AUTO_PRELOAD` | Auto-start preload on IN insert (`0`/`1`) | 1 |
-| `RETRACT_MM` | Back-off distance after OUT trigger on autoload (mm) | 10 |
-| `CUTTER` | Enable cutter (`0`/`1`) | 0 |
-| `MM_PER_STEP` | mm of filament per step (derived from config.ini) | from tune.h |
-| `SERVO_OPEN` | Servo open position (µs) | 500 |
-| `SERVO_CLOSE` | Servo close position (µs) | 1400 |
-| `SERVO_SETTLE` | Servo settle time (ms) | 500 |
-| `CUT_FEED` | Feed distance before cut (mm) | 48 |
-| `CUT_LEN` | Cut stroke length (mm) | 10 |
-| `CUT_AMT` | Number of cut repetitions | 1 |
-| `RELOAD_MODE` | Operating mode: `0` = MMU (manual/Klipper), `1` = RELOAD (auto-switch) | 0 |
-| `RELOAD_Y_MS` | Max time to wait for Y-splitter to clear after tail exits OUT (ms) | 10000 |
-| `TC_CUT_MS` | Toolchange cut timeout (ms) | 5000 |
-| `TC_UNLOAD_MS` | Toolchange unload timeout (ms) | 60000 |
-| `TC_Y_MS` | Wait for Y-splitter to clear after unload (ms, 0 = skip) | 5000 |
-| `TC_TH_MS` | Wait for `TS:` from host (ms, 0 = skip) | 3000 |
-| `TC_LOAD_MS` | Toolchange load timeout (ms) | 60000 |
-| `SYNC_MAX_RATE` | Max sync speed (mm/min) | 2500 |
-| `SYNC_MIN_RATE` | Min sync speed (mm/min) | 0 |
-| `SYNC_KP_RATE` | Proportional gain: speed correction at full buffer deflection (mm/min per unit) | 850 |
-| `SYNC_UP_RATE` | Sync ramp-up increment (mm/min per 20 ms tick) | 25 |
-| `SYNC_DN_RATE` | Sync ramp-down increment (mm/min per 20 ms tick) | 13 |
-| `RAMP_STEP_RATE` | Normal motion ramp increment (mm/min per 5 ms tick) | 17 |
-| `PRE_RAMP_RATE` | Pre-advance speed offset (mm/min) | 35 |
-| `BUF_TRAVEL` | Half-travel of buffer arm (mm) | 5.0 |
-| `BUF_HYST` | Buffer zone debounce (ms) | 30 |
-| `BASELINE_RATE` | Baseline sync speed override (mm/min) | adaptive |
-| `BUF_SENSOR` | Buffer sensor type: `0` = dual endstop, `1` = analog PSF | 0 |
-| `BUF_NEUTRAL` | Analog sensor: ADC fraction at mechanical neutral (0.0–1.0) | 0.5 |
-| `BUF_RANGE` | Analog sensor: ADC fraction from neutral to full deflection | 0.45 |
-| `BUF_THR` | Analog sensor: normalised threshold to declare ADVANCE/TRAILING | 0.30 |
-| `BUF_ALPHA` | Analog sensor: EMA filter weight (higher = faster response) | 0.20 |
-| `TS_BUF_MS` | Buffer-based TS:1 fallback: ms buffer must hold TRAILING after OUT seen — tip pressed against extruder gears (0 = disabled) | 2000 |
-| `SYNC_SG_INTERP` | Enable StallGuard-based speed scaling (pseudo-analog) for normal sync tasks (`0`/`1`). | 0 |
-| `RELOAD_SG_INTERP` | Enable StallGuard-based speed scaling (pseudo-analog) for RELOAD follow tasks (`0`/`1`). | 1 |
-| `SG_CURRENT_MA` | Motor current used when StallGuard is active (RELOAD approach, or follow/sync with SG enabled) (mA, 0–2000) | 800 |
-| `JOIN_RATE` | Fast approach speed (mm/min); must exceed max print speed | 2100 |
-| `PRESS_RATE` | Follow sync top speed (mm/min) — used when buffer is MID/ADVANCE | 1275 |
-| `TRAILING_RATE` | Follow sync coast speed (mm/min) — used when buffer is TRAILING | 42 |
-| `SG_DERIV` | StallGuard approach derivative threshold: drop/tick that fires contact detection | 3 |
-| `SG_TARGET` | Follow sync SG setpoint: motor speed scales from `PRESS_RATE` (SG ≥ target) to 0 (SG = 0) (0 = disabled) | 320.0 |
-| `SG_MA_LEN` | StallGuard moving average window length | 5 |
-| `FOLLOW_MS` | Follow sync timeout (ms) before error | 10000 |
-| `SGT_L1` | Lane 1 SGTHRS — DIAG fires when SG_RESULT ≤ 2 × value; 0 = disabled | 0 |
-| `SGT_L2` | Lane 2 SGTHRS — DIAG fires when SG_RESULT ≤ 2 × value; 0 = disabled | 0 |
-| `TCOOLTHRS` | StallGuard activation: SG active when TSTEP ≤ this value (TSTEP = ~12.5 MHz ÷ SPS). Default `0xFFFFF` (max) ensures StallGuard is active at all speeds. | 0xFFFFF |
+All speed parameters use **mm/min** (same as Klipper `F`).
+
+### Hardware / Kinematics (Compile-time only)
+These settings must be defined in `config.ini` and require a reflash to change.
+
+| config.ini Key | Description | Default |
+|----------------|-------------|---------|
+| `microsteps` | Stepper microstepping (1-256) | |
+| `rotation_distance` | mm of filament per full motor rotation | |
+| `full_steps_per_rotation` | 200 for 1.8°, 400 for 0.9° motors | 200 |
+| `gear_ratio` | Mechanical reduction (e.g. `50:10`) | 1:1 |
+| `sense_resistor` | TMC2209 R_SENSE (Ohms) | 0.110 |
+| `m1_dir_invert` | Invert rotation for lane 1 (`0`/`1`) | 0 |
+| `m2_dir_invert` | Invert rotation for lane 2 (`0`/`1`) | 0 |
+| `interpolate` | Enable driver-level step interpolation | True |
+| `stealthchop_threshold` | 0 = SpreadCycle always (recommended), >0 = speed threshold | 0 |
+| `driver_TBL` | Blank time (TMC register) | 2 |
+| `driver_TOFF` | Off time (TMC register) | 3 |
+| `driver_HSTRT` | Hysteresis start (TMC register) | 5 |
+| `driver_HEND` | Hysteresis end (TMC register) | 0 |
+
+### Tunables (Runtime & config.ini)
+These can be set in `config.ini` (compile-time defaults) **and** updated at runtime via `SET:<cmd>:<val>`.
+
+| Serial Cmd | config.ini Key | Description | Default |
+|------------|----------------|-------------|---------|
+| `FEED_RATE` | `feed_rate` | Fast feed speed (mm/min) | 2100 |
+| `REV_RATE` | `rev_rate` | Reverse speed for unload (mm/min) | 2100 |
+| `AUTO_RATE` | `auto_rate` | Autoload speed (mm/min) | 2100 |
+| `RUN_CURRENT_MA` | `run_current` | Normal operating current (mA) | |
+| `HOLD_CURRENT_MA` | `hold_current` | Idle holding current (mA) | run/2 |
+| `STARTUP_MS` | `motion_startup_ms` | Stall arm delay after motion start (ms) | 1000 |
+| `STALL_MS` | `stall_recovery_ms` | Wait time after a stall detection (ms) | 3000 |
+| `AUTO_PRELOAD` | `auto_preload` | Auto-start preload on IN insert (`0`/`1`) | 1 |
+| `RETRACT_MM` | `cut_feed_mm` | Back-off distance after OUT trigger (mm) | 10 |
+| `CUTTER` | `enable_cutter` | Global cutter enable (`0`/`1`) | 0 |
+| `SERVO_OPEN` | `servo_open_us` | Servo open position (µs) | 500 |
+| `SERVO_CLOSE` | `servo_close_us` | Servo close position (µs) | 1400 |
+| `SERVO_SETTLE` | `servo_settle_ms` | Servo settle time (ms) | 500 |
+| `CUT_FEED` | `cut_feed_mm` | Feed distance before cut (mm) | 48 |
+| `CUT_LEN` | `cut_length_mm` | Cut stroke length (mm) | 10 |
+| `CUT_AMT` | `cut_amount` | Number of cut repetitions | 1 |
+| `RELOAD_MODE` | `reload_mode` | `0`=MMU (manual), `1`=RELOAD (auto-switch) | 0 |
+| `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max wait for Y-splitter clear (ms) | 10000 |
+| `TC_CUT_MS` | `tc_timeout_cut_ms` | Toolchange cut timeout (ms) | 5000 |
+| `TC_UNLOAD_MS` | `tc_timeout_unload_ms` | Toolchange unload timeout (ms) | 60000 |
+| `TC_Y_MS` | `tc_timeout_y_ms` | Wait for Y-splitter clear after unload (ms) | 5000 |
+| `TC_TH_MS` | `tc_timeout_th_ms` | Wait for `TS:` from host (ms) | 3000 |
+| `TC_LOAD_MS` | `tc_timeout_load_ms` | Toolchange load timeout (ms) | 60000 |
+| `SYNC_MAX_RATE` | `sync_max_rate` | Max sync speed (mm/min) | 2500 |
+| `SYNC_MIN_RATE` | `sync_min_rate` | Min sync speed (mm/min) | 0 |
+| `SYNC_KP_RATE` | `sync_kp_rate` | Proportional gain for buffer sync | 850 |
+| `SYNC_UP_RATE` | `sync_ramp_up_rate` | Sync ramp-up increment | 25 |
+| `SYNC_DN_RATE` | `sync_ramp_dn_rate` | Sync ramp-down increment | 13 |
+| `RAMP_STEP_RATE` | `ramp_step_rate` | Normal motion ramp increment | 17 |
+| `PRE_RAMP_RATE` | `pre_ramp_rate` | Pre-advance speed offset (mm/min) | 35 |
+| `BUF_TRAVEL` | `buf_half_travel_mm` | Half-travel of buffer arm (mm) | 5.0 |
+| `BUF_HYST` | `buf_hyst_ms` | Buffer zone debounce (ms) | 30 |
+| `BASELINE_RATE` | | Baseline sync speed override (mm/min) | adaptive |
+| `BUF_SENSOR` | `buf_sensor_type` | `0`=dual endstop, `1`=analog PSF | 0 |
+| `BUF_NEUTRAL` | `buf_neutral` | Analog: ADC mechanical neutral (0.0–1.0) | 0.5 |
+| `BUF_RANGE` | `buf_range` | Analog: ADC deflection range (0.0–1.0) | 0.45 |
+| `BUF_THR` | `buf_thr` | Analog: normalized ADVANCE/TRAILING thr | 0.30 |
+| `BUF_ALPHA` | `buf_analog_alpha` | Analog: EMA filter weight | 0.20 |
+| `TS_BUF_MS` | `ts_buf_fallback_ms` | Buffer-based TS:1 fallback (ms) | 2000 |
+| `SYNC_SG_INTERP` | `sync_sg_interp` | Enable SG interpolation for MMU sync | 0 |
+| `RELOAD_SG_INTERP` | `reload_sg_interp` | Enable SG interpolation for RELOAD | 1 |
+| `SG_CURRENT_MA` | `sg_current_ma` | Current for SG tasks (mA) | 800 |
+| `JOIN_RATE` | `join_rate` | RELOAD fast approach speed (mm/min) | 2100 |
+| `PRESS_RATE` | `press_rate` | RELOAD follow top speed (mm/min) | 1275 |
+| `TRAILING_RATE` | `trailing_rate` | RELOAD follow coast speed (mm/min) | 42 |
+| `SG_DERIV` | `sg_deriv` | SG approach contact threshold | 3 |
+| `SG_TARGET` | `sg_target` | SG follow-sync setpoint | 320.0 |
+| `SG_MA_LEN` | `sg_ma_len` | SG moving average window | 5 |
+| `FOLLOW_MS` | `follow_timeout_ms` | RELOAD follow timeout (ms) | 10000 |
+| `SGT_L1` | `sgt_l1` | Lane 1 DIAG threshold (0-255) | 0 |
+| `SGT_L2` | `sgt_l2` | Lane 2 DIAG threshold (0-255) | 0 |
+| `TCOOLTHRS` | `tcoolthrs` | SG activation threshold (TSTEP) | 0xFFFFF |
+| `MM_PER_STEP` | | (Read-only) Actual mm per step | from tune.h |
 
 ### Per-lane
 
