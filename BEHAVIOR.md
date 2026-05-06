@@ -12,10 +12,11 @@ Each lane tracks filament position inferred from its two sensors.
 
 | IN | OUT | Meaning |
 |----|-----|---------|
-| 0  | 0   | Absent — no filament in this lane |
+| 0  | 0   | Absent — filament clear of both sensors (or in transit window) |
 | 1  | 0   | Pre-loaded — filament parked between IN and OUT (drive gear engaged) |
 | 1  | 1   | Loaded — filament past OUT, in bowden or extruder |
-| 0  | 1   | In-transit — tip just cleared IN, body still at OUT (brief, during unload) |
+| 0  | 1   | Tail between sensors — tip just cleared IN, body still at OUT |
+| 0  | 0*  | In-transit — tail cleared both but within 1.2x DIST_IN_OUT of IN-clear point |
 
 Pre-loaded is the normal parked state after `LO:` or autopreload completes.
 
@@ -77,7 +78,7 @@ Runs `TASK_LOAD_FULL` at `FEED_RATE` continuously until the host sends `TS:1`
 
 | Condition | Timeout | Event |
 |-----------|---------|-------|
-| IN goes low >1 s after start | immediate | `EV:RUNOUT:<lane>` |
+| IN goes low >1 s after start | 1.2x DIST_IN_OUT | `EV:RUNOUT:<lane>` (waits for transit) |
 | OUT never seen after 10 s | 10 s | `EV:RUNOUT:<lane>` |
 | Buffer holds TRAILING after OUT for `TS_BUF_MS` | `TS_BUF_MS` | `EV:LOADED:<lane>` (fallback) |
 | `TS:1` never received | `TC_LOAD_MS` (60 s) | `EV:LOAD_TIMEOUT:<lane>` |
