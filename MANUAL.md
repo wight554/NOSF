@@ -19,9 +19,10 @@ NOSF behavior is controlled by two independent flags: **`AUTO_MODE`** (Flow Cont
 Controls whether the MMU handles internal breakpoints automatically or waits for the host.
 
 - **Automated Flow (`AUTO_MODE:1`)** [Default]:
-    - **Auto-Preload**: Inserting filament triggers a load to the OUT sensor.
+    - **Auto-Preload**: Inserting filament triggers a load to the OUT sensor (if `AUTO_PRELOAD` is 1).
     - **Auto-Sync**: Pulling the buffer arm (`BUF_ADVANCE`) automatically enables sync mode.
     - **Post-Load Sync**: Completing a `FL:` or `TC:` load automatically enables sync.
+    - **Auto-Load**: If the MMU is empty, inserting filament triggers a full load to the toolhead.
 - **Host-Controlled Flow (`AUTO_MODE:0`)**:
     - **Wait for Commands**: No unsolicited motion. NOSF only moves when it receives a serial command (`LO:`, `FL:`, `UL:`, `SM:1`, etc.).
     - **Status Only**: Emits events (`EV:IN:1`, `EV:RUNOUT`, etc.) and waits for host instructions.
@@ -93,7 +94,8 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 |-----------|------------------|-------------|---------|
 | `LOAD_MAX` | `load_max_mm` | Max distance for `FL:` or **Auto-Load** | 3000 |
 | `UNLOAD_MAX` | `unload_max_mm` | Max distance for `UL:`, `UM:` | 3000 |
-| `AUTO_MODE` | `auto_mode` | Enable autonomous Flow (Auto-Load, Auto-Sync) | 1 |
+| `AUTO_MODE` | `auto_mode` | Enable autonomous Flow (Auto-Sync, Toolhead load) | 1 |
+| `AUTO_PRELOAD`| `auto_preload` | Enable parking preload on insertion | 1 |
 | `RELOAD_MODE`| `reload_mode` | Enable autonomous RELOAD behavior (Auto-Swap) | 0 |
 | `SYNC_AUTO_STOP` | `sync_auto_stop` | Disable sync if idle for X ms | 2000 |
 | `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |

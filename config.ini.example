@@ -23,10 +23,10 @@ run_current:
 # stealthchop_threshold: 0    # 0 = SpreadCycle always on (recommended for MMU)
 
 # ─── TMC Chopper (per-lane capable) ─────────────────────────────────────────
-# driver_TBL: 2
-# driver_TOFF: 3
-# driver_HSTRT: 5
-# driver_HEND: 0
+# driver_tbl: 2
+# driver_toff: 3
+# driver_hstrt: 5
+# driver_hend: 0
 
 # ─── StallGuard / CoolStep (per-lane capable) ────────────────────────────────
 # sgt: 0                      # StallGuard threshold (-64 to 63)
@@ -51,7 +51,6 @@ run_current:
 # stall_recovery_ms: 3000
 
 # ─── Buffer Sync ─────────────────────────────────────────────────────────────
-# buf_half_travel_mm: 5.0
 # buf_hyst_ms: 30
 # sync_ramp_up_rate: 25
 # sync_ramp_dn_rate: 13
@@ -72,16 +71,26 @@ run_current:
 
 # ─── Toolchange Timeouts ─────────────────────────────────────────────────────
 # tc_timeout_cut_ms: 5000
-# tc_timeout_unload_ms: 60000
 # tc_timeout_th_ms: 3000
-# tc_timeout_load_ms: 60000
 # tc_timeout_y_ms: 5000
 
-# ─── Safety / Swap ───────────────────────────────────────────────────────────
-# low_delay_ms: 400
+# ─── Safety / Limits ─────────────────────────────────────────────────────────
+# load_max_mm: 3000           # Max distance for toolhead load
+# unload_max_mm: 3000         # Max distance for unloads
+# autoload_max_mm: 600        # Max distance for preload to OUT
 # swap_cooldown_ms: 500
 # runout_cooldown_ms: 12000
-# require_y_empty_swap: True
+
+# ─── Flow Control ────────────────────────────────────────────────────────────
+# auto_mode: True             # Enable automated flow (auto-sync, toolhead load)
+# auto_preload: True          # Enable parking preload on insertion
+
+# ─── Physical Model (mm) ─────────────────────────────────────────────────────
+# dist_in_out: 150            # Distance between IN and OUT sensors
+# dist_out_y: 100             # Distance from OUT sensor to Y-splitter
+# dist_y_buf: 300             # Distance from Y-splitter to buffer entry
+# buf_body_len: 200           # Total physical length of buffer body
+# buf_size_mm: 50             # Total travel distance of buffer arm
 
 # ─── Analog Buffer Sensor ─────────────────────────────────────────────────────
 # buf_sensor_type: 0
@@ -93,17 +102,16 @@ run_current:
 # ─── TS Fallback ─────────────────────────────────────────────────────────────
 # ts_buf_fallback_ms: 2000
 
-# ─── Reload / RELOAD Mode ────────────────────────────────────────────────────
-# reload_mode: 0              # 0 = MMU (manual), 1 = RELOAD (auto-switch on runout)
-# reload_y_timeout_ms: 10000  # max wait for Y-splitter to clear after tail exits OUT
+# ─── Reload Mode ─────────────────────────────────────────────────────────────
+# reload_mode: 0              # Enable autonomous swap on runout
+# reload_y_timeout_ms: 10000  # max wait for Y to clear during RELOAD
 
 # ─── RELOAD StallGuard Tuning (per-lane capable) ──────────────────────────────
 # sg_target: 320.0            # target SG value for follow-sync
-# sg_deriv: 3                 # approach contact threshold (0 = disabled)
-# trailing_rate: 42           # coasting speed when buffer is stalled (mm/min)
-# sg_ma_len: 5                # SG moving-average window
-# join_rate: 2100             # fast approach speed (mm/min)
-# press_rate: 1275            # top speed in follow-sync (mm/min)
-# follow_timeout_ms: 10000    # max time in follow/sync before error
-# sync_sg_interp: False       # experimental: SG interpolation during normal sync
+# sg_deriv: 3                 # approach contact threshold
+# trailing_rate: 42           # coasting speed when buffer is stalled
+# join_rate: 2100             # fast approach speed
+# press_rate: 1275            # top speed in follow-sync
+# follow_timeout_ms: 10000    # max time in follow before error
+# sync_sg_interp: False       # SG interpolation during normal sync
 # reload_sg_interp: True      # SG interpolation during RELOAD follow
