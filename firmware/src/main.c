@@ -1628,6 +1628,8 @@ static void sync_apply_to_active(void) {
         if (A->task != TASK_FEED) {
             lane_start(A, TASK_FEED, sync_current_sps, true, g_now_ms, 0);
         } else {
+            A->current_sps = sync_current_sps;
+            A->target_sps = sync_current_sps;
             motor_set_rate_sps(&A->m, sync_current_sps);
             motor_enable(&A->m, true);
             motor_set_dir(&A->m, true);
