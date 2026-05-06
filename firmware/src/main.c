@@ -460,6 +460,7 @@ static bool sync_enabled = false;
 static bool sync_auto_started = false;
 static uint32_t sync_idle_since_ms = 0;
 static int sync_current_sps = 0;
+static uint32_t sync_trailing_start_ms = 0;  // Detects overfull buffer (stuck TRAILING)
 static int g_baseline_sps = CONF_BASELINE_SPS;
 static float g_baseline_alpha = CONF_BASELINE_ALPHA;
 
@@ -1801,10 +1802,11 @@ static void sync_tick(uint32_t now_ms) {
 
     buf_state_t s = g_buf.state;
 
-    // 1. Automated Start (RELOAD_MODE=1)
-    // Auto-enable sync if buffer is pulled, AUTO_MODE is on, and toolhead is loaded.
-    // This blocks unexpected restarts during unload/stop flows where TH is false.
-    if (AUTO_MODE && toolhead_has_filament && !sync_enabled && s == BUF_ADVANCE) {
+    // 1. Automated Start
+    // Auto-enable sync when buffer detects ADVANCE (filament pulled by toolhead).
+    // Fallback to buffer state if TS sensor not available or not reporting.
+    // Blocks unexpected restarts during unload/stop flows where buffer is not ADVANCE.
+    if (AUTO_MODE && !sync_enabled && s == BUF_ADVANCE) {
         sync_enabled = true;
         sync_auto_started = true;
         sync_idle_since_ms = 0;
@@ -1848,34 +1850,46 @@ static void sync_tick(uint32_t now_ms) {
     float buf_pos = g_buf_pos;
 
     if (s == BUF_TRAILING) {
-        // Two behaviors based on context:
-        // - RELOAD follow: hard stop for filament tip contact (bang-bang)
-        // - Normal sync: gentle proportional recovery toward MID (continuous motion)
-        bool is_reload_mode = (g_tc_ctx.state == TC_RELOAD_FOLLOW);
-        if (is_reload_mode) {
-            // RELOAD: bang-bang — hard stop maintains filament tip against previous tail
+        // Detect overfull buffer: if TRAILING persists >2 seconds without recovery,
+        // stop motor to prevent filament overfill. This catches cases where the
+        // extruder buffer is full and motor should not keep pushing.
+        if (sync_trailing_start_ms == 0) sync_trailing_start_ms = now_ms;
+        if ((now_ms - sync_trailing_start_ms) > 2000u) {
+            // Overfull detected: stop motor
             sync_current_sps = 0;
         } else {
-            // Normal sync: don't fully stop; use proportional feedback with floor at TRAILING_SPS.
-            // This allows continuous motor motion while trying to recover toward MID.
-            float correction = (float)SYNC_KP_SPS * buf_pos;  // buf_pos = -1.0 in TRAILING
-            if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
+            // TRAILING but not yet overfull: use normal proportional feedback
+            // Two behaviors based on context:
+            // - RELOAD follow: hard stop for filament tip contact (bang-bang)
+            // - Normal sync: gentle proportional recovery toward MID (continuous motion)
+            bool is_reload_mode = (g_tc_ctx.state == TC_RELOAD_FOLLOW);
+            if (is_reload_mode) {
+                // RELOAD: bang-bang — hard stop maintains filament tip against previous tail
+                sync_current_sps = 0;
+            } else {
+                // Normal sync: don't fully stop; use proportional feedback with floor at TRAILING_SPS.
+                // This allows continuous motor motion while trying to recover toward MID.
+                float correction = (float)SYNC_KP_SPS * buf_pos;  // buf_pos = -1.0 in TRAILING
+                if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
 
-            int base_target = clamp_i(g_baseline_sps + (int)correction, TRAILING_SPS, SYNC_MAX_SPS);
+                int base_target = clamp_i(g_baseline_sps + (int)correction, TRAILING_SPS, SYNC_MAX_SPS);
 
-            // Common scaling (Analog or SG)
-            // StallGuard sync doesn't need 50Hz updates. 10Hz (100ms) is plenty.
-            if ((now_ms - sync_last_sg_ms) >= 100u) {
-                sync_last_sg_ms = now_ms;
-                sg_ma_update(A);
+                // Common scaling (Analog or SG)
+                // StallGuard sync doesn't need 50Hz updates. 10Hz (100ms) is plenty.
+                if ((now_ms - sync_last_sg_ms) >= 100u) {
+                    sync_last_sg_ms = now_ms;
+                    sg_ma_update(A);
+                }
+                int target = sync_apply_scaling(A, base_target, SYNC_SG_INTERP);
+
+                if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
+                else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
+                sync_current_sps = clamp_i(sync_current_sps, TRAILING_SPS, SYNC_MAX_SPS);
             }
-            int target = sync_apply_scaling(A, base_target, SYNC_SG_INTERP);
-
-            if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
-            else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
-            sync_current_sps = clamp_i(sync_current_sps, TRAILING_SPS, SYNC_MAX_SPS);
         }
     } else {
+        // Not in TRAILING: reset the overfill timer
+        sync_trailing_start_ms = 0;
         float correction = (float)SYNC_KP_SPS * buf_pos;
         if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
 
