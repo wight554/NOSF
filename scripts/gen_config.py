@@ -107,6 +107,11 @@ DEFAULTS = {
     "follow_timeout_ms": "10000",
     "sync_sg_interp": "False",
     "reload_sg_interp": "True",
+    "dist_in_out": "150",
+    "dist_out_y": "100",
+    "dist_y_buf": "300",
+    "buf_body_len": "200",
+    "buf_size_mm": "50",
 }
 
 
@@ -373,6 +378,13 @@ def main():
         f"#define CONF_FOLLOW_TIMEOUT_MS  {get('follow_timeout_ms')}",
         f"#define CONF_SYNC_SG_INTERP                {'true' if get_bool('sync_sg_interp') else 'false'}",
         f"#define CONF_RELOAD_SG_INTERP              {'true' if get_bool('reload_sg_interp') else 'false'}",
+        "",
+        "// --- Physical Model ---",
+        f"#define CONF_DIST_IN_OUT            {get('dist_in_out')}",
+        f"#define CONF_DIST_OUT_Y             {get('dist_out_y')}",
+        f"#define CONF_DIST_Y_BUF             {get('dist_y_buf')}",
+        f"#define CONF_BUF_BODY_LEN           {get('buf_body_len')}",
+        f"#define CONF_BUF_SIZE_MM            {get('buf_size_mm')}",
         "",
     ]
 

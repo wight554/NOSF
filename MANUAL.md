@@ -91,6 +91,17 @@ Parameters are categorized by function. All speeds are in **mm/min** (Klipper `F
 | `AUTOLOAD_MAX` | `autoload_max_mm` | Max distance for `LO:` (Preload to Y) | 600 |
 | `STALL_MS` | `stall_recovery_ms` | Hard-stall recovery time (ms) | 200 |
 
+### Physical Model (Hardware Dimensions)
+These parameters describe the physical layout of your MMU and are used for intelligent safety modeling and sensor validation. All values are in **mm**.
+
+| Parameter | `config.ini` Key | Description | Default |
+|-----------|------------------|-------------|---------|
+| `DIST_IN_OUT` | `dist_in_out` | Distance between IN and OUT sensors | 150 |
+| `DIST_OUT_Y` | `dist_out_y` | Distance between OUT sensor and Y-splitter | 100 |
+| `DIST_Y_BUF` | `dist_y_buf` | Distance between Y-splitter and buffer entry | 300 |
+| `BUF_BODY_LEN`| `buf_body_len`| Physical length of the buffer body/tube | 200 |
+| `BUF_SIZE` | `buf_size_mm` | Travel distance between absolute trailing and advance | 50 |
+
 ### Toolchange & Hardware
 | Parameter | `config.ini` Key | Description | Default |
 |-----------|------------------|-------------|---------|

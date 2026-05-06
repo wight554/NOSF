@@ -104,6 +104,12 @@ static bool AUTO_PRELOAD = true;
 static int AUTOLOAD_RETRACT_MM = 10;
 static bool ENABLE_CUTTER = false;
 
+static int DIST_IN_OUT = CONF_DIST_IN_OUT;
+static int DIST_OUT_Y  = CONF_DIST_OUT_Y;
+static int DIST_Y_BUF  = CONF_DIST_Y_BUF;
+static int BUF_BODY_LEN = CONF_BUF_BODY_LEN;
+static int BUF_SIZE_MM = CONF_BUF_SIZE_MM;
+
 static float MM_PER_STEP[NUM_LANES] = {CONF_M1_MM_PER_STEP, CONF_M2_MM_PER_STEP}; 
 
 static inline int mm_per_min_to_sps_idx(float mm_per_min, int idx) {
@@ -1782,7 +1788,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 31u
+#define SETTINGS_VERSION 32u
 
 typedef struct {
     uint32_t magic;
@@ -1798,6 +1804,7 @@ typedef struct {
     int reload_y_timeout_ms;
     int autoload_max_mm;
     int cutter_settle_ms;
+    int dist_in_out, dist_out_y, dist_y_buf, buf_body_len, buf_size_mm;
     float buf_half_travel_mm;
     int buf_hyst_ms, buf_predict_thr_ms;
     float baseline_alpha;
@@ -1884,6 +1891,11 @@ static void settings_defaults(void) {
     UNLOAD_MAX_MM = CONF_UNLOAD_MAX_MM;
     RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
     BUF_HALF_TRAVEL_MM = CONF_BUF_HALF_TRAVEL_MM;
+    DIST_IN_OUT = CONF_DIST_IN_OUT;
+    DIST_OUT_Y  = CONF_DIST_OUT_Y;
+    DIST_Y_BUF  = CONF_DIST_Y_BUF;
+    BUF_BODY_LEN = CONF_BUF_BODY_LEN;
+    BUF_SIZE_MM = CONF_BUF_SIZE_MM;
     BUF_HYST_MS = CONF_BUF_HYST_MS;
     BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
     g_baseline_sps   = CONF_BASELINE_SPS;
@@ -1998,6 +2010,11 @@ static void settings_save(void) {
     s.unload_max_mm = UNLOAD_MAX_MM;
     s.reload_y_timeout_ms = RELOAD_Y_TIMEOUT_MS;
     s.buf_half_travel_mm = BUF_HALF_TRAVEL_MM;
+    s.dist_in_out = DIST_IN_OUT;
+    s.dist_out_y = DIST_OUT_Y;
+    s.dist_y_buf = DIST_Y_BUF;
+    s.buf_body_len = BUF_BODY_LEN;
+    s.buf_size_mm = BUF_SIZE_MM;
     s.buf_hyst_ms = BUF_HYST_MS;
     s.buf_predict_thr_ms = BUF_PREDICT_THR_MS;
     s.baseline_alpha = g_baseline_alpha;
@@ -2148,6 +2165,11 @@ static void settings_load(void) {
     UNLOAD_MAX_MM = s->unload_max_mm;
     RELOAD_Y_TIMEOUT_MS = s->reload_y_timeout_ms;
     BUF_HALF_TRAVEL_MM = s->buf_half_travel_mm;
+    DIST_IN_OUT = s->dist_in_out;
+    DIST_OUT_Y = s->dist_out_y;
+    DIST_Y_BUF = s->dist_y_buf;
+    BUF_BODY_LEN = s->buf_body_len;
+    BUF_SIZE_MM = s->buf_size_mm;
     BUF_HYST_MS = s->buf_hyst_ms;
     BUF_PREDICT_THR_MS = s->buf_predict_thr_ms;
     g_baseline_alpha = s->baseline_alpha;
@@ -2519,6 +2541,11 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "CUTTER"))       ENABLE_CUTTER = (iv != 0);
         else if (!strcmp(base_param, "RELOAD_MODE"))     RELOAD_MODE = (iv != 0) ? 1 : 0;
         else if (!strcmp(base_param, "RELOAD_Y_MS"))      RELOAD_Y_TIMEOUT_MS = clamp_i(iv, 100, 30000);
+        else if (!strcmp(base_param, "DIST_IN_OUT"))  DIST_IN_OUT = clamp_i(iv, 10, 5000);
+        else if (!strcmp(base_param, "DIST_OUT_Y"))   DIST_OUT_Y = clamp_i(iv, 0, 5000);
+        else if (!strcmp(base_param, "DIST_Y_BUF"))   DIST_Y_BUF = clamp_i(iv, 0, 5000);
+        else if (!strcmp(base_param, "BUF_BODY_LEN")) BUF_BODY_LEN = clamp_i(iv, 0, 5000);
+        else if (!strcmp(base_param, "BUF_SIZE"))     BUF_SIZE_MM = clamp_i(iv, 5, 1000);
         else if (!strcmp(base_param, "JOIN_RATE"))     JOIN_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "PRESS_RATE"))    PRESS_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "TRAILING_RATE")) TRAILING_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
@@ -2601,6 +2628,11 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "CUTTER"))       snprintf(out, sizeof(out), "CUTTER:%d", ENABLE_CUTTER ? 1 : 0);
         else if (!strcmp(param, "RELOAD_MODE"))     snprintf(out, sizeof(out), "RELOAD_MODE:%d", RELOAD_MODE);
         else if (!strcmp(param, "RELOAD_Y_MS"))     snprintf(out, sizeof(out), "RELOAD_Y_MS:%d", RELOAD_Y_TIMEOUT_MS);
+        else if (!strcmp(param, "DIST_IN_OUT"))     snprintf(out, sizeof(out), "DIST_IN_OUT:%d", DIST_IN_OUT);
+        else if (!strcmp(param, "DIST_OUT_Y"))      snprintf(out, sizeof(out), "DIST_OUT_Y:%d", DIST_OUT_Y);
+        else if (!strcmp(param, "DIST_Y_BUF"))      snprintf(out, sizeof(out), "DIST_Y_BUF:%d", DIST_Y_BUF);
+        else if (!strcmp(param, "BUF_BODY_LEN"))    snprintf(out, sizeof(out), "BUF_BODY_LEN:%d", BUF_BODY_LEN);
+        else if (!strcmp(param, "BUF_SIZE"))        snprintf(out, sizeof(out), "BUF_SIZE:%d", BUF_SIZE_MM);
         else if (!strcmp(param, "JOIN_RATE"))     snprintf(out, sizeof(out), "JOIN_RATE:%.1f", (double)sps_to_mm_per_min_idx(JOIN_SPS, idx));
         else if (!strcmp(param, "PRESS_RATE"))    snprintf(out, sizeof(out), "PRESS_RATE:%.1f", (double)sps_to_mm_per_min_idx(PRESS_SPS, idx));
         else if (!strcmp(param, "TRAILING_RATE")) snprintf(out, sizeof(out), "TRAILING_RATE:%.1f", (double)sps_to_mm_per_min_idx(TRAILING_SPS, idx));
