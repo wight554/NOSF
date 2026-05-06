@@ -2,30 +2,47 @@
 """
 NOSF — StallGuard Auto-Tuner (Flexible Baseline Loader)
 
-This tool automatically sweeps SGTHRS values and collects StallGuard data for tuning.
-It runs on the controller via USB CDC serial and optionally monitors Klipper logs for
-test markers (NOSF_TUNE: annotations from G-code macros).
+**Design Philosophy:**
+This tool was developed to relax buffer syncing during RELOAD follow and tune StallGuard
+as the primary filament pressure sensor. During normal operation, the buffer arm is the
+"canary" — it signals when the filament is running low. During SG tuning, we want to let
+SG itself drive the pressure maintenance instead, so we can characterize how well SG alone
+can keep the filament tip in contact without relying on buffer feedback oscillations.
 
-Usage:
-  1. Copy your baseline motor config to scripts/motors.ini
-  2. Run: python3 scripts/sg_tuner.py --baseline=your_motor_name --klipper-log=~/printer_data/logs/klippy.log
-  3. Start a G-code test macro that writes NOSF_TUNE markers to the Klipper log
-  4. Stop manually: Ctrl+C, or write NOSF_TUNE:FINISH to the Klipper log (e.g., from a macro)
-  5. Output CSV contains timestamp, speed, SG raw, buffer state, and test features for analysis
+**Workflow:**
+The tuner sweeps SGTHRS (StallGuard threshold) across a range while collecting real-time
+SG raw values, motor speed, and buffer state. The sweep helps identify the optimal SGTHRS
+where SG maintains gentle contact pressure without false triggers.
 
-Features:
+**Safety Fallbacks:**
+If the buffer remains in ADVANCE or TRAILING state for too long, it means the SG tuner
+has not converged (can't maintain filament contact with current SGTHRS). In such cases:
+  - Data collection continues but marks the event
+  - Operator should pause (Ctrl+C), review CSV for divergence patterns, then adjust
+    --sgthrs-offset-min/max to narrow the search window and retry
+  - Before resuming with new SGTHRS range, manual stabilization (run UL+UL_MMU cycle)
+    is recommended to clear any jams from failed contact attempts
+
+**Features:**
   - AUTO-ENABLES SYNC_SG_INTERP during tuning (send SET:SYNC_SG_INTERP:1)
   - Sweeps SGTHRS in a range (configurable offset from baseline)
   - Collects real-time status (SPS, SG raw, buffer state)
   - Monitors Klipper log for test feature markers (NOSF_TUNE:FeatureName:Vvalue)
   - Thread-safe logging; can be stopped mid-run
 
-Stop mechanisms:
+**Usage:**
+  1. Copy your baseline motor config to scripts/motors.ini
+  2. Run: python3 scripts/sg_tuner.py --baseline=your_motor_name --klipper-log=~/printer_data/logs/klippy.log
+  3. Start a G-code test macro that writes NOSF_TUNE markers to the Klipper log
+  4. Stop manually: Ctrl+C, or write NOSF_TUNE:FINISH to the Klipper log (e.g., from a macro)
+  5. Output CSV contains timestamp, speed, SG raw, buffer state, and test features for analysis
+
+**Stop Mechanisms:**
   - Ctrl+C: immediate KeyboardInterrupt → exit gracefully
   - Log marker: Write "NOSF_TUNE:FINISH" to Klipper log → sets stop_requested flag
   Both are safe; collection will complete final CSV row and close cleanly.
 
-Supports flexible baseline formats in motors.ini:
+**Baseline Format Support:**
   - [tuning_baseline motor_name] (space-separated)
   - [tuning_baseline_motor_name] (underscore-separated)
 """
@@ -172,7 +189,7 @@ def run_collection(args, ser, baseline=None):
     Main SGTHRS tuning collection loop.
     
     Flow:
-      1. Enable SYNC_SG_INTERP on the controller (so normal sync uses SG feedback)
+      1. Enable SYNC_SG_INTERP on the controller (so SG is primary pressure feedback)
       2. Enable sync (SM:1)
       3. Apply baseline motor params (chopper, SG current) if provided
       4. Start SGTHRS sweep: min to max, then back, following task/speed conditions
@@ -183,6 +200,29 @@ def run_collection(args, ser, baseline=None):
     Stop conditions:
       - KeyboardInterrupt (Ctrl+C)
       - Log watcher sees "NOSF_TUNE:FINISH"
+    
+    **Interpreting Results (CSV columns):**
+      - buf_state: MID (neutral), ADVANCE (extruder pulling ahead), TRAILING (buffer full)
+        * Good tuning: mostly MID with occasional brief ADVANCE dips (quickly recovered)
+        * Bad tuning: sustained ADVANCE or TRAILING (SG can't maintain contact / SG too high)
+      - sg_raw: StallGuard value (0–255, inverse to motor load; lower = more load = stronger stall signal)
+        * Healthy contact: sg_raw oscillates in narrow range (e.g., 20–40)
+        * No contact: sg_raw very high (>100); filament slipping through drive
+        * Overconstrained: sg_raw saturated low (<5); filament pushing hard
+      - sps_mm_min: motor speed (should track sync speed setpoint; drops on stall)
+    
+    **Safety Note - When Buffer Stays Locked:**
+    If buf_state remains ADVANCE or TRAILING for >10–20 seconds, the SGTHRS is not
+    converging (SG feedback is not maintaining filament contact). This indicates:
+      - SGTHRS too low (not sensitive enough) → filament slips, buffer goes ADVANCE
+      - SGTHRS too high (too sensitive) → false stalls, motor stops, buffer goes TRAILING
+    
+    When this occurs, stop tuning (Ctrl+C), review the CSV for the divergence point,
+    then retry with a narrower offset range (e.g., --sgthrs-offset-min=-5 --sgthrs-offset-max=5).
+    Before resuming tuning with new SGTHRS range, manually stabilize the buffer:
+      - Run UL (unload) → clears filament from cartridge
+      - Run UL_MMU (unload to MMU) → ensures buffer returns to MID
+      - This prevents tuning from starting with filament jammed in a bad contact state.
     
     Args:
       args: command-line args (lane, output, step_interval, klipper_log, motors_db, sgthrs_offset_*)
