@@ -99,7 +99,6 @@ static int BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
 static float BUF_HALF_TRAVEL_MM = CONF_BUF_HALF_TRAVEL_MM;
 static int SYNC_AUTO_STOP_MS = 2000;
 static int AUTOLOAD_MAX_MM = CONF_AUTOLOAD_MAX_MM;
-static int AUTO_LOAD_MAX_MM = CONF_AUTO_LOAD_MAX_MM;
 static bool BUF_INVERT = false;
 static bool AUTO_PRELOAD = true;
 static int AUTOLOAD_RETRACT_MM = 10;
@@ -1438,7 +1437,7 @@ static void autopreload_tick(uint32_t now_ms) {
         if (g_lane1.task == TASK_IDLE && tc_state() == TC_IDLE && !cutter_busy() && !lane_out_present(&g_lane1)) {
             if (mmu_empty) {
                 // Completely empty MMU: auto-load all the way to toolhead.
-                lane_start(&g_lane1, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)AUTO_LOAD_MAX_MM);
+                lane_start(&g_lane1, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
                 cmd_event("AUTO_LOAD", "1");
             } else {
                 // Other lane loaded: just preload to Y-splitter.
@@ -1452,7 +1451,7 @@ static void autopreload_tick(uint32_t now_ms) {
     if (in2 && !prev_lane2_in_present) {
         if (g_lane2.task == TASK_IDLE && tc_state() == TC_IDLE && !cutter_busy() && !lane_out_present(&g_lane2)) {
             if (mmu_empty) {
-                lane_start(&g_lane2, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)AUTO_LOAD_MAX_MM);
+                lane_start(&g_lane2, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
                 cmd_event("AUTO_LOAD", "2");
             } else {
                 lane_start(&g_lane2, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, (float)AUTOLOAD_MAX_MM);
@@ -1798,7 +1797,6 @@ typedef struct {
     int unload_max_mm;
     int approach_max_mm;
     int autoload_max_mm;
-    int auto_load_max_mm;
     int cutter_settle_ms;
     float buf_half_travel_mm;
     int buf_hyst_ms, buf_predict_thr_ms;
@@ -1885,7 +1883,6 @@ static void settings_defaults(void) {
     LOAD_MAX_MM = CONF_LOAD_MAX_MM;
     UNLOAD_MAX_MM = CONF_UNLOAD_MAX_MM;
     APPROACH_MAX_MM = CONF_APPROACH_MAX_MM;
-    AUTO_LOAD_MAX_MM = CONF_AUTO_LOAD_MAX_MM;
     BUF_HALF_TRAVEL_MM = CONF_BUF_HALF_TRAVEL_MM;
     BUF_HYST_MS = CONF_BUF_HYST_MS;
     BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
@@ -2000,7 +1997,6 @@ static void settings_save(void) {
     s.load_max_mm = LOAD_MAX_MM;
     s.unload_max_mm = UNLOAD_MAX_MM;
     s.approach_max_mm = APPROACH_MAX_MM;
-    s.auto_load_max_mm = AUTO_LOAD_MAX_MM;
     s.buf_half_travel_mm = BUF_HALF_TRAVEL_MM;
     s.buf_hyst_ms = BUF_HYST_MS;
     s.buf_predict_thr_ms = BUF_PREDICT_THR_MS;
@@ -2151,7 +2147,6 @@ static void settings_load(void) {
     LOAD_MAX_MM = s->load_max_mm;
     UNLOAD_MAX_MM = s->unload_max_mm;
     APPROACH_MAX_MM = s->approach_max_mm;
-    AUTO_LOAD_MAX_MM = s->auto_load_max_mm;
     BUF_HALF_TRAVEL_MM = s->buf_half_travel_mm;
     BUF_HYST_MS = s->buf_hyst_ms;
     BUF_PREDICT_THR_MS = s->buf_predict_thr_ms;
@@ -2549,7 +2544,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "BUF_THR"))      BUF_THR = clamp_f(fv, 0.01f, 0.99f);
         else if (!strcmp(base_param, "BUF_ALPHA"))    BUF_ANALOG_ALPHA = clamp_f(fv, 0.01f, 1.0f);
         else if (!strcmp(base_param, "AUTOLOAD_MAX")) AUTOLOAD_MAX_MM = clamp_i(iv, 10, 10000);
-        else if (!strcmp(base_param, "AUTO_LOAD_MAX")) AUTO_LOAD_MAX_MM = clamp_i(iv, 100, 10000);
         else if (!strcmp(base_param, "LOAD_MAX"))     LOAD_MAX_MM = clamp_i(iv, 100, 10000);
         else if (!strcmp(base_param, "UNLOAD_MAX"))   UNLOAD_MAX_MM = clamp_i(iv, 100, 10000);
         else if (!strcmp(base_param, "APPROACH_MAX")) APPROACH_MAX_MM = clamp_i(iv, 100, 10000);
@@ -2623,7 +2617,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "BUF_THR"))      snprintf(out, sizeof(out), "BUF_THR:%.3f", (double)BUF_THR);
         else if (!strcmp(param, "BUF_ALPHA"))    snprintf(out, sizeof(out), "BUF_ALPHA:%.3f", (double)BUF_ANALOG_ALPHA);
         else if (!strcmp(param, "AUTOLOAD_MAX")) snprintf(out, sizeof(out), "AUTOLOAD_MAX:%d", AUTOLOAD_MAX_MM);
-        else if (!strcmp(param, "AUTO_LOAD_MAX")) snprintf(out, sizeof(out), "AUTO_LOAD_MAX:%d", AUTO_LOAD_MAX_MM);
         else if (!strcmp(param, "LOAD_MAX"))     snprintf(out, sizeof(out), "LOAD_MAX:%d", LOAD_MAX_MM);
         else if (!strcmp(param, "UNLOAD_MAX"))   snprintf(out, sizeof(out), "UNLOAD_MAX:%d", UNLOAD_MAX_MM);
         else if (!strcmp(param, "APPROACH_MAX")) snprintf(out, sizeof(out), "APPROACH_MAX:%d", APPROACH_MAX_MM);

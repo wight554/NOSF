@@ -24,7 +24,7 @@ Designed for standard MMU operation integrated with a host (Klipper).
 
 ### 2. Automated / RELOAD Flow (`RELOAD_MODE:1`)
 Designed for standalone "Automatic Reload" and autonomous filament handling.
-- **Seamless Auto-Load**: Inserting filament into an empty MMU automatically triggers a full load to the toolhead. Safety limit = `AUTO_LOAD_MAX` (default 2000mm).
+- **Seamless Auto-Load**: Inserting filament into an empty MMU automatically triggers a full load to the toolhead. Safety limit = `LOAD_MAX` (default 3000mm).
 - **Pull-to-Sync**: Sync mode starts automatically when the buffer detects a pull (`BUF_ADVANCE`).
 - **Auto-Reload**: If a runout is detected on the active lane, the controller automatically triggers a toolchange to the standby lane.
 - **Auto-Stop**: Sync mode stops automatically if the filament is stationary for `SYNC_AUTO_STOP` ms.
@@ -86,10 +86,9 @@ Parameters are categorized by function. All speeds are in **mm/min** (Klipper `F
 ### Safety & Limits
 | Parameter | `config.ini` Key | Description | Default |
 |-----------|------------------|-------------|---------|
-| `LOAD_MAX` | `load_max_mm` | Max distance for standard `FL:` or `TC:LOAD` | 3000 |
+| `LOAD_MAX` | `load_max_mm` | Max distance for standard `FL:`, `TC:LOAD`, or **Auto-Load** | 3000 |
 | `UNLOAD_MAX` | `unload_max_mm` | Max distance for `UL:`, `UM:`, or `TC:UNLOAD` | 3000 |
 | `AUTOLOAD_MAX` | `autoload_max_mm` | Max distance for `LO:` (Preload to Y) | 600 |
-| `AUTO_LOAD_MAX` | `auto_load_max_mm` | Max distance for **Seamless Auto-Load** (to toolhead) | 2000 |
 | `APPROACH_MAX` | `approach_max_mm` | Max distance to search for Y-splitter during RELOAD | 2000 |
 | `STALL_MS` | `stall_recovery_ms` | Hard-stall recovery time (ms) | 200 |
 

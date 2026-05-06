@@ -81,7 +81,6 @@ DEFAULTS = {
     "load_max_mm": "3000",
     "unload_max_mm": "3000",
     "autoload_max_mm": "600",
-    "auto_load_max_mm": "2000",
     "approach_max_mm": "2000",
 
     # Analog Buffer Sensor
@@ -344,7 +343,6 @@ def main():
         f"#define CONF_LOAD_MAX_MM            {get('load_max_mm')}",
         f"#define CONF_UNLOAD_MAX_MM          {get('unload_max_mm')}",
         f"#define CONF_AUTOLOAD_MAX_MM        {get('autoload_max_mm')}",
-        f"#define CONF_AUTO_LOAD_MAX_MM       {get('auto_load_max_mm')}",
         f"#define CONF_APPROACH_MAX_MM        {get('approach_max_mm')}",
         "",
         "// --- Safety / Swap ---",
