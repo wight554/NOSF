@@ -58,6 +58,7 @@ DEFAULTS = {
     "baseline_alpha": "0.15",
     "buf_predict_thr_ms": "250",
     "sync_kp_rate": "850",
+    "buffer_recovery_threshold_ms": "0",
 
     # Cutter / Servo
     "servo_open_us": "500",
@@ -333,6 +334,7 @@ def main():
         f"#define CONF_BASELINE_ALPHA     {get_float('baseline_alpha')}f",
         f"#define CONF_BUF_PREDICT_THR_MS {get('buf_predict_thr_ms')}",
         f"#define CONF_SYNC_KP_SPS        {mm_min_to_sps(get('sync_kp_rate'), l1)}",
+        f"#define CONF_BUFFER_RECOVERY_THRESHOLD_MS {get('buffer_recovery_threshold_ms')}",
         "",
         "// --- Cutter / Servo ---",
         f"#define CONF_SERVO_OPEN_US      {get('servo_open_us')}",

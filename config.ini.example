@@ -59,6 +59,8 @@ run_current:
 # baseline_alpha: 0.15
 # buf_predict_thr_ms: 250
 # sync_kp_rate: 850
+# buffer_recovery_threshold_ms: 0    # StallGuard tuning aid (0=disabled, default).
+                                     # When >0, disable buffer; auto-enable if stuck that long to recover
 
 # ─── Cutter / Servo ──────────────────────────────────────────────────────────
 # servo_open_us: 500
