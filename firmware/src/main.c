@@ -42,7 +42,7 @@ static int RELOAD_TOUCH_FLOOR_PCT = CONF_RELOAD_TOUCH_FLOOR_PCT;
 static int SG_DERIV[NUM_LANES] = {CONF_L1_SG_DERIV, CONF_L2_SG_DERIV};
 static float SG_TARGET[NUM_LANES] = {CONF_L1_SG_TARGET, CONF_L2_SG_TARGET};
 static int BUF_STAB_SPS = 0;
-static int FOLLOW_TIMEOUT_MS[NUM_LANES] = {30000, 30000};
+static int FOLLOW_TIMEOUT_MS[NUM_LANES] = {CONF_L1_FOLLOW_TIMEOUT_MS, CONF_L2_FOLLOW_TIMEOUT_MS};
 
 static int RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
 static int RAMP_TICK_MS = CONF_RAMP_TICK_MS;
@@ -1585,12 +1585,19 @@ static void tc_tick(uint32_t now_ms) {
             if (g_buf.state == BUF_TRAILING) {
                 if (g_tc_ctx.last_trailing_ms == 0) g_tc_ctx.last_trailing_ms = now_ms;
                 if ((now_ms - g_tc_ctx.last_trailing_ms) > (uint32_t)FOLLOW_TIMEOUT_MS[lane_to_idx(A->lane_id)]) {
-                    tc_enter_error("FOLLOW_TIMEOUT");
+                    tc_enter_error("FOLLOW_JAM");
                     lane_stop(A);
                     break;
                 }
             } else {
                 g_tc_ctx.last_trailing_ms = 0;
+            }
+
+            // Absolute safety timeout for the entire phase (e.g. 5 minutes for 2m tubes @ slow speed)
+            if ((now_ms - g_tc_ctx.phase_start_ms) > 300000) {
+                tc_enter_error("FOLLOW_TIMEOUT_ABS");
+                lane_stop(A);
+                break;
             }
 
             // Reporting for interpolation debugging
