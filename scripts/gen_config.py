@@ -113,6 +113,7 @@ DEFAULTS = {
     "dist_y_buf": "300",
     "buf_body_len": "200",
     "buf_size_mm": "50",
+    "buf_size_mm": "50",
 }
 
 
@@ -174,11 +175,12 @@ def main():
         return [p.strip() for p in val.split(",")]
 
     def get_motor_params(lane_idx):
-        prefix = f"m{lane_idx+1}_"
         def gm(key, default=None):
-            # 1. Check for prefixed override (e.g. m1_run_current)
-            v = get(f"{prefix}{key}")
+            # 1. Check for suffixed override (e.g. run_current_l1)
+            suffix = f"_l{lane_idx+1}"
+            v = get(f"{key}{suffix}")
             if v: return v
+
             # 2. Check for global comma-separated list (e.g. run_current: 0.8, 0.9)
             #    Resolution order:
             #      a) parts[lane_idx]          — exact lane entry
@@ -192,7 +194,7 @@ def main():
                     return parts[lane_idx]
                 # Fewer list entries than lanes → reuse first value for any extra lane
                 return parts[0]
-            # 3. Single value — apply to all lanes
+            # 4. Single value — apply to all lanes
             return g_val or default
 
         microsteps = int(gm("microsteps", "16"))

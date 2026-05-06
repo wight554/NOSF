@@ -3,9 +3,10 @@
 # This regenerates firmware/include/tune.h which is compiled into the firmware.
 #
 # All motor parameters accept a single value (applies to both lanes)
-# or a comma-separated list (Lane 1, Lane 2). Examples:
+# or a comma-separated list (Lane 1, Lane 2), or a suffixed override. Examples:
 #   microsteps: 16              → both lanes use 16
 #   microsteps: 16, 32          → Lane 1 = 16, Lane 2 = 32
+#   run_current_l1: 0.8         → Lane 1 override (Lane 2 uses global)
 #   rotation_distance: 23.0     → both lanes
 #   run_current: 0.8, 1.0       → different currents per lane
 
