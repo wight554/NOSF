@@ -323,6 +323,7 @@ typedef struct lane_s {
     task_t task;
     uint32_t motion_started_ms;
     uint32_t task_started_ms;
+    uint32_t dry_spin_ms;
     float task_limit_mm;
     uint32_t retract_deadline_ms;
 
@@ -406,7 +407,6 @@ typedef struct {
     int      reload_stall_count;                   // consecutive stalls in State 2
     uint32_t last_reload_stall_ms;                 // for stall frequency tracking
     uint32_t last_trailing_ms;                  // for trailing timeout in follow
-    uint32_t runout_ms;                         // for dry spin protection
 } tc_ctx_t;
 
 typedef enum {
@@ -533,6 +533,7 @@ static void lane_setup(lane_t *L, uint pin_in, uint pin_out, motor_t m, int lane
     L->diag_pin = diag_pin;
     L->motion_started_ms = 0;
     L->task_started_ms = 0;
+    L->dry_spin_ms = 0;
     L->stall_armed = false;
     L->fault = FAULT_NONE;
     L->lane_id = lane_id;
@@ -545,6 +546,7 @@ static void lane_setup(lane_t *L, uint pin_in, uint pin_out, motor_t m, int lane
 static void lane_stop(lane_t *L) {
     L->task = TASK_IDLE;
     L->task_started_ms = 0;
+    L->dry_spin_ms = 0;
     L->stall_armed = false;
     L->stall_recovery = false;
     L->stall_recovery_deadline_ms = 0;
@@ -647,6 +649,7 @@ static int sync_apply_scaling(lane_t *L, int base_sps, bool use_sg) {
 }
 
 static void lane_tick(lane_t *L, uint32_t now_ms) {
+    char lane_s[2] = { (char)('0' + L->lane_id), 0 };
     // Acceleration ramp: step current_sps toward target_sps every RAMP_TICK_MS.
     if (L->task != TASK_IDLE && L->current_sps < L->target_sps) {
         if ((int32_t)(now_ms - L->ramp_last_tick_ms) >= RAMP_TICK_MS) {
@@ -830,7 +833,6 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
                 L->reload_tail_ms = now_ms;
                 L->runout_block_until_ms = now_ms + 30000u;
             } else {
-                char lane_s[2] = { (char)('0' + L->lane_id), 0 };
                 cmd_event("RUNOUT", lane_s);
                 L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
                 if (L->task == TASK_FEED) set_toolhead_filament(false);
@@ -839,6 +841,17 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
                     reload_trigger(L->lane_id, now_ms);
             }
         }
+    }
+
+    // Global Dry Spin Protection: if motor is spinning but IN is clear for > 20s, stop.
+    if (L->task != TASK_IDLE && !lane_in_present(L)) {
+        if (L->dry_spin_ms == 0) L->dry_spin_ms = now_ms;
+        if ((int32_t)(now_ms - L->dry_spin_ms) > 20000) {
+            lane_stop(L);
+            cmd_event("FAULT:DRY_SPIN", lane_s);
+        }
+    } else {
+        L->dry_spin_ms = 0;
     }
 
     if (L->reload_tail_ms != 0 && (L->task == TASK_FEED || L->task == TASK_LOAD_FULL || L->task == TASK_AUTOLOAD)) {
@@ -1318,17 +1331,6 @@ static void tc_tick(uint32_t now_ms) {
                 }
             }
 
-            if (A && !lane_in_present(A)) {
-                if (g_tc_ctx.runout_ms == 0) g_tc_ctx.runout_ms = now_ms;
-                if ((now_ms - g_tc_ctx.runout_ms) > 15000) {
-                    tc_enter_error("RELOAD_APPROACH_RUNOUT");
-                    lane_stop(A);
-                    break;
-                }
-            } else {
-                g_tc_ctx.runout_ms = 0;
-            }
-
             // Buffer/stall fallbacks — always active regardless of sensor type.
             bool stalled = (A && A->task == TASK_IDLE && A->fault == FAULT_STALL);
             if (g_buf.state == BUF_TRAILING || stalled)
@@ -1434,18 +1436,6 @@ static void tc_tick(uint32_t now_ms) {
                         break;
                     }
                 }
-            }
-
-            // Dry spin protection: if IN clears and we don't finish in 15s, abort.
-            if (A && !lane_in_present(A)) {
-                if (g_tc_ctx.runout_ms == 0) g_tc_ctx.runout_ms = now_ms;
-                if ((now_ms - g_tc_ctx.runout_ms) > 15000) {
-                    tc_enter_error("RELOAD_DRY_RUNOUT");
-                    lane_stop(A);
-                    break;
-                }
-            } else {
-                g_tc_ctx.runout_ms = 0;
             }
 
             // Safety timeout: if buffer stays in TRAILING for > 10s, abort.
