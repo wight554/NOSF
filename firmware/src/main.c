@@ -1351,8 +1351,11 @@ static void tc_tick(uint32_t now_ms) {
                 set_active_lane(g_tc_ctx.target_lane);
                 lane_t *NL = lane_ptr(active_lane);
                 cmd_event("RELOAD:JOINING", lane_s);
-                // State 1: fast approach — contact detected by SG derivative.
-                lane_start(NL, TASK_FEED, JOIN_SPS, true, now_ms, 2000.0f); // Default 2m approach
+                // State 1: approach at current FEED rate until contact.
+                // This keeps swap timing aligned with active print feed.
+                int approach_sps = FEED_SPS;
+                if (approach_sps <= 0) approach_sps = JOIN_SPS;
+                lane_start(NL, TASK_FEED, approach_sps, true, now_ms, 2000.0f); // Default 2m approach
                 NL->stall_armed = true;
                 // Zero RELOAD ctx fields for fresh approach.
                 g_tc_ctx.reload_tick_ms = now_ms;
@@ -1493,22 +1496,47 @@ static void tc_tick(uint32_t now_ms) {
 
             uint32_t follow_age_ms = now_ms - g_tc_ctx.phase_start_ms;
 
-            // Speed target — common calculation.
-            // RELOAD_SG_INTERP=1 enables pseudo-analog interpolation.
-            // RELOAD_SG_INTERP=0 falls back to digital bang-bang (TRAILING_SPS / PRESS_SPS).
-            sg_ma_update(A);
-            int target_sps = sync_apply_scaling(A, PRESS_SPS, RELOAD_SG_INTERP);
+            // Follow target logic:
+            // - SG path (optional): keep SG interpolation behavior.
+            // - Non-SG path (default): "inverted" trailing/mid balancing.
+            //   TRAILING gradually slows down; MID recovers a little.
+            int target_sps = g_tc_ctx.reload_current_sps;
+            if (RELOAD_SG_INTERP) {
+                sg_ma_update(A);
+                target_sps = sync_apply_scaling(A, PRESS_SPS, true);
+            } else {
+                if (BUF_SENSOR_TYPE == 1) {
+                    // Analog: piecewise map for gentle trailing slow-down and mild MID recovery.
+                    float pos = clamp_f(g_buf_pos, -1.0f, 1.0f);
+                    int mid_sps = TRAILING_SPS + (PRESS_SPS - TRAILING_SPS) / 2;
+                    int top_mid_sps = mid_sps + (PRESS_SPS - mid_sps) / 3;
+                    if (pos <= 0.0f) {
+                        float frac = pos + 1.0f; // [-1..0] -> [0..1]
+                        target_sps = TRAILING_SPS + (int)((float)(mid_sps - TRAILING_SPS) * frac);
+                    } else {
+                        target_sps = mid_sps + (int)((float)(top_mid_sps - mid_sps) * pos);
+                    }
+                } else {
+                    // Dual-endstop: discrete state controller.
+                    int down_step = SYNC_RAMP_DN_SPS;
+                    int up_step = SYNC_RAMP_UP_SPS / 2;
+                    if (up_step < 1) up_step = 1;
+                    if (g_buf.state == BUF_TRAILING) {
+                        target_sps = g_tc_ctx.reload_current_sps - down_step;
+                    } else if (g_buf.state == BUF_MID) {
+                        target_sps = g_tc_ctx.reload_current_sps + up_step;
+                    } else {
+                        target_sps = PRESS_SPS;
+                    }
+                }
+                target_sps = clamp_i(target_sps, TRAILING_SPS, PRESS_SPS);
 
-            // Post-contact profile:
-            // 1) brief settle at TRAILING_SPS right after touch,
-            // 2) then enforce a minimum push floor for a short boost window
-            // so follow can catch fast tails and avoid forming a gap.
-            if (follow_age_ms < (uint32_t)RELOAD_TOUCH_SETTLE_MS) {
-                target_sps = TRAILING_SPS;
-            } else if (follow_age_ms < (uint32_t)(RELOAD_TOUCH_SETTLE_MS + RELOAD_TOUCH_BOOST_MS)) {
-                int floor_sps = (PRESS_SPS * RELOAD_TOUCH_FLOOR_PCT) / 100;
-                if (floor_sps < TRAILING_SPS) floor_sps = TRAILING_SPS;
-                if (target_sps < floor_sps) target_sps = floor_sps;
+                // Optional early post-touch floor to avoid immediate under-speed.
+                if (follow_age_ms < (uint32_t)(RELOAD_TOUCH_SETTLE_MS + RELOAD_TOUCH_BOOST_MS)) {
+                    int floor_sps = (PRESS_SPS * RELOAD_TOUCH_FLOOR_PCT) / 100;
+                    if (floor_sps < TRAILING_SPS) floor_sps = TRAILING_SPS;
+                    if (target_sps < floor_sps) target_sps = floor_sps;
+                }
             }
 
             // Ramp toward target.
