@@ -112,7 +112,6 @@ static int BUF_SIZE_MM = CONF_BUF_SIZE_MM;
 
 // Derived Physical Path Constants
 #define Y_TO_BUF_NEUTRAL      ((float)DIST_Y_BUF + (float)BUF_SIZE_MM / 2.0f)
-#define BUF_NEUTRAL_TO_EXIT   ((float)BUF_BODY_LEN - (float)Y_TO_BUF_NEUTRAL)
 
 static float MM_PER_STEP[NUM_LANES] = {CONF_M1_MM_PER_STEP, CONF_M2_MM_PER_STEP}; 
 
