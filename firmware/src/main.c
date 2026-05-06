@@ -2436,24 +2436,28 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
     } else if (!strcmp(cmd, "UL")) {
         lane_t *A = lane_ptr(active_lane);
         if (!A) { cmd_reply("ER", "NO_ACTIVE_LANE"); return; }
+        if (!lane_out_present(A)) { cmd_reply("ER", "NOT_LOADED"); return; }
         set_toolhead_filament(false);
         lane_start(A, TASK_UNLOAD, REV_SPS, false, now_ms, (float)UNLOAD_MAX_MM);
+        cmd_reply("OK", NULL);
+    } else if (!strcmp(cmd, "UM")) {
+        lane_t *A = lane_ptr(active_lane);
+        if (!A) { cmd_reply("ER", "NO_ACTIVE_LANE"); return; }
+        if (!lane_in_present(A)) { cmd_reply("ER", "NOT_LOADED"); return; }
+        set_toolhead_filament(false);
+        lane_start(A, TASK_UNLOAD_MMU, REV_SPS, false, now_ms, (float)UNLOAD_MAX_MM);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "FL")) {
         lane_t *A = lane_ptr(active_lane);
         if (!A) { cmd_reply("ER", "NO_ACTIVE_LANE"); return; }
         if (!lane_in_present(A)) { cmd_reply("ER", "NO_FILAMENT"); return; }
-        set_toolhead_filament(false);
-        lane_start(A, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
-        cmd_reply("OK", NULL);
-    } else if (!strcmp(cmd, "UM")) {
-        lane_t *A = lane_ptr(active_lane);
-        if (!A) {
-            cmd_reply("ER", "NO_ACTIVE_LANE");
+        lane_t *other = lane_ptr(other_lane(active_lane));
+        if (other && lane_out_present(other) && other->task == TASK_IDLE) {
+            cmd_reply("ER", "OTHER_LANE_ACTIVE");
             return;
         }
         set_toolhead_filament(false);
-        lane_start(A, TASK_UNLOAD_MMU, REV_SPS, false, now_ms, (float)UNLOAD_MAX_MM);
+        lane_start(A, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "FD")) {
         lane_t *A = lane_ptr(active_lane);
@@ -2462,24 +2466,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             return;
         }
         lane_start(A, TASK_FEED, FEED_SPS, true, now_ms, 0);
-        cmd_reply("OK", NULL);
-    } else if (!strcmp(cmd, "FL")) {
-        lane_t *A = lane_ptr(active_lane);
-        if (!A) {
-            cmd_reply("ER", "NO_ACTIVE_LANE");
-            return;
-        }
-        if (!lane_in_present(A)) {
-            cmd_reply("ER", "NO_FILAMENT");
-            return;
-        }
-        lane_t *other = lane_ptr(other_lane(active_lane));
-        if (other && lane_out_present(other) && other->task == TASK_IDLE) {
-            cmd_reply("ER", "OTHER_LANE_ACTIVE");
-            return;
-        }
-        set_toolhead_filament(false);
-        lane_start(A, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "CU")) {
         if (!ENABLE_CUTTER) {
