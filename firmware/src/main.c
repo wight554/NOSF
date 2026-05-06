@@ -1847,9 +1847,33 @@ static void sync_tick(uint32_t now_ms) {
     float buf_pos = g_buf_pos;
 
     if (s == BUF_TRAILING) {
-        // Pause syncing when pushing against the wall, wait for neutral.
-        // MMU sync differs from RELOAD follow here: we prefer a full stop to maintain position.
-        sync_current_sps = 0;
+        // Two behaviors based on context:
+        // - RELOAD follow: hard stop for filament tip contact (bang-bang)
+        // - Normal sync: gentle proportional recovery toward MID (continuous motion)
+        bool is_reload_mode = (g_tc_ctx.state == TC_RELOAD_FOLLOW);
+        if (is_reload_mode) {
+            // RELOAD: bang-bang — hard stop maintains filament tip against previous tail
+            sync_current_sps = 0;
+        } else {
+            // Normal sync: don't fully stop; use proportional feedback with floor at TRAILING_SPS.
+            // This allows continuous motor motion while trying to recover toward MID.
+            float correction = (float)SYNC_KP_SPS * buf_pos;  // buf_pos = -1.0 in TRAILING
+            if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
+
+            int base_target = clamp_i(g_baseline_sps + (int)correction, TRAILING_SPS, SYNC_MAX_SPS);
+
+            // Common scaling (Analog or SG)
+            // StallGuard sync doesn't need 50Hz updates. 10Hz (100ms) is plenty.
+            if ((now_ms - sync_last_sg_ms) >= 100u) {
+                sync_last_sg_ms = now_ms;
+                sg_ma_update(A);
+            }
+            int target = sync_apply_scaling(A, base_target, SYNC_SG_INTERP);
+
+            if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
+            else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
+            sync_current_sps = clamp_i(sync_current_sps, TRAILING_SPS, SYNC_MAX_SPS);
+        }
     } else {
         float correction = (float)SYNC_KP_SPS * buf_pos;
         if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
