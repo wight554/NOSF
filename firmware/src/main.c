@@ -505,6 +505,14 @@ static void set_toolhead_filament(bool present) {
 static inline bool lane_in_present(lane_t *L) { return on_al(&L->in_sw); }
 static inline bool lane_out_present(lane_t *L) { return on_al(&L->out_sw); }
 
+// Tail can briefly be between IN and OUT while moving forward (IN=0, OUT=0)
+// after leaving the intake but before reaching the exit sensor. Do not classify
+// this as immediate runout until we've moved roughly the sensor spacing.
+static inline bool lane_tail_in_transit(lane_t *L) {
+    return !lane_in_present(L) && !lane_out_present(L) &&
+           (L->task_dist_mm < ((float)DIST_IN_OUT * 1.2f));
+}
+
 static int detect_active_lane_from_out(void) {
     bool l1 = lane_out_present(&g_lane_l1);
     bool l2 = lane_out_present(&g_lane_l2);
@@ -869,6 +877,8 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
             if (lane_out_present(L)) {
                 // Tail between IN and OUT: keep pushing until OUT clears or 10s timeout.
                 L->reload_tail_ms = now_ms;
+            } else if (lane_tail_in_transit(L)) {
+                // Valid transient while tip/tail moves from IN toward OUT.
             } else {
                 lane_stop(L);
                 cmd_event("RUNOUT", lane_s);
@@ -900,6 +910,8 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
             if (lane_out_present(L)) {
                 L->reload_tail_ms = now_ms;
                 L->runout_block_until_ms = now_ms + 30000u;
+            } else if (lane_tail_in_transit(L)) {
+                // Valid transient while tip/tail moves from IN toward OUT.
             } else {
                 cmd_event("RUNOUT", lane_s);
                 L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
