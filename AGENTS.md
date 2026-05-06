@@ -94,6 +94,10 @@ the context budget for code reading instead.
    ensure that parameter names, units, and command formats remain perfectly
    synchronized. If you change a parameter name in code, you MUST update it
    everywhere in the docs.
+7. **MANDATORY: Always specify model when referencing tools or agents.** 
+   Any time you mention using a tool, agent, or list what you're doing, include the exact model name.
+   Examples: "I'll search the codebase (Claude Haiku 4.5)", commit message footer: `Generated-By: GitHub Copilot (Claude Haiku 4.5)`.
+   This creates an audit trail and helps the user understand the capabilities and limitations of each decision.
 
 ## Commit Format
 
@@ -104,7 +108,7 @@ Every commit must follow this format exactly:
 
 <body — what changed and why, as many lines as needed>
 
-Generated-By: <Your Agent Name>
+Generated-By: <Your Agent Name> (<Model>)
 ```
 
 Example:
@@ -123,7 +127,7 @@ Generated-By: Gemini 3.1 Pro (High)
 Rules:
 - Subject line: lowercase, imperative, no period, ≤ 72 chars
 - Body: explain *why*, not just what
-- Always state the model used. Use `Co-Authored-By` if you have a valid email. Otherwise, use `Generated-By: <Your Agent Name>`. Do not use `.invalid` placeholders.
+- **Always include the model in `Generated-By`:** `Generated-By: <Agent Name> (<Model>)`. Examples: `GitHub Copilot (Claude Haiku 4.5)`, `Gemini 3.1 Pro (High)`. This creates an audit trail.
 - Push immediately after every commit: `git push`
 
 ## TASK.md Workflow — Required Before Writing Any Code
