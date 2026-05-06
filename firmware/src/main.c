@@ -732,15 +732,31 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
 
     if (L->task == TASK_UNLOAD_MMU) {
         if (L->retract_deadline_ms == 0) {
-            // Stage 1: reverse until IN sensor clears.
-            if (!lane_in_present(L)) {
-                // IN clear! Extra 0.5s to fully exit the intake gears.
-                L->retract_deadline_ms = now_ms + 500; 
-            } else if (L->task_dist_mm > (float)DIST_IN_OUT * 1.5f) {
-                // Jam detection: retracted 50% more than physical distance without clearing IN.
-                lane_stop(L);
-                tc_enter_error("UNLOAD_JAM");
-            } else if (L->task_limit_mm > 0 && L->task_dist_mm >= L->task_limit_mm) {
+            // Stage 1: If filament is currently at OUT, we must see it clear OUT
+            // before we consider the unload complete at IN.
+            if (!L->unload_sensor_latch) {
+                if (!lane_out_present(L)) {
+                    L->unload_sensor_latch = true;
+                    L->dist_at_out_mm = L->task_dist_mm; // Mark where OUT cleared
+                }
+            }
+
+            // Stage 2: Wait for IN to clear.
+            if (L->unload_sensor_latch) {
+                if (!lane_in_present(L)) {
+                    // IN clear! Extra 0.5s to fully exit the intake gears.
+                    L->retract_deadline_ms = now_ms + 500;
+                } else {
+                    // Jam detection: once OUT has cleared, we should clear IN within a reasonable distance.
+                    float dist_since_out = L->task_dist_mm - L->dist_at_out_mm;
+                    if (dist_since_out > (float)DIST_IN_OUT * 2.0f) {
+                        lane_stop(L);
+                        tc_enter_error("UNLOAD_JAM");
+                    }
+                }
+            }
+
+            if (L->task_limit_mm > 0 && L->task_dist_mm >= L->task_limit_mm) {
                 lane_stop(L);
                 cmd_event("UNLOAD_TIMEOUT", NULL);
             }
