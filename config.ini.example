@@ -115,9 +115,12 @@ run_current:
 # ─── RELOAD StallGuard Tuning (per-lane capable) ──────────────────────────────
 # sg_target: 320.0            # target SG value for follow-sync
 # sg_deriv: 3                 # approach contact threshold
-# trailing_rate: 70           # coasting speed when buffer is stalled
-# join_rate: 2100             # fast approach speed
-# press_rate: 1275            # top speed in follow-sync
+# trailing_rate: 90           # coasting speed when buffer is stalled
+# join_rate: 1600             # fast approach speed
+# press_rate: 1200            # top speed in follow-sync
+# reload_touch_settle_ms: 120 # brief settle after tail-to-tip touch
+# reload_touch_boost_ms: 900  # boosted push window after settle
+# reload_touch_floor_pct: 90  # min % of PRESS_RATE during boost window
 # follow_timeout_ms: 10000    # max time in follow before error
 # sync_sg_interp: False       # SG interpolation during normal sync
-# reload_sg_interp: True      # SG interpolation during RELOAD follow
+# reload_sg_interp: False     # SG interpolation during RELOAD follow

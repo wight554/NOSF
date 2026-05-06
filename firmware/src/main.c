@@ -36,6 +36,9 @@ static int RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
 static int JOIN_SPS = CONF_JOIN_SPS;
 static int PRESS_SPS = CONF_PRESS_SPS;
 static int TRAILING_SPS = CONF_TRAILING_SPS;
+static int RELOAD_TOUCH_SETTLE_MS = CONF_RELOAD_TOUCH_SETTLE_MS;
+static int RELOAD_TOUCH_BOOST_MS = CONF_RELOAD_TOUCH_BOOST_MS;
+static int RELOAD_TOUCH_FLOOR_PCT = CONF_RELOAD_TOUCH_FLOOR_PCT;
 static int SG_DERIV[NUM_LANES] = {CONF_L1_SG_DERIV, CONF_L2_SG_DERIV};
 static float SG_TARGET[NUM_LANES] = {CONF_L1_SG_TARGET, CONF_L2_SG_TARGET};
 static int BUF_STAB_SPS = 0;
@@ -1488,11 +1491,25 @@ static void tc_tick(uint32_t now_ms) {
             if ((now_ms - g_tc_ctx.reload_tick_ms) < (uint32_t)SYNC_TICK_MS) break;
             g_tc_ctx.reload_tick_ms = now_ms;
 
+            uint32_t follow_age_ms = now_ms - g_tc_ctx.phase_start_ms;
+
             // Speed target — common calculation.
             // RELOAD_SG_INTERP=1 enables pseudo-analog interpolation.
             // RELOAD_SG_INTERP=0 falls back to digital bang-bang (TRAILING_SPS / PRESS_SPS).
             sg_ma_update(A);
             int target_sps = sync_apply_scaling(A, PRESS_SPS, RELOAD_SG_INTERP);
+
+            // Post-contact profile:
+            // 1) brief settle at TRAILING_SPS right after touch,
+            // 2) then enforce a minimum push floor for a short boost window
+            // so follow can catch fast tails and avoid forming a gap.
+            if (follow_age_ms < (uint32_t)RELOAD_TOUCH_SETTLE_MS) {
+                target_sps = TRAILING_SPS;
+            } else if (follow_age_ms < (uint32_t)(RELOAD_TOUCH_SETTLE_MS + RELOAD_TOUCH_BOOST_MS)) {
+                int floor_sps = (PRESS_SPS * RELOAD_TOUCH_FLOOR_PCT) / 100;
+                if (floor_sps < TRAILING_SPS) floor_sps = TRAILING_SPS;
+                if (target_sps < floor_sps) target_sps = floor_sps;
+            }
 
             // Ramp toward target.
             if (g_tc_ctx.reload_current_sps > target_sps)
