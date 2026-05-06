@@ -322,6 +322,7 @@ typedef struct lane_s {
     motor_t m;
     task_t task;
     uint32_t motion_started_ms;
+    uint32_t task_started_ms;
     float task_limit_mm;
     uint32_t retract_deadline_ms;
 
@@ -530,6 +531,7 @@ static void lane_setup(lane_t *L, uint pin_in, uint pin_out, motor_t m, int lane
     L->tmc = tmc;
     L->diag_pin = diag_pin;
     L->motion_started_ms = 0;
+    L->task_started_ms = 0;
     L->stall_armed = false;
     L->fault = FAULT_NONE;
     L->lane_id = lane_id;
@@ -541,6 +543,7 @@ static void lane_setup(lane_t *L, uint pin_in, uint pin_out, motor_t m, int lane
 
 static void lane_stop(lane_t *L) {
     L->task = TASK_IDLE;
+    L->task_started_ms = 0;
     L->stall_armed = false;
     L->stall_recovery = false;
     L->stall_recovery_deadline_ms = 0;
@@ -571,6 +574,7 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     L->current_sps = RAMP_STEP_SPS;
     L->ramp_last_tick_ms = now_ms;
     L->motion_started_ms = now_ms;
+    if (L->task_started_ms == 0) L->task_started_ms = now_ms;
 
     motor_enable(&L->m, true);
     motor_set_dir(&L->m, forward);
@@ -789,7 +793,7 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
                 sync_auto_started = true;
                 sync_idle_since_ms = 0;
             }
-        } else if (!lane_in_present(L) && (int32_t)(now_ms - L->motion_started_ms) >= 1000) {
+        } else if (!lane_in_present(L) && (int32_t)(now_ms - L->task_started_ms) >= 1000) {
             if (lane_out_present(L)) {
                 // Tail between IN and OUT: keep pushing until OUT clears or 10s timeout.
                 L->reload_tail_ms = now_ms;
@@ -819,7 +823,7 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
     }
 
     if ((L->task == TASK_FEED || L->task == TASK_AUTOLOAD) && !lane_in_present(L)) {
-        if ((int32_t)(now_ms - L->motion_started_ms) >= 1000 &&
+        if ((int32_t)(now_ms - L->task_started_ms) >= 1000 &&
             (int32_t)(now_ms - L->runout_block_until_ms) >= 0) {
             if (lane_out_present(L)) {
                 L->reload_tail_ms = now_ms;
@@ -1636,7 +1640,11 @@ static void sync_apply_to_active(void) {
         }
     } else {
         if (A->task == TASK_FEED) {
-            lane_stop(A);
+            motor_stop(&A->m);
+            A->current_sps = 0;
+            A->target_sps = 0;
+            // Revert to global default mode when idle.
+            tmc_set_spreadcycle(A->tmc, TMC_SPREADCYCLE[A->lane_id - 1]);
         }
     }
 }
