@@ -569,6 +569,7 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     L->target_sps = sps;
     L->current_sps = RAMP_STEP_SPS;
     L->ramp_last_tick_ms = now_ms;
+    L->motion_started_ms = now_ms;
 
     motor_enable(&L->m, true);
     motor_set_dir(&L->m, forward);
