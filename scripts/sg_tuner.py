@@ -104,20 +104,20 @@ def run_collection(args, ser, baseline=None):
         sg_ma = baseline.get('sg_current_ma', '800')
         send_wait(ser, f"SET:SG_CURRENT_MA_L{lane}:{sg_ma}")
 
-    sgt_center = int(baseline.get('sgt_nominal', 0)) if baseline else 0
-    sgt_min, sgt_max = sgt_center + args.sgt_offset_min, sgt_center + args.sgt_offset_max
+    sgthrs_center = int(baseline.get('sgthrs_nominal', baseline.get('sgt_nominal', 0))) if baseline else 0
+    sgthrs_min, sgthrs_max = sgthrs_center + args.sgthrs_offset_min, sgthrs_center + args.sgthrs_offset_max
 
     if args.klipper_log:
         threading.Thread(target=log_watcher, args=(args.klipper_log,), daemon=True).start()
 
-    print(f"[*] SGT Sweep: [{sgt_min}, {sgt_max}] every {args.step_interval}s")
+    print(f"[*] SGTHRS Sweep: [{sgthrs_min}, {sgthrs_max}] every {args.step_interval}s")
     
-    fieldnames = ['timestamp_ms', 'sps_mm_min', 'sgt', 'sg_raw', 'buf_state', 'feature', 'v_target']
+    fieldnames = ['timestamp_ms', 'sps_mm_min', 'sgthrs', 'sg_raw', 'buf_state', 'feature', 'v_target']
     with open(output_file, 'w', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         
-        current_sgt, last_sgt_change, sgt_dir, t0 = sgt_center, 0, 1, time.time()
+        current_sgthrs, last_sgthrs_change, sgthrs_dir, t0 = sgthrs_center, 0, 1, time.time()
         
         try:
             while not sync_context['stop_requested']:
@@ -131,18 +131,18 @@ def run_collection(args, ser, baseline=None):
                 with sync_context['lock']: feat, vt = sync_context['feature'], sync_context['v_fil']
 
                 writer.writerow({
-                    'timestamp_ms': int((now-t0)*1000), 'sps_mm_min': speed, 'sgt': current_sgt,
+                    'timestamp_ms': int((now-t0)*1000), 'sps_mm_min': speed, 'sgthrs': current_sgthrs,
                     'sg_raw': sg_raw, 'buf_state': buf_state, 'feature': feat, 'v_target': vt
                 })
                 csvfile.flush()
 
-                if (now - last_sgt_change) >= args.step_interval:
+                if (now - last_sgthrs_change) >= args.step_interval:
                     if task == 'FEED' and speed > 100:
-                        current_sgt += sgt_dir
-                        if current_sgt > sgt_max: current_sgt = sgt_max; sgt_dir = -1
-                        elif current_sgt < sgt_min: current_sgt = sgt_min; sgt_dir = 1
-                        send_wait(ser, f"SET:SGT_L{lane}:{current_sgt}")
-                        last_sgt_change = now
+                        current_sgthrs += sgthrs_dir
+                        if current_sgthrs > sgthrs_max: current_sgthrs = sgthrs_max; sgthrs_dir = -1
+                        elif current_sgthrs < sgthrs_min: current_sgthrs = sgthrs_min; sgthrs_dir = 1
+                        send_wait(ser, f"SET:SGTHRS_L{lane}:{current_sgthrs}")
+                        last_sgthrs_change = now
                 time.sleep(0.05)
         except KeyboardInterrupt: pass
         
@@ -152,8 +152,8 @@ def main():
     parser = argparse.ArgumentParser(description="NOSF StallGuard Tuner")
     parser.add_argument("--lane", type=int, default=1)
     parser.add_argument("--baseline", help="Motor name or baseline ID")
-    parser.add_argument("--sgt-offset-min", type=int, default=-10)
-    parser.add_argument("--sgt-offset-max", type=int, default=10)
+    parser.add_argument("--sgthrs-offset-min", type=int, default=-10)
+    parser.add_argument("--sgthrs-offset-max", type=int, default=10)
     parser.add_argument("--step-interval", type=float, default=1.0)
     parser.add_argument("--klipper-log", default="/tmp/printer")
     parser.add_argument("--motors-db", default="scripts/motors.ini")

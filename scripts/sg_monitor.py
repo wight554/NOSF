@@ -3,7 +3,7 @@
 NOSF — SG Monitor
 Feeds a lane at a fixed speed and continuously prints StallGuard values.
 Use this to characterise free-air SG, observe contact drops, and verify
-SG_TARGET / RELOAD_SG_DERIV / SGT_L1 / SGT_L2 before or after tuning.
+SG_TARGET / RELOAD_SG_DERIV / SGTHRS_L1 / SGTHRS_L2 before or after tuning.
 """
 import argparse
 import serial
@@ -65,12 +65,12 @@ def main():
         epilog="""
 Speed selection:
   --reload       Read JOIN_RATE from device and use it as feed speed.
-              This is the recommended mode for SGT calibration — it matches
+              This is the recommended mode for SGTHRS calibration — it matches
               the exact speed used during RELOAD approach.
   --speed S   Explicit feed speed in mm/min.
 
 Examples:
-  # SGT calibration at RELOAD approach speed (auto-read from device):
+  # SGTHRS calibration at RELOAD approach speed (auto-read from device):
   python3 scripts/sg_monitor.py --lane 1 --reload
 
   # Free-air observation at explicit speed:
@@ -169,7 +169,7 @@ the free-air baseline.
                 drop_pct = int((sg_peak - sg_floor) / sg_peak * 100)
                 suggested_sgt = max(1, sg_floor // 2)
                 print(f"  Observed drop                : {sg_peak - sg_floor}  ({drop_pct}%)")
-                print(f"  Suggested SGT_L{args.lane}           : {suggested_sgt}"
+                print(f"  Suggested SGTHRS_L{args.lane}           : {suggested_sgt}"
                       f"  (DIAG fires at SG ≤ {suggested_sgt * 2})")
     finally:
         send_wait(ser, "ST:")
