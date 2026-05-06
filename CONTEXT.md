@@ -156,6 +156,11 @@ firmware does not attach DIAG IRQ handling.
 - Use module APIs from `motion.h`, `sync.h`, `toolchange.h`, and `settings_store.h`.
 - Document it in `MANUAL.md`.
 
+### Run the static regression gate
+
+- `bash scripts/validate_regression.sh`
+- Use this before hardware testing to catch config, build, script, and diff-integrity regressions quickly.
+
 ### Emit a reply or event
 
 - `cmd_reply("OK", data)` / `cmd_reply("ER", reason)`
@@ -175,4 +180,5 @@ Remember that `EV:` output is best-effort and rate-limited.
 | Change RELOAD or toolchange flow | `toolchange.c` + `BEHAVIOR.md` |
 | Change serial protocol behavior | `protocol.c` + `MANUAL.md` |
 | Change board pins or hardware assumptions | `config.h` + `HARDWARE.md` |
+| Run or extend bring-up / regression validation | `TEST_CASES.md` + `BUILD_FLASH.md` |
 | Change agent workflow / repo rules | `AGENTS.md` + `WORKFLOW.md` |

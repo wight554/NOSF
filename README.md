@@ -108,6 +108,7 @@ python3 scripts/nosf_cmd.py "SV:"
 
 - `scripts/nosf_cmd.py`: Serial helper — send commands and dump live config
 - `scripts/gen_config.py`: Generate `tune.h` from `config.ini`
+- `scripts/validate_regression.sh`: One-command static regression gate before flashing hardware
 
 All scripts support `--port`; if omitted they auto-detect the serial device.
 
@@ -123,6 +124,9 @@ python3 scripts/nosf_cmd.py --dump
 
 # Terse key: value dump
 python3 scripts/nosf_cmd.py --dump --raw
+
+# Static regression gate before hardware testing
+bash scripts/validate_regression.sh
 ```
 
 ## Build Notes
@@ -135,6 +139,7 @@ python3 scripts/nosf_cmd.py --dump --raw
 
 - `HARDWARE.md`: board wiring and hardware assumptions
 - `MANUAL.md`: runtime behavior and operator guidance
+- `TEST_CASES.md`: bring-up and regression checklist for real hardware
 - `WORKFLOW.md`: current Git workflow for `main` and optional short-lived branches
 
 ---

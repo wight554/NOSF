@@ -89,6 +89,9 @@ picotool reboot
 
 Please see `README.md` for the full list of tuning and validation helper scripts (for example `scripts/nosf_cmd.py` and `scripts/gen_config.py`).
 
+For post-flash bring-up and regression validation on real hardware, use `TEST_CASES.md`.
+For pre-flash static validation, run `bash scripts/validate_regression.sh`.
+
 ## Troubleshooting
 
 ### CMake cannot find Pico SDK

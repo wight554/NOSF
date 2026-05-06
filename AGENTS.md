@@ -107,6 +107,7 @@ the context budget for code reading instead.
    Examples: `Generated-By: Antigravity (Gemini 3.1 Flash)`.
    This creates an audit trail and helps the user understand the capabilities and limitations of each decision.
    You do **not** need to repeat the model name in the chat or when listing tools.
+9. **MANDATORY: Analyze regression impact for new features** — Unless the user explicitly asks to change current behavior, every new feature must include a code-level impact review of the existing affected flows (for example preload, load, unload, toolchange, sync, RELOAD, persistence, protocol, and docs) and validation that those flows remain intact.
 
 ## Commit Format
 
@@ -166,6 +167,9 @@ losing everything. **Write it down first.**
 
 3. **Implement** — work through the plan file by file. After each file is done,
    mark it complete in `TASK.md` and commit + push immediately.
+
+   For new features, explicitly note which existing flows could regress and how
+   you will validate that they stay correct.
 
 4. **Never hold more than one file's worth of changes in memory** before
    committing. Small commits are safe; large in-memory plans are not.

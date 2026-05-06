@@ -53,6 +53,12 @@ Firmware changes:
 ninja -C build_local
 ```
 
+Preferred one-command static gate:
+
+```bash
+bash scripts/validate_regression.sh
+```
+
 If scripts changed:
 
 ```bash
@@ -60,6 +66,7 @@ python3 -m py_compile scripts/*.py
 ```
 
 If parameter names, commands, or behavior changed, update the docs in the same pass.
+If new functionality is added, analyze the current affected flows and confirm they remain intact unless the change intentionally redefines them.
 
 ### 4. Commit with the project format
 
