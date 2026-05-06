@@ -717,10 +717,7 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
 
     if (L->task == TASK_UNLOAD && L->retract_deadline_ms == 0) {
         // Extruder unload: reverse until OUT sensor clears.
-        if (lane_out_present(L)) {
-            L->unload_sensor_latch = true;
-        }
-        if (L->unload_sensor_latch && !lane_out_present(L)) {
+        if (!lane_out_present(L)) {
             lane_stop(L);
             char lane_s[2] = { (char)('0' + L->lane_id), 0 };
             cmd_event("UNLOADED", lane_s);
@@ -732,10 +729,7 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
 
     if (L->task == TASK_UNLOAD_MMU) {
         // MMU unload: reverse until IN sensor clears.
-        if (lane_in_present(L)) {
-            L->unload_sensor_latch = true;
-        }
-        if (L->unload_sensor_latch && !lane_in_present(L)) {
+        if (!lane_in_present(L)) {
             lane_stop(L);
             char lane_s[2] = { (char)('0' + L->lane_id), 0 };
             cmd_event("UNLOADED", lane_s);
