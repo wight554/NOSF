@@ -1717,6 +1717,14 @@ static void baseline_update_on_settle(uint32_t mid_dwell_ms) {
     }
 }
 
+static int sync_effective_kp_sps(void) {
+    // Keep the configured ceiling, but scale down correction at low learned
+    // baseline speeds so slow extrusion stays smoother and less aggressive.
+    int baseline_limited_kp = g_baseline_sps / 3;
+    if (baseline_limited_kp < TRAILING_SPS) baseline_limited_kp = TRAILING_SPS;
+    return (SYNC_KP_SPS < baseline_limited_kp) ? SYNC_KP_SPS : baseline_limited_kp;
+}
+
 static void sync_apply_to_active(void) {
     lane_t *A = lane_ptr(active_lane);
     if (!A) {
@@ -1757,7 +1765,7 @@ static void sync_apply_to_active(void) {
 }
 
 static void sync_on_transition(buf_state_t prev, buf_state_t now_state) {
-    if (prev == BUF_ADVANCE && now_state == BUF_MID && sync_enabled) {
+    if (prev != BUF_MID && now_state == BUF_MID && sync_enabled) {
         baseline_update_on_settle(g_buf.dwell_ms);
     }
 }
@@ -1855,6 +1863,7 @@ static void sync_tick(uint32_t now_ms) {
     //            -1 = TRAILING (buffer filling, slow down MMU).
     // Both sensor modes produce the same [-1, +1] range via EMA in buf_sensor_tick.
     float buf_pos = g_buf_pos;
+    int kp_sps = sync_effective_kp_sps();
 
     if (s == BUF_TRAILING) {
         // Two behaviors based on context:
@@ -1867,7 +1876,7 @@ static void sync_tick(uint32_t now_ms) {
         } else {
             // Normal sync: don't fully stop; use proportional feedback with floor at TRAILING_SPS.
             // AUTO_MODE shutdown is handled separately by SYNC_AUTO_STOP_MS above.
-            float correction = (float)SYNC_KP_SPS * buf_pos;  // buf_pos = -1.0 in TRAILING
+            float correction = (float)kp_sps * buf_pos;  // buf_pos = -1.0 in TRAILING
             if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
 
             int base_target = clamp_i(g_baseline_sps + (int)correction, TRAILING_SPS, SYNC_MAX_SPS);
@@ -1885,7 +1894,7 @@ static void sync_tick(uint32_t now_ms) {
             sync_current_sps = clamp_i(sync_current_sps, TRAILING_SPS, SYNC_MAX_SPS);
         }
     } else {
-        float correction = (float)SYNC_KP_SPS * buf_pos;
+        float correction = (float)kp_sps * buf_pos;
         if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
 
         int base_target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, SYNC_MAX_SPS);
