@@ -79,6 +79,14 @@ sync_context = {
     'lock': threading.Lock()   # Protects feature and v_fil updates
 }
 
+# Divergence detection state
+divergence_state = {
+    'last_mid_time': 0,        # Timestamp when buffer was last in MID
+    'buf_state_count': 0,      # Samples in current non-MID state
+    'swept_paused': False,     # True if sweep was paused due to divergence
+    'lock': threading.Lock()
+}
+
 # Regex for Klipper log markers: NOSF_TUNE:FeatureName:V123.45 → ('FeatureName', 123.45)
 MARKER_RE = re.compile(r"NOSF_TUNE:([^:]+):V?([\d.]+)")
 
@@ -194,8 +202,10 @@ def run_collection(args, ser, baseline=None):
       3. Apply baseline motor params (chopper, SG current) if provided
       4. Start SGTHRS sweep: min to max, then back, following task/speed conditions
       5. Poll controller status every 50ms → collect SPS, SG raw, buffer state
-      6. If log_path provided, tail it for NOSF_TUNE markers and stop signal
-      7. Write CSV with timestamp, speed, SGTHRS, SG raw, buffer, feature, v_target
+      6. If divergence detection enabled, watch for buffer stuck >buffer_stuck_ms
+         - Action: warn, pause sweep, or stop (controlled by --on-divergence)
+      7. If log_path provided, tail it for NOSF_TUNE markers and stop signal
+      8. Write CSV with timestamp, speed, SGTHRS, SG raw, buffer, feature, v_target
     
     Stop conditions:
       - KeyboardInterrupt (Ctrl+C)
@@ -293,9 +303,32 @@ def run_collection(args, ser, baseline=None):
                 })
                 csvfile.flush()
 
+                # Divergence detection: monitor if buffer stays stuck outside MID too long
+                if args.buffer_stuck_ms > 0:
+                    with divergence_state['lock']:
+                        if buf_state == 'MID':
+                            divergence_state['last_mid_time'] = now
+                            divergence_state['buf_state_count'] = 0
+                        else:
+                            divergence_state['buf_state_count'] += 1
+                            stuck_duration_ms = (now - divergence_state['last_mid_time']) * 1000
+                            
+                            if stuck_duration_ms > args.buffer_stuck_ms and not divergence_state['swept_paused']:
+                                print(f"\n[!] DIVERGENCE DETECTED: buffer in {buf_state} for {stuck_duration_ms:.0f}ms (SGTHRS={current_sgthrs})")
+                                divergence_state['swept_paused'] = True
+                                
+                                if args.on_divergence == 'stop':
+                                    sync_context['stop_requested'] = True
+                                    print("[*] Auto-stopping tuning.")
+                                elif args.on_divergence == 'pause':
+                                    print("[*] Pausing SGTHRS sweep (will continue recording).")
+                                # 'warn' just prints and continues
+                
                 # Sweep control: every step_interval seconds, change SGTHRS if motor is actively feeding
                 # Only sweep during active feed (task==FEED and speed>100) to collect meaningful SG data
-                if (now - last_sgthrs_change) >= args.step_interval:
+                # Skip if divergence was detected and pause mode is enabled
+                sweep_paused = divergence_state['swept_paused'] if args.buffer_stuck_ms > 0 else False
+                if (now - last_sgthrs_change) >= args.step_interval and not sweep_paused:
                     if task == 'FEED' and speed > 100:
                         # Increment/decrement SGTHRS, bounce at min/max (sawtooth sweep)
                         current_sgthrs += sgthrs_dir
@@ -334,8 +367,17 @@ def main():
       --output               Output CSV file path. Default: sg_tuner_data_<timestamp>.csv
     
     Examples:
-      # Tune Lane 1 with E3D Revo baseline, save to custom CSV
+      # Basic tuning: Lane 1, E3D Revo baseline, custom CSV
       python3 scripts/sg_tuner.py --baseline=e3d_revo --output=tune_revo.csv
+      
+      # Tuning with divergence detection (warn on 5s stuck buffer, don't stop sweep)
+      python3 scripts/sg_tuner.py --baseline=e3d_revo --buffer-stuck-ms=5000 --on-divergence=warn
+      
+      # Tuning with auto-pause on divergence (keep recording, stop SGTHRS changes)
+      python3 scripts/sg_tuner.py --baseline=e3d_revo --buffer-stuck-ms=5000 --on-divergence=pause
+      
+      # Tuning with auto-stop on divergence (exit immediately if buffer gets stuck)
+      python3 scripts/sg_tuner.py --baseline=e3d_revo --buffer-stuck-ms=5000 --on-divergence=stop
       
       # Tune Lane 2, no Klipper log tailing
       python3 scripts/sg_tuner.py --lane=2 --klipper-log=""
@@ -354,6 +396,10 @@ def main():
                         help="SGTHRS sweep max offset from nominal")
     parser.add_argument("--step-interval", type=float, default=1.0,
                         help="Seconds between SGTHRS step changes")
+    parser.add_argument("--buffer-stuck-ms", type=int, default=0,
+                        help="Divergence timeout (ms). 0=disabled, 5000=5s (default: 0 - disabled)")
+    parser.add_argument("--on-divergence", choices=['warn', 'pause', 'stop'], default='warn',
+                        help="Action on divergence: warn (print only), pause (stop sweep, keep recording), stop (exit). Default: warn")
     parser.add_argument("--klipper-log", 
                         default=os.path.expanduser("~/printer_data/logs/klippy.log"),
                         help="Klipper log path for NOSF_TUNE markers. Default: ~/printer_data/logs/klippy.log")
