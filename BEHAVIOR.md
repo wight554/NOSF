@@ -35,6 +35,10 @@ Pre-loaded is the normal parked state after `LO:` or autopreload completes.
    - If neither pass finds a lane, `active_lane` stays 0 (unknown).
 5. `prev_*_in_present` is initialised from current sensor state so that
    autopreload does **not** re-trigger for filament already present at boot.
+6. **Background buffer stabilization** — in dual-endstop mode, if the buffer
+  starts in `ADVANCE` or `TRAILING`, firmware nudges it toward `MID` at
+  `BUF_STAB_RATE` in the normal main loop. This no longer blocks USB command
+  handling or the rest of the control loop during boot.
 
 ---
 
@@ -244,6 +248,9 @@ triggers handoff to follow sync. This ensures that minor path friction does not
 cause premature triggering.
 
 `BUF_TRAILING` and a DIAG stall remain valid fallback contact signals.
+If contact never arrives, the approach phase also has a hard escape via its
+configured travel limit so RELOAD cannot run forever on bad SG tuning or silent
+sensor failure.
 
 **`TC_RELOAD_FOLLOW` — pressure maintenance during bowden journey**
 

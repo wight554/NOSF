@@ -24,12 +24,21 @@ add_custom_target(motor_config DEPENDS ${TUNE_H})
 
 add_executable(nosf_controller
   src/main.c
+  src/motion.c
+  src/sync.c
+  src/toolchange.c
+  src/protocol.c
+  src/settings_store.c
   src/tmc2209.c
   src/neopixel.c
 )
 
 target_include_directories(nosf_controller PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}/include
+)
+
+target_compile_definitions(nosf_controller PRIVATE
+  PICO_STDIO_USB_STDOUT_TIMEOUT_US=1000
 )
 
 pico_generate_pio_header(nosf_controller
