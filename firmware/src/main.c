@@ -1519,13 +1519,8 @@ static void tc_tick(uint32_t now_ms) {
                     }
                 } else {
                     // Dual-endstop: discrete state controller.
-                    int down_step = SYNC_RAMP_DN_SPS;
-                    int up_step = SYNC_RAMP_UP_SPS / 2;
-                    if (up_step < 1) up_step = 1;
                     if (g_buf.state == BUF_TRAILING) {
-                        target_sps = g_tc_ctx.reload_current_sps - down_step;
-                    } else if (g_buf.state == BUF_MID) {
-                        target_sps = g_tc_ctx.reload_current_sps + up_step;
+                        target_sps = TRAILING_SPS;
                     } else {
                         target_sps = JOIN_SPS;
                     }
