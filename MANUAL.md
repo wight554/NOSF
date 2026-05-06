@@ -102,6 +102,13 @@ These parameters describe the physical layout of your MMU and are used for intel
 | `BUF_BODY_LEN`| `buf_body_len`| Physical length of the buffer body/tube | 200 |
 | `BUF_SIZE` | `buf_size_mm` | Travel distance between absolute trailing and advance | 50 |
 
+#### Measurement Tips:
+- **DIST_IN_OUT**: Measure the tube distance between the IN and OUT sensors.
+- **DIST_OUT_Y**: Measure the tube distance between the OUT sensor and the Y-splitter entry.
+- **DIST_Y_BUF**: Measure the tube distance between the Y-splitter exit and the entry of the buffer body.
+- **Buffer Neutral**: The firmware automatically calculates the "Neutral" point as `DIST_Y_BUF + (BUF_SIZE / 2)`. Ensure your buffer arm is centered at this physical displacement.
+- **BUF_SIZE**: This is the total physical travel distance of the buffer arm between the two endstops.
+
 ### Toolchange & Hardware
 | Parameter | `config.ini` Key | Description | Default |
 |-----------|------------------|-------------|---------|

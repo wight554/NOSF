@@ -759,12 +759,14 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         // 1. Host reported TS:1
         // 2. Buffer Advance (Extruder is pulling)
         // 3. Buffer Trailing (Filament reached gears/blockage) AFTER passing OUT sensor
-        // Sanity: Ignore buffer advance until we've traveled at least DIST_OUT_Y + DIST_Y_BUF after OUT.
+        // Sanity: Ignore buffer advance until tip has reached at least the buffer's neutral point.
+        // Threshold = DIST_OUT_Y + DIST_Y_BUF + (BUF_SIZE / 2).
         bool buf_advance_sane = (g_buf.state == BUF_ADVANCE);
         if (L->unload_sensor_latch) {
             float dist_since_out = L->task_dist_mm - L->dist_at_out_mm;
-            if (dist_since_out < (float)(DIST_OUT_Y + DIST_Y_BUF) * 0.8f) {
-                buf_advance_sane = false; // Path Sanity: Tip hasn't reached buffer yet.
+            float buffer_neutral_mm = (float)(DIST_OUT_Y + DIST_Y_BUF) + ((float)BUF_SIZE_MM / 2.0f);
+            if (dist_since_out < buffer_neutral_mm * 0.8f) {
+                buf_advance_sane = false; // Path Sanity: Tip hasn't reached buffer neutral yet.
             }
         } else {
             buf_advance_sane = false; // Tip hasn't even reached OUT.
