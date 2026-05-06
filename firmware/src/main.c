@@ -100,6 +100,7 @@ static float BUF_HALF_TRAVEL_MM = CONF_BUF_HALF_TRAVEL_MM;
 static int SYNC_AUTO_STOP_MS = 2000;
 static int AUTOLOAD_MAX_MM = CONF_AUTOLOAD_MAX_MM;
 static bool BUF_INVERT = false;
+static int AUTO_MODE = 1; // 1=Automated flow, 0=Host-controlled flow
 static bool AUTO_PRELOAD = true;
 static int AUTOLOAD_RETRACT_MM = 10;
 static bool ENABLE_CUTTER = false;
@@ -780,8 +781,8 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         if (loaded) {
             lane_stop(L);
             cmd_event("LOADED", lane_s);
-            // Automatically enable sync if we are in RELOAD_MODE
-            if (RELOAD_MODE) {
+            // Automatically enable sync if we are in AUTO_MODE
+            if (AUTO_MODE) {
                 sync_enabled = true;
                 sync_auto_started = true;
                 sync_idle_since_ms = 0;
@@ -1457,7 +1458,7 @@ static void tc_tick(uint32_t now_ms) {
 }
 
 static void autopreload_tick(uint32_t now_ms) {
-    if (!AUTO_PRELOAD) {
+    if (!AUTO_MODE) {
         prev_lane1_in_present = lane_in_present(&g_lane1);
         prev_lane2_in_present = lane_in_present(&g_lane2);
         return;
@@ -1686,7 +1687,8 @@ static void sync_tick(uint32_t now_ms) {
     buf_state_t s = g_buf.state;
 
     // 1. Automated Start (RELOAD_MODE=1)
-    if (RELOAD_MODE && !sync_enabled && s == BUF_ADVANCE) {
+    // Auto-enable sync if buffer is pulled and we are in AUTO_MODE
+    if (AUTO_MODE && !sync_enabled && s == BUF_ADVANCE) {
         sync_enabled = true;
         sync_auto_started = true;
         sync_idle_since_ms = 0;
@@ -1818,7 +1820,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 32u
+#define SETTINGS_VERSION 33u
 
 typedef struct {
     uint32_t magic;
@@ -1833,6 +1835,7 @@ typedef struct {
     int unload_max_mm;
     int reload_y_timeout_ms;
     int autoload_max_mm;
+    int auto_mode;
     int cutter_settle_ms;
     int dist_in_out, dist_out_y, dist_y_buf, buf_body_len, buf_size_mm;
     float buf_half_travel_mm;
@@ -1920,6 +1923,7 @@ static void settings_defaults(void) {
     LOAD_MAX_MM = CONF_LOAD_MAX_MM;
     UNLOAD_MAX_MM = CONF_UNLOAD_MAX_MM;
     RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
+    AUTO_MODE = 1;
     DIST_IN_OUT = CONF_DIST_IN_OUT;
     DIST_OUT_Y  = CONF_DIST_OUT_Y;
     DIST_Y_BUF  = CONF_DIST_Y_BUF;
@@ -2039,6 +2043,7 @@ static void settings_save(void) {
     s.load_max_mm = LOAD_MAX_MM;
     s.unload_max_mm = UNLOAD_MAX_MM;
     s.reload_y_timeout_ms = RELOAD_Y_TIMEOUT_MS;
+    s.auto_mode = AUTO_MODE;
     s.buf_half_travel_mm = BUF_HALF_TRAVEL_MM;
     s.dist_in_out = DIST_IN_OUT;
     s.dist_out_y = DIST_OUT_Y;
@@ -2194,6 +2199,7 @@ static void settings_load(void) {
     LOAD_MAX_MM = s->load_max_mm;
     UNLOAD_MAX_MM = s->unload_max_mm;
     RELOAD_Y_TIMEOUT_MS = s->reload_y_timeout_ms;
+    AUTO_MODE = s->auto_mode;
     BUF_HALF_TRAVEL_MM = s->buf_half_travel_mm;
     DIST_IN_OUT = s->dist_in_out;
     DIST_OUT_Y = s->dist_out_y;
@@ -2569,6 +2575,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "AUTO_PRELOAD")) AUTO_PRELOAD = (iv != 0);
         else if (!strcmp(base_param, "RETRACT_MM"))   AUTOLOAD_RETRACT_MM = clamp_i(iv, 0, 50);
         else if (!strcmp(base_param, "CUTTER"))       ENABLE_CUTTER = (iv != 0);
+        else if (!strcmp(base_param, "AUTO_MODE"))       AUTO_MODE = clamp_i(iv, 0, 1);
         else if (!strcmp(base_param, "RELOAD_MODE"))     RELOAD_MODE = (iv != 0) ? 1 : 0;
         else if (!strcmp(base_param, "RELOAD_Y_MS"))      RELOAD_Y_TIMEOUT_MS = clamp_i(iv, 100, 30000);
         else if (!strcmp(base_param, "DIST_IN_OUT"))  DIST_IN_OUT = clamp_i(iv, 10, 5000);
@@ -2656,6 +2663,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "AUTO_PRELOAD")) snprintf(out, sizeof(out), "AUTO_PRELOAD:%d", AUTO_PRELOAD ? 1 : 0);
         else if (!strcmp(param, "RETRACT_MM"))    snprintf(out, sizeof(out), "RETRACT_MM:%d", AUTOLOAD_RETRACT_MM);
         else if (!strcmp(param, "CUTTER"))       snprintf(out, sizeof(out), "CUTTER:%d", ENABLE_CUTTER ? 1 : 0);
+        else if (!strcmp(param, "AUTO_MODE"))    snprintf(out, sizeof(out), "AUTO_MODE:%d", AUTO_MODE);
         else if (!strcmp(param, "RELOAD_MODE"))     snprintf(out, sizeof(out), "RELOAD_MODE:%d", RELOAD_MODE);
         else if (!strcmp(param, "RELOAD_Y_MS"))     snprintf(out, sizeof(out), "RELOAD_Y_MS:%d", RELOAD_Y_TIMEOUT_MS);
         else if (!strcmp(param, "DIST_IN_OUT"))     snprintf(out, sizeof(out), "DIST_IN_OUT:%d", DIST_IN_OUT);

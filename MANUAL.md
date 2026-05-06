@@ -13,21 +13,30 @@ Events:    EV:TYPE:DATA\n  (unsolicited, emitted any time)
 
 ## Operating Modes
 
-NOSF behavior is fundamentally defined by the `RELOAD_MODE` flag.
+NOSF behavior is controlled by two independent flags: **`AUTO_MODE`** (Flow Control) and **`RELOAD_MODE`** (Redundancy Control).
 
-### 1. Manual / Host-Controlled Mode (`RELOAD_MODE:0`)
-In this mode, NOSF acts as a standard MMU, waiting for explicit commands from a host (e.g., Klipper).
-- **Manual Loading**: Use `LO:` to preload and `FL:` to load to the toolhead.
-- **Manual Swaps**: Swaps are initiated by the host sending `TC:n`.
-- **Explicit Sync**: Sync mode must be enabled via `SM:1` and disabled via `SM:0`.
-- **Runout Reporting**: If a lane runs out, NOSF emits `EV:RUNOUT:n` and stops. The host must decide how to recover.
+### 1. Flow Control (`AUTO_MODE`)
+Controls whether the MMU handles internal breakpoints automatically or waits for the host.
 
-### 2. Automated / RELOAD Mode (`RELOAD_MODE:1`)
-In this mode, NOSF acts as an autonomous redundancy controller.
-- **Autonomous Loading**: Simply inserting filament into an empty lane (`IN:1`) triggers an automatic load to the toolhead if it's currently empty.
-- **Automatic Sync**: Sync mode starts automatically when the buffer is pulled (`BUF_ADVANCE`) and stops when stationary for `SYNC_AUTO_STOP` ms.
-- **Auto-Reload**: If the active lane runs out, NOSF automatically triggers a toolchange to the standby lane (if filament is present there).
-- **Handshake-Free**: Designed to keep the printer running without requiring complex host-side macros for runout recovery.
+- **Automated Flow (`AUTO_MODE:1`)** [Default]:
+    - **Auto-Preload**: Inserting filament triggers a load to the OUT sensor.
+    - **Auto-Sync**: Pulling the buffer arm (`BUF_ADVANCE`) automatically enables sync mode.
+    - **Post-Load Sync**: Completing a `FL:` or `TC:` load automatically enables sync.
+- **Host-Controlled Flow (`AUTO_MODE:0`)**:
+    - **Wait for Commands**: No unsolicited motion. NOSF only moves when it receives a serial command (`LO:`, `FL:`, `UL:`, `SM:1`, etc.).
+    - **Status Only**: Emits events (`EV:IN:1`, `EV:RUNOUT`, etc.) and waits for host instructions.
+
+### 2. Redundancy Control (`RELOAD_MODE`)
+Controls whether the MMU automatically swaps lanes on filament runout.
+
+- **RELOAD Enabled (`RELOAD_MODE:1`)**:
+    - **Auto-Swap**: If the active lane runs out, the controller automatically triggers a toolchange to the standby lane.
+    - **Standalone Redundancy**: Designed to keep a print running without requiring host-side macros for runout recovery.
+- **RELOAD Disabled (`RELOAD_MODE:0`)**:
+    - **Standard MMU**: Runout events are reported to the host, but no autonomous swapping occurs.
+
+> [!TIP]
+> These flags can be combined. For example, `AUTO_MODE:0` + `RELOAD_MODE:1` allows a host to control all loading logic while still letting the MMU handle a runout swap autonomously if needed.
 
 ---
 
@@ -84,6 +93,7 @@ In this mode, NOSF acts as an autonomous redundancy controller.
 |-----------|------------------|-------------|---------|
 | `LOAD_MAX` | `load_max_mm` | Max distance for `FL:` or **Auto-Load** | 3000 |
 | `UNLOAD_MAX` | `unload_max_mm` | Max distance for `UL:`, `UM:` | 3000 |
-| `RELOAD_MODE`| `reload_mode` | Enable autonomous RELOAD behavior | 0 |
+| `AUTO_MODE` | `auto_mode` | Enable autonomous Flow (Auto-Load, Auto-Sync) | 1 |
+| `RELOAD_MODE`| `reload_mode` | Enable autonomous RELOAD behavior (Auto-Swap) | 0 |
 | `SYNC_AUTO_STOP` | `sync_auto_stop` | Disable sync if idle for X ms | 2000 |
 | `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |
