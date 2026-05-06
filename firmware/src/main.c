@@ -911,9 +911,11 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         }
     }
 
-    // Global Dry Spin Protection: if motor is spinning but IN is clear for > 8s, stop.
+    // Global Dry Spin Protection: stop only when no filament is seen at either
+    // lane sensor for > 8s. A tail between IN and OUT (IN clear, OUT set) is a
+    // valid runout transition and must not be treated as dry-spin.
     // Suppress if buffer is in ADVANCE (printer is successfully pulling the tail).
-    if (L->task != TASK_IDLE && !lane_in_present(L) && g_buf.state != BUF_ADVANCE) {
+    if (L->task != TASK_IDLE && !lane_in_present(L) && !lane_out_present(L) && g_buf.state != BUF_ADVANCE) {
         if (L->dry_spin_ms == 0) L->dry_spin_ms = now_ms;
         if ((int32_t)(now_ms - L->dry_spin_ms) > 8000) {
             lane_stop(L);
@@ -2692,6 +2694,9 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
     } else if (!strcmp(cmd, "ST")) {
         tc_abort();
         cutter_abort();
+        sync_enabled = false;
+        sync_auto_started = false;
+        sync_current_sps = 0;
         stop_all();
         set_toolhead_filament(false);
         cmd_reply("OK", NULL);
