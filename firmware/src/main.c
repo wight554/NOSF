@@ -1527,10 +1527,10 @@ static void tc_tick(uint32_t now_ms) {
                     } else if (g_buf.state == BUF_MID) {
                         target_sps = g_tc_ctx.reload_current_sps + up_step;
                     } else {
-                        target_sps = PRESS_SPS;
+                        target_sps = JOIN_SPS;
                     }
                 }
-                target_sps = clamp_i(target_sps, TRAILING_SPS, PRESS_SPS);
+                target_sps = clamp_i(target_sps, TRAILING_SPS, JOIN_SPS);
 
                 // Optional early post-touch floor to avoid immediate under-speed.
                 if (follow_age_ms < (uint32_t)(RELOAD_TOUCH_SETTLE_MS + RELOAD_TOUCH_BOOST_MS)) {
