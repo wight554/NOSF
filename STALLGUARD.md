@@ -41,7 +41,7 @@ This watches the *rate of change* of the StallGuard signal.
 *   `SG_DERIV` catches this jump *before* the motor grinds or stalls.
 *   **Tuning Rule**: Use `scripts/tune_reload_sg_interp.py` to calibrate this. A typical value is **3 to 10**.
 
-### 5. `SGT_L1 / SGT_L2` (The Hard Safety Net)
+### 5. `SGTHRS_L1 / SGTHRS_L2` (The Hard Safety Net)
 This sets the sensitivity of the `DIAG` pin (the hard-stop).
 *   **Tuning Rule**: We found **50** to be a robust "Golden State" for NEMA 14 motors. It prevents false-positives while still catching real jams.
 
@@ -80,8 +80,8 @@ For **FYSETC G36HSY4405-6D-1200** at **800mA**:
 python3 scripts/nosf_cmd.py "SET:SG_TARGET:320"
 python3 scripts/nosf_cmd.py "SET:TRAILING_RATE:42"
 python3 scripts/nosf_cmd.py "SET:SG_CURRENT_MA:800"
-python3 scripts/nosf_cmd.py "SET:SGT_L1:50"
-python3 scripts/nosf_cmd.py "SET:SGT_L2:50"
+python3 scripts/nosf_cmd.py "SET:SGTHRS_L1:50"
+python3 scripts/nosf_cmd.py "SET:SGTHRS_L2:50"
 python3 scripts/nosf_cmd.py "SET:SG_DERIV:3"
 
 # Safety timeout (10s)

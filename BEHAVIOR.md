@@ -144,7 +144,7 @@ hard-stop fallback during follow.
 
 The chip asserts the DIAG pin (triggering `EV:STALL`) when
 `SG_RESULT ≤ 2 × SGTHRS`. `SGTHRS` is set per lane at runtime via
-`SET:SGT_L1:<value>` / `SET:SGT_L2:<value>`.
+`SET:SGTHRS_L1:<value>` / `SET:SGTHRS_L2:<value>`.
 
 `TCOOLTHRS` gates when SG_RESULT is computed: StallGuard is **active** when
 `TSTEP ≤ TCOOLTHRS`.
@@ -182,7 +182,7 @@ StallGuard provides tension-based speed feedback. It can be used in two ways:
 | Layer | Mechanism | What it catches |
 |-------|-----------|-----------------|
 | Soft contact | SG_RESULT MA derivative vs `SG_DERIV` | Gentle tip-to-tail touch |
-| Hard contact | DIAG interrupt via `SGTHRS` (`SGT_L1`/`SGT_L2`) | Jams, hard crashes |
+| Hard contact | DIAG interrupt via `SGTHRS` (`SGTHRS_L1`/`SGTHRS_L2`) | Jams, hard crashes |
 
 **`TC_RELOAD_APPROACH` — contact detection at approach speed**
 

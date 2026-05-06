@@ -46,7 +46,7 @@ Two operating modes controlled by `RELOAD_MODE`:
 | `KLIPPER.md` | Klipper integration: shell helper setup, toolchange macros, sync tuning |
 | `HARDWARE.md` | Board pinout, sensor wiring |
 | `BUILD_FLASH.md` | Build and flash instructions |
-| `scripts/tune_reload_sg_interp.py` | RELOAD StallGuard tuning script (SG_TARGET, SG_DERIV_THR, SGT_Lx) |
+| `scripts/tune_reload_sg_interp.py` | RELOAD StallGuard tuning script (SG_TARGET, SG_DERIV_THR, SGTHRS_Lx) |
 | `scripts/sg_monitor.py` | Real-time SG monitor — use `--reload` flag for approach-speed calibration |
 | `scripts/nosf_cmd.py` | Single-command serial helper for Klipper shell integration |
 
@@ -147,9 +147,9 @@ losing everything. **Write it down first.**
    Example entry:
    ```
    ### firmware/src/main.c
-   - Add SET:SGT_L1 handler after line ~2322 (STARTUP_MS handler)
-     `else if (!strcmp(param, "SGT_L1")) { TMC_SGT_L1 = clamp_i(iv,0,255); tmc_set_sgthrs(&g_tmc1, (uint8_t)TMC_SGT_L1); }`
-   - Add GET:SGT_L1 mirror after line ~2377
+   - Add SET:SGTHRS_L1 handler after line ~2322 (STARTUP_MS handler)
+     `else if (!strcmp(param, "SGTHRS_L1")) { TMC_SGTHRS_L1 = clamp_i(iv,0,255); tmc_set_sgthrs(&g_tmc1, (uint8_t)TMC_SGTHRS_L1); }`
+   - Add GET:SGTHRS_L1 mirror after line ~2377
    - Risk: lane_start() resets stall_armed — must set true after the call
    ```
 

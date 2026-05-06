@@ -106,7 +106,7 @@ def phase_free_air(ser, lane, join_rate):
 
     if len(samples) < 5:
         print(f"\nERROR: Only {len(samples)} SG readings received.")
-        print("Check that SGTHRS_L1 / SGTHRS_L2 is non-zero (SGTHRSHRS > 0 in config.ini)")
+        print("Check that SGTHRS_L1 / SGTHRS_L2 is non-zero (SGTHRS > 0 in config.ini)")
         print("and that TCOOLTHRS is high enough to enable SG at this speed.")
         return None
 
@@ -176,15 +176,15 @@ def compute_recommendations(free_air_sg, contact_floor=None):
         # Without contact data: estimate using 25% floor assumption.
         deriv_thr = max(1, round(free_air_sg * 0.30))
 
-    # SGTHRS (SGTHRSHRS): hard-contact DIAG fallback in RELOAD approach.
-    # TMC fires DIAG when SG_RESULT ≤ 2 × SGTHRSHRS.
+    # SGTHRS (SGTHRS): hard-contact DIAG fallback in RELOAD approach.
+    # TMC fires DIAG when SG_RESULT ≤ 2 × SGTHRS.
     if contact_floor is not None:
-        sgt = max(1, round(contact_floor / 2))
+        sgthrs = max(1, round(contact_floor / 2))
     else:
         # Without contact data: rough estimate — assume 70 % drop at hard crash.
-        sgt = max(1, round(free_air_sg * 0.15))
+        sgthrs = max(1, round(free_air_sg * 0.15))
 
-    return {'SG_TARGET': target, 'SG_DERIV': deriv_thr, 'SGTHRS': sgt}
+    return {'SG_TARGET': target, 'SG_DERIV': deriv_thr, 'SGTHRS': sgthrs}
 
 def print_recommendations(recs, free_air_sg, contact_floor, lane):
     print(f"\n{'='*60}")
@@ -197,7 +197,7 @@ def print_recommendations(recs, free_air_sg, contact_floor, lane):
 
     tgt = recs['SG_TARGET']
     dth = recs['SG_DERIV']
-    sgt = recs['SGTHRS']
+    sgthrs = recs['SGTHRS']
 
     print(f"  SG_TARGET    = {tgt}")
     print(f"    Follow sync gentle-pressure setpoint.")
@@ -210,9 +210,9 @@ def print_recommendations(recs, free_air_sg, contact_floor, lane):
     print(f"    Lower → more sensitive (catches softer contacts).")
     print(f"    Higher → less sensitive (ignores brief variation).")
     print()
-    print(f"  SGTHRS_L{lane}          = {sgt}  (per-lane SGTHRSHRS)")
+    print(f"  SGTHRS_L{lane}          = {sgthrs}  (per-lane SGTHRS)")
     print(f"    Hard-contact DIAG fallback for lane {lane}.")
-    print(f"    TMC fires DIAG when SG_RESULT ≤ {2*sgt}  (= 2 × {sgt}).")
+    print(f"    TMC fires DIAG when SG_RESULT ≤ {2*sgthrs}  (= 2 × {sgthrs}).")
     print()
     print("NOTE: SG_TARGET, SG_DERIV, and SGTHRS are all per-lane.")
     print(f"  Run this script for each lane separately to tune them independently.")

@@ -57,7 +57,7 @@ DUMP_PARAMS = [
     ("DRIVER_HSTRT",      "driver_hstrt",            True),
     ("DRIVER_HEND",       "driver_hend",             True),
     # --- StallGuard ---
-    ("SGT",               "sgt",                     True),
+    ("SGTHRS",               "sgthrs",                     True),
     ("TCOOLTHRS",         "tcoolthrs",               True),
     ("SG_CURRENT_MA",     "sg_current_ma",           True),
     # --- Speeds ---
@@ -118,7 +118,7 @@ DUMP_PARAMS = [
 SECTION_BREAKS = {
     "run_current_ma":      "# ─── Motor / TMC (per-lane) ────────────────────────────────────────────────",
     "driver_tbl":          "# ─── TMC Chopper (per-lane) ────────────────────────────────────────────────",
-    "sgt":                 "# ─── StallGuard / CoolStep (per-lane) ──────────────────────────────────────",
+    "sgthrs":                 "# ─── StallGuard / CoolStep (per-lane) ──────────────────────────────────────",
     "feed_rate":           "# ─── Speeds (mm/min) ───────────────────────────────────────────────────────",
     "motion_startup_ms":   "# ─── Motion / Ramp ─────────────────────────────────────────────────────────",
     "buf_half_travel_mm":  "# ─── Buffer Sync ───────────────────────────────────────────────────────────",

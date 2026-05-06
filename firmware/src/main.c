@@ -2620,7 +2620,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "STALL_MS"))     STALL_RECOVERY_MS = clamp_i(iv, 0, 10000);
         else if (!strcmp(base_param, "SYNC_SG_INTERP"))      SYNC_SG_INTERP = (iv != 0);
         else if (!strcmp(base_param, "RELOAD_SG_INTERP"))    RELOAD_SG_INTERP = (iv != 0);
-        else if (!strcmp(base_param, "SGTHRS") || !strcmp(base_param, "SGT")) {
+        else if (!strcmp(base_param, "SGTHRS")) {
             SET_LANE({ TMC_SGTHRS[idx] = clamp_i(iv, 0, 255); tmc_set_sgthrs((l==1?&g_tmc1:&g_tmc2), (uint8_t)TMC_SGTHRS[idx]); });
         }
         else if (!strcmp(base_param, "TCOOLTHRS")) { SET_LANE({ TMC_TCOOLTHRS[idx] = clamp_i(iv, 0, 0xFFFFF); tmc_set_tcoolthrs((l==1?&g_tmc1:&g_tmc2), (uint32_t)TMC_TCOOLTHRS[idx]); }); }
@@ -2703,7 +2703,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "STALL_MS"))     snprintf(out, sizeof(out), "STALL_MS:%d", STALL_RECOVERY_MS);
         else if (!strcmp(param, "SYNC_SG_INTERP")) snprintf(out, sizeof(out), "SYNC_SG_INTERP:%d", SYNC_SG_INTERP ? 1 : 0);
         else if (!strcmp(param, "RELOAD_SG_INTERP")) snprintf(out, sizeof(out), "RELOAD_SG_INTERP:%d", RELOAD_SG_INTERP ? 1 : 0);
-        else if (!strcmp(param, "SGTHRS") || !strcmp(param, "SGT")) snprintf(out, sizeof(out), "SGTHRS:%d", TMC_SGTHRS[idx]);
+        else if (!strcmp(param, "SGTHRS")) snprintf(out, sizeof(out), "SGTHRS:%d", TMC_SGTHRS[idx]);
         else if (!strcmp(param, "TCOOLTHRS"))    snprintf(out, sizeof(out), "TCOOLTHRS:%d", TMC_TCOOLTHRS[idx]);
         else if (!strcmp(param, "SG_CURRENT_MA")) snprintf(out, sizeof(out), "SG_CURRENT_MA:%d", SG_CURRENT_MA[idx]);
         else if (!strcmp(param, "MICROSTEPS"))   snprintf(out, sizeof(out), "MICROSTEPS:%d", TMC_MICROSTEPS[idx]);

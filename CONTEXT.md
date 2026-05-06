@@ -165,7 +165,7 @@ Buffer sync must not run during any toolchange or RELOAD state.
 |-----------|-------|--------|
 | `SG_TARGET` | Global | Speed interpolation setpoint |
 | `SG_DERIV` | Global | Contact detection sensitivity |
-| `TMC_SGT_L1` / `TMC_SGT_L2` | Per-lane | Lanes may have different bowden friction |
+| `TMC_SGTHRS_L1` / `TMC_SGTHRS_L2` | Per-lane | Lanes may have different bowden friction |
 | `TMC_TCOOLTHRS` | Global (both TMCs updated together) | Single threshold for both |
 
 ### 5. Stall handling differs by context

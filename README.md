@@ -122,7 +122,7 @@ Examples:
 ```bash
 # Send commands
 python3 scripts/nosf_cmd.py "VR:" "?:"
-python3 scripts/nosf_cmd.py "SET:SGT_L1:10" "SV:"
+python3 scripts/nosf_cmd.py "SET:SGTHRS_L1:10" "SV:"
 
 # Read all live parameters as config.ini (copy-paste ready)
 python3 scripts/nosf_cmd.py --dump

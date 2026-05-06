@@ -104,7 +104,7 @@ def run_collection(args, ser, baseline=None):
         sg_ma = baseline.get('sg_current_ma', '800')
         send_wait(ser, f"SET:SG_CURRENT_MA_L{lane}:{sg_ma}")
 
-    sgthrs_center = int(baseline.get('sgthrs_nominal', baseline.get('sgt_nominal', 0))) if baseline else 0
+    sgthrs_center = int(baseline.get('sgthrs_nominal', 0)) if baseline else 0
     sgthrs_min, sgthrs_max = sgthrs_center + args.sgthrs_offset_min, sgthrs_center + args.sgthrs_offset_max
 
     if args.klipper_log:

@@ -167,10 +167,10 @@ the free-air baseline.
             print(f"  SG floor (min observed)      : {sg_floor}")
             if sg_peak > 0:
                 drop_pct = int((sg_peak - sg_floor) / sg_peak * 100)
-                suggested_sgt = max(1, sg_floor // 2)
+                suggested_sgthrs = max(1, sg_floor // 2)
                 print(f"  Observed drop                : {sg_peak - sg_floor}  ({drop_pct}%)")
-                print(f"  Suggested SGTHRS_L{args.lane}           : {suggested_sgt}"
-                      f"  (DIAG fires at SG ≤ {suggested_sgt * 2})")
+                print(f"  Suggested SGTHRS_L{args.lane}           : {suggested_sgthrs}"
+                      f"  (DIAG fires at SG ≤ {suggested_sgthrs * 2})")
     finally:
         send_wait(ser, "ST:")
         ser.close()

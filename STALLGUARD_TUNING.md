@@ -1,6 +1,6 @@
 # NOSF — StallGuard Auto-Tuning Guide
 
-This guide covers the automated workflow for calibrating StallGuard thresholds (`SGT`) starting from an empty MMU.
+This guide covers the automated workflow for calibrating StallGuard thresholds (`SGTHRS`) starting from an empty MMU.
 
 ---
 
@@ -9,7 +9,7 @@ This guide covers the automated workflow for calibrating StallGuard thresholds (
 | Script | Purpose |
 |--------|---------|
 | `scripts/gcode_marker.py` | Injects flow-aware sync markers into G-code files. |
-| `scripts/sg_tuner.py` | Live-sweeps `SGT`, records data, and fits a physics-based model. |
+| `scripts/sg_tuner.py` | Live-sweeps `SGTHRS`, records data, and fits a physics-based model. |
 | `scripts/motors.ini` | Database of motor constants and tuning baselines. |
 
 ---
@@ -60,7 +60,7 @@ python3 scripts/sg_tuner.py --baseline <motor_name> --fine-tune
 ### 4. Automatic Synchronization
 *   **Pull-to-Sync**: As Klipper begins the first extrusion move, the extruder pulls the filament.
 *   **Handshake**: The MMU detects the pull (Buffer `ADVANCE`) and instantly enables sync mode.
-*   **Collection**: The `sg_tuner.py` script proactively sets all TMC parameters and begins the `SGT` sweep.
+*   **Collection**: The `sg_tuner.py` script proactively sets all TMC parameters and begins the `SGTHRS` sweep.
 
 ---
 
@@ -69,5 +69,5 @@ python3 scripts/sg_tuner.py --baseline <motor_name> --fine-tune
 The tuner monitors for a `FINISH` marker and will automatically stop and analyze the data when the print ends.
 
 ### How to apply:
-1.  Update your `config.ini` with the recommended `sgt` value.
+1.  Update your `config.ini` with the recommended `sgthrs` value.
 2.  Run `scripts/gen_config.py` and rebuild/flash.
