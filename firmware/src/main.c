@@ -708,38 +708,49 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         }
     }
 
-    if (L->task == TASK_UNLOAD && L->retract_deadline_ms != 0) {
-        // Autopreload retract: timed back-off after reaching OUT.
-        if ((int32_t)(now_ms - L->retract_deadline_ms) >= 0) {
-            lane_stop(L);
-        }
-    }
-
-    if (L->task == TASK_UNLOAD && L->retract_deadline_ms == 0) {
-        // Extruder unload: reverse until OUT sensor clears.
-        if (!lane_out_present(L)) {
-            lane_stop(L);
-            char lane_s[2] = { (char)('0' + L->lane_id), 0 };
-            cmd_event("UNLOADED", lane_s);
-        } else if (L->task_limit_mm > 0 && L->task_dist_mm >= L->task_limit_mm) {
-            lane_stop(L);
-            cmd_event("UNLOAD_TIMEOUT", NULL);
+    if (L->task == TASK_UNLOAD) {
+        if (L->retract_deadline_ms == 0) {
+            // Stage 1: reverse until OUT sensor clears.
+            if (!lane_out_present(L)) {
+                // Tip reached OUT. Back off Tip-to-Gears distance.
+                float secs = (float)AUTOLOAD_RETRACT_MM / ((float)REV_SPS * MM_PER_STEP[L->lane_id-1]);
+                if (secs < 0.2f) secs = 0.2f; 
+                L->retract_deadline_ms = now_ms + (uint32_t)(secs * 1000.0f);
+            } else if (L->task_limit_mm > 0 && L->task_dist_mm >= L->task_limit_mm) {
+                lane_stop(L);
+                cmd_event("UNLOAD_TIMEOUT", NULL);
+            }
+        } else {
+            // Stage 2: timed back-off.
+            if ((int32_t)(now_ms - L->retract_deadline_ms) >= 0) {
+                lane_stop(L);
+                char lane_s[2] = { (char)('0' + L->lane_id), 0 };
+                cmd_event("UNLOADED", lane_s);
+            }
         }
     }
 
     if (L->task == TASK_UNLOAD_MMU) {
-        // MMU unload: reverse until IN sensor clears.
-        if (!lane_in_present(L)) {
-            lane_stop(L);
-            char lane_s[2] = { (char)('0' + L->lane_id), 0 };
-            cmd_event("UNLOADED", lane_s);
-        } else if (L->task_dist_mm > (float)DIST_IN_OUT * 1.5f) {
-            // Jam detection: retracted 50% more than physical distance without clearing IN.
-            lane_stop(L);
-            tc_enter_error("UNLOAD_JAM");
-        } else if (L->task_limit_mm > 0 && L->task_dist_mm >= L->task_limit_mm) {
-            lane_stop(L);
-            cmd_event("UNLOAD_TIMEOUT", NULL);
+        if (L->retract_deadline_ms == 0) {
+            // Stage 1: reverse until IN sensor clears.
+            if (!lane_in_present(L)) {
+                // IN clear! Extra 0.5s to fully exit the intake gears.
+                L->retract_deadline_ms = now_ms + 500; 
+            } else if (L->task_dist_mm > (float)DIST_IN_OUT * 1.5f) {
+                // Jam detection: retracted 50% more than physical distance without clearing IN.
+                lane_stop(L);
+                tc_enter_error("UNLOAD_JAM");
+            } else if (L->task_limit_mm > 0 && L->task_dist_mm >= L->task_limit_mm) {
+                lane_stop(L);
+                cmd_event("UNLOAD_TIMEOUT", NULL);
+            }
+        } else {
+            // Stage 2: timed back-off.
+            if ((int32_t)(now_ms - L->retract_deadline_ms) >= 0) {
+                lane_stop(L);
+                char lane_s[2] = { (char)('0' + L->lane_id), 0 };
+                cmd_event("UNLOADED", lane_s);
+            }
         }
     }
 
