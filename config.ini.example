@@ -41,7 +41,7 @@ run_current:
 # auto_rate: 2100
 # buf_stab_rate: 600         # stabilization speed (boot + UL advance recovery)
 # sync_max_rate: 2500
-# sync_min_rate: 0
+# sync_min_rate: 100
 # pre_ramp_rate: 35
 
 # ─── Motion / Ramp ───────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ run_current:
 # baseline_alpha: 0.15
 # buf_predict_thr_ms: 250
 # sync_hard_max_rate: 2500      # absolute sync speed ceiling (mm/min), independent of sync_max_rate
-# sync_kp_rate: 850
+# sync_kp_rate: 1050
 # sync_overshoot_pct: 50         # ADVANCE-only extra push as % of KP correction (0..200)
 # sync_auto_stop_ms: 5000          # Auto-mode only: disable auto-started sync after buffer
                                    # stays TRAILING this long. Independent from SG tuning recovery.
@@ -115,7 +115,7 @@ run_current:
 # ─── RELOAD StallGuard Tuning (per-lane capable) ──────────────────────────────
 # sg_target: 320.0            # target SG value for follow-sync
 # sg_deriv: 3                 # approach contact threshold
-# trailing_rate: 42           # coasting speed when buffer is stalled
+# trailing_rate: 70           # coasting speed when buffer is stalled
 # join_rate: 2100             # fast approach speed
 # press_rate: 1275            # top speed in follow-sync
 # follow_timeout_ms: 10000    # max time in follow before error

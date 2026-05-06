@@ -40,7 +40,7 @@ DEFAULTS = {
     "buf_stab_rate": "600",
     "sync_max_rate": "2500",
     "sync_hard_max_rate": "2500",
-    "sync_min_rate": "0",
+    "sync_min_rate": "100",
     "pre_ramp_rate": "35",
 
     # Motion / Ramp
@@ -58,7 +58,7 @@ DEFAULTS = {
     "baseline_rate": "2100",
     "baseline_alpha": "0.15",
     "buf_predict_thr_ms": "250",
-    "sync_kp_rate": "850",
+    "sync_kp_rate": "1050",
     "sync_overshoot_pct": "50",
     "sync_auto_stop_ms": "5000",
     "buffer_recovery_threshold_ms": "0",
@@ -106,7 +106,7 @@ DEFAULTS = {
     "sg_target": "320.0",
     "sg_deriv": "3",
     "sg_current_ma": "800",
-    "trailing_rate": "42",
+    "trailing_rate": "70",
     "join_rate": "2100",
     "press_rate": "1275",
     "sg_ma_len": "5",
