@@ -113,7 +113,6 @@ DEFAULTS = {
     "dist_y_buf": "300",
     "buf_body_len": "200",
     "buf_size_mm": "50",
-    "buf_size_mm": "50",
 }
 
 
@@ -194,7 +193,7 @@ def main():
                     return parts[lane_idx]
                 # Fewer list entries than lanes → reuse first value for any extra lane
                 return parts[0]
-            # 4. Single value — apply to all lanes
+            # 3. Single value — apply to all lanes
             return g_val or default
 
         microsteps = int(gm("microsteps", "16"))
@@ -209,8 +208,6 @@ def main():
         tbl = int(gm("driver_tbl", "2"))
         hstrt = int(gm("driver_hstrt", "5"))
         hend = int(gm("driver_hend", "0"))
-        # stealthchop_threshold == 0 means SpreadCycle is disabled (StealthChop enabled)
-        # BUT our internal logic uses TMC_SPREADCYCLE=true for SpreadCycle.
         spreadcycle = (gm("stealthchop_threshold", "0") == "0")
         
         # Direction / StallGuard / CoolStep
@@ -249,9 +246,9 @@ def main():
             "follow_timeout_ms": follow_timeout_ms
         }
 
-    # Generate for 2 lanes (can be expanded later by changing this loop)
+    # Generate for 2 lanes
     lanes = [get_motor_params(i) for i in range(2)]
-    m1, m2 = lanes[0], lanes[1]
+    l1, l2 = lanes[0], lanes[1]
 
     def mm_min_to_sps(mm_min_str, m_params):
         mm_min = float(mm_min_str)
@@ -264,76 +261,76 @@ def main():
         "// AUTO-GENERATED — do not edit. Re-run: python3 scripts/gen_config.py",
         f"// Source: {rel_config}",
         "",
-        "// --- Motor / TMC (Lane 1) ---",
-        f"#define CONF_M1_RUN_CURRENT_MA     {m1['run_ma']}",
-        f"#define CONF_M1_HOLD_CURRENT_MA    {m1['hold_ma']}",
-        f"#define CONF_M1_MICROSTEPS         {m1['microsteps']}",
-        f"#define CONF_M1_ROTATION_DISTANCE  {m1['rotation_distance']:.7f}f",
-        f"#define CONF_M1_GEAR_RATIO         {m1['gear_ratio']:.7f}f",
-        f"#define CONF_M1_FULL_STEPS         {m1['full_steps']}",
-        f"#define CONF_M1_MM_PER_STEP        {m1['mm_per_step']:.7f}f",
-        f"#define CONF_M1_TOFF               {m1['toff']}",
-        f"#define CONF_M1_TBL                {m1['tbl']}",
-        f"#define CONF_M1_HSTRT              {m1['hstrt']}",
-        f"#define CONF_M1_HEND               {m1['hend']}",
-        f"#define CONF_M1_INTPOL             {'true' if m1['interpolate'] else 'false'}",
-        f"#define CONF_M1_SPREADCYCLE        {'true' if m1['spreadcycle'] else 'false'}",
-        f"#define CONF_M1_SGTHRS                {m1['sgthrs']}",
-        f"#define CONF_M1_TCOOLTHRS          {m1['tcoolthrs']}",
-        f"#define CONF_M1_SG_CURRENT_MA      {m1['sg_current_ma']}",
-        f"#define CONF_M1_SG_TARGET          {m1['sg_target']:.1f}f",
-        f"#define CONF_M1_SG_DERIV           {m1['sg_deriv']}",
-        f"#define CONF_M1_FOLLOW_TIMEOUT_MS  {m1['follow_timeout_ms']}",
+        "// --- Lane 1 parameters ---",
+        f"#define CONF_L1_RUN_CURRENT_MA     {l1['run_ma']}",
+        f"#define CONF_L1_HOLD_CURRENT_MA    {l1['hold_ma']}",
+        f"#define CONF_L1_MICROSTEPS         {l1['microsteps']}",
+        f"#define CONF_L1_ROTATION_DISTANCE  {l1['rotation_distance']:.7f}f",
+        f"#define CONF_L1_GEAR_RATIO         {l1['gear_ratio']:.7f}f",
+        f"#define CONF_L1_FULL_STEPS         {l1['full_steps']}",
+        f"#define CONF_L1_MM_PER_STEP        {l1['mm_per_step']:.7f}f",
+        f"#define CONF_L1_TOFF               {l1['toff']}",
+        f"#define CONF_L1_TBL                {l1['tbl']}",
+        f"#define CONF_L1_HSTRT              {l1['hstrt']}",
+        f"#define CONF_L1_HEND               {l1['hend']}",
+        f"#define CONF_L1_INTPOL             {'true' if l1['interpolate'] else 'false'}",
+        f"#define CONF_L1_SPREADCYCLE        {'true' if l1['spreadcycle'] else 'false'}",
+        f"#define CONF_L1_SGTHRS                {l1['sgthrs']}",
+        f"#define CONF_L1_TCOOLTHRS          {l1['tcoolthrs']}",
+        f"#define CONF_L1_SG_CURRENT_MA      {l1['sg_current_ma']}",
+        f"#define CONF_L1_SG_TARGET          {l1['sg_target']:.1f}f",
+        f"#define CONF_L1_SG_DERIV           {l1['sg_deriv']}",
+        f"#define CONF_L1_FOLLOW_TIMEOUT_MS  {l1['follow_timeout_ms']}",
         "",
-        "// --- Motor / TMC (Lane 2) ---",
-        f"#define CONF_M2_RUN_CURRENT_MA     {m2['run_ma']}",
-        f"#define CONF_M2_HOLD_CURRENT_MA    {m2['hold_ma']}",
-        f"#define CONF_M2_MICROSTEPS         {m2['microsteps']}",
-        f"#define CONF_M2_ROTATION_DISTANCE  {m2['rotation_distance']:.7f}f",
-        f"#define CONF_M2_GEAR_RATIO         {m2['gear_ratio']:.7f}f",
-        f"#define CONF_M2_FULL_STEPS         {m2['full_steps']}",
-        f"#define CONF_M2_MM_PER_STEP        {m2['mm_per_step']:.7f}f",
-        f"#define CONF_M2_TOFF               {m2['toff']}",
-        f"#define CONF_M2_TBL                {m2['tbl']}",
-        f"#define CONF_M2_HSTRT              {m2['hstrt']}",
-        f"#define CONF_M2_HEND               {m2['hend']}",
-        f"#define CONF_M2_INTPOL             {'true' if m2['interpolate'] else 'false'}",
-        f"#define CONF_M2_SPREADCYCLE        {'true' if m2['spreadcycle'] else 'false'}",
-        f"#define CONF_M2_SGTHRS                {m2['sgthrs']}",
-        f"#define CONF_M2_TCOOLTHRS          {m2['tcoolthrs']}",
-        f"#define CONF_M2_SG_CURRENT_MA      {m2['sg_current_ma']}",
-        f"#define CONF_M2_SG_TARGET          {m2['sg_target']:.1f}f",
-        f"#define CONF_M2_SG_DERIV           {m2['sg_deriv']}",
-        f"#define CONF_M2_FOLLOW_TIMEOUT_MS  {m2['follow_timeout_ms']}",
+        "// --- Lane 2 parameters ---",
+        f"#define CONF_L2_RUN_CURRENT_MA     {l2['run_ma']}",
+        f"#define CONF_L2_HOLD_CURRENT_MA    {l2['hold_ma']}",
+        f"#define CONF_L2_MICROSTEPS         {l2['microsteps']}",
+        f"#define CONF_L2_ROTATION_DISTANCE  {l2['rotation_distance']:.7f}f",
+        f"#define CONF_L2_GEAR_RATIO         {l2['gear_ratio']:.7f}f",
+        f"#define CONF_L2_FULL_STEPS         {l2['full_steps']}",
+        f"#define CONF_L2_MM_PER_STEP        {l2['mm_per_step']:.7f}f",
+        f"#define CONF_L2_TOFF               {l2['toff']}",
+        f"#define CONF_L2_TBL                {l2['tbl']}",
+        f"#define CONF_L2_HSTRT              {l2['hstrt']}",
+        f"#define CONF_L2_HEND               {l2['hend']}",
+        f"#define CONF_L2_INTPOL             {'true' if l2['interpolate'] else 'false'}",
+        f"#define CONF_L2_SPREADCYCLE        {'true' if l2['spreadcycle'] else 'false'}",
+        f"#define CONF_L2_SGTHRS                {l2['sgthrs']}",
+        f"#define CONF_L2_TCOOLTHRS          {l2['tcoolthrs']}",
+        f"#define CONF_L2_SG_CURRENT_MA      {l2['sg_current_ma']}",
+        f"#define CONF_L2_SG_TARGET          {l2['sg_target']:.1f}f",
+        f"#define CONF_L2_SG_DERIV           {l2['sg_deriv']}",
+        f"#define CONF_L2_FOLLOW_TIMEOUT_MS  {l2['follow_timeout_ms']}",
         "",
-        "// --- Global Motor Settings ---",
-        f"#define CONF_M1_DIR_INVERT      {m1['dir_invert']}",
-        f"#define CONF_M2_DIR_INVERT      {m2['dir_invert']}",
+        "// --- Direction Inverts ---",
+        f"#define CONF_L1_DIR_INVERT      {l1['dir_invert']}",
+        f"#define CONF_L2_DIR_INVERT      {l2['dir_invert']}",
         "",
         "// --- Speeds (converted to SPS using Lane 1 baseline) ---",
-        f"#define CONF_FEED_SPS           {mm_min_to_sps(get('feed_rate'), m1)}",
-        f"#define CONF_REV_SPS            {mm_min_to_sps(get('rev_rate'), m1)}",
-        f"#define CONF_AUTO_SPS           {mm_min_to_sps(get('auto_rate'), m1)}",
-        f"#define CONF_SYNC_MAX_SPS       {mm_min_to_sps(get('sync_max_rate'), m1)}",
-        f"#define CONF_SYNC_MIN_SPS       {mm_min_to_sps(get('sync_min_rate'), m1)}",
-        f"#define CONF_PRE_RAMP_SPS       {mm_min_to_sps(get('pre_ramp_rate'), m1)}",
+        f"#define CONF_FEED_SPS           {mm_min_to_sps(get('feed_rate'), l1)}",
+        f"#define CONF_REV_SPS            {mm_min_to_sps(get('rev_rate'), l1)}",
+        f"#define CONF_AUTO_SPS           {mm_min_to_sps(get('auto_rate'), l1)}",
+        f"#define CONF_SYNC_MAX_SPS       {mm_min_to_sps(get('sync_max_rate'), l1)}",
+        f"#define CONF_SYNC_MIN_SPS       {mm_min_to_sps(get('sync_min_rate'), l1)}",
+        f"#define CONF_PRE_RAMP_SPS       {mm_min_to_sps(get('pre_ramp_rate'), l1)}",
         "",
         "// --- Motion / Ramp ---",
         f"#define CONF_MOTION_STARTUP_MS  {get('motion_startup_ms')}",
-        f"#define CONF_RAMP_STEP_SPS      {mm_min_to_sps(get('ramp_step_rate'), m1)}",
+        f"#define CONF_RAMP_STEP_SPS      {mm_min_to_sps(get('ramp_step_rate'), l1)}",
         f"#define CONF_RAMP_TICK_MS       {get('ramp_tick_ms')}",
         f"#define CONF_STALL_RECOVERY_MS  {get('stall_recovery_ms')}",
         "",
         "// --- Buffer Sync ---",
         f"#define CONF_BUF_HALF_TRAVEL_MM {get_float('buf_half_travel_mm')}f",
         f"#define CONF_BUF_HYST_MS        {get('buf_hyst_ms')}",
-        f"#define CONF_SYNC_RAMP_UP_SPS   {mm_min_to_sps(get('sync_ramp_up_rate'), m1)}",
-        f"#define CONF_SYNC_RAMP_DN_SPS   {mm_min_to_sps(get('sync_ramp_dn_rate'), m1)}",
+        f"#define CONF_SYNC_RAMP_UP_SPS   {mm_min_to_sps(get('sync_ramp_up_rate'), l1)}",
+        f"#define CONF_SYNC_RAMP_DN_SPS   {mm_min_to_sps(get('sync_ramp_dn_rate'), l1)}",
         f"#define CONF_SYNC_TICK_MS       {get('sync_tick_ms')}",
-        f"#define CONF_BASELINE_SPS       {mm_min_to_sps(get('baseline_rate'), m1)}",
+        f"#define CONF_BASELINE_SPS       {mm_min_to_sps(get('baseline_rate'), l1)}",
         f"#define CONF_BASELINE_ALPHA     {get_float('baseline_alpha')}f",
         f"#define CONF_BUF_PREDICT_THR_MS {get('buf_predict_thr_ms')}",
-        f"#define CONF_SYNC_KP_SPS        {mm_min_to_sps(get('sync_kp_rate'), m1)}",
+        f"#define CONF_SYNC_KP_SPS        {mm_min_to_sps(get('sync_kp_rate'), l1)}",
         "",
         "// --- Cutter / Servo ---",
         f"#define CONF_SERVO_OPEN_US      {get('servo_open_us')}",
@@ -374,11 +371,11 @@ def main():
         "// --- Reload Mode ---",
         f"#define CONF_RELOAD_MODE           {get('reload_mode')}",
         f"#define CONF_SG_CURRENT_MA     {get('sg_current_ma')}",
-        f"#define CONF_JOIN_SPS           {mm_min_to_sps(get('join_rate'), m1)}",
-        f"#define CONF_PRESS_SPS          {mm_min_to_sps(get('press_rate'), m1)}",
+        f"#define CONF_JOIN_SPS           {mm_min_to_sps(get('join_rate'), l1)}",
+        f"#define CONF_PRESS_SPS          {mm_min_to_sps(get('press_rate'), l1)}",
         f"#define CONF_SG_TARGET          {get_float('sg_target'):.1f}f",
         f"#define CONF_SG_DERIV           {get('sg_deriv')}",
-        f"#define CONF_TRAILING_SPS       {mm_min_to_sps(get('trailing_rate'), m1)}",
+        f"#define CONF_TRAILING_SPS       {mm_min_to_sps(get('trailing_rate'), l1)}",
         f"#define CONF_SG_MA_LEN          {get('sg_ma_len')}",
         f"#define CONF_FOLLOW_TIMEOUT_MS  {get('follow_timeout_ms')}",
         f"#define CONF_SYNC_SG_INTERP                {'true' if get_bool('sync_sg_interp') else 'false'}",

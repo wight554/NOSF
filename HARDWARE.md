@@ -24,18 +24,18 @@ Schematic: ERB V2.0 Release SCH.pdf (in FYSETC-ERB/V2.0/hardware/)
 | 5    | SPI0_CS        | SPI0 chip select                |
 | 6    | I2C1_SDA       | I2C1 data                       |
 | 7    | I2C1_SCL       | I2C1 clock                      |
-| 8    | X-EN           | Motor 1 enable (active LOW)     |
-| 9    | X-DIR          | Motor 1 direction               |
-| 10   | X-STEP         | Motor 1 step (PWM)              |
-| 11   | X-UART         | Motor 1 PDN_UART (single-wire)  |
+| 8    | X-EN           | Lane 1 enable (active LOW)     |
+| 9    | X-DIR          | Lane 1 direction               |
+| 10   | X-STEP         | Lane 1 step (PWM)              |
+| 11   | X-UART         | Lane 1 PDN_UART (single-wire)  |
 | 12   | PRE_GATE_0     | Filament pre-gate sensor (gate 0), used by Klipper MMU |
-| 13   | X-DIAG         | Motor 1 TMC2209 DIAG output     |
-| 14   | Y-EN           | Motor 2 enable (active LOW)     |
-| 15   | Y-DIR          | Motor 2 direction               |
-| 16   | Y-STEP         | Motor 2 step (PWM)              |
-| 17   | Y-UART         | Motor 2 PDN_UART (single-wire)  |
+| 13   | X-DIAG         | Lane 1 TMC2209 DIAG output     |
+| 14   | Y-EN           | Lane 2 enable (active LOW)     |
+| 15   | Y-DIR          | Lane 2 direction               |
+| 16   | Y-STEP         | Lane 2 step (PWM)              |
+| 17   | Y-UART         | Lane 2 PDN_UART (single-wire)  |
 | 18   | —              | No named net (unused by ERB design); RP2040 GPIO accessible on header, adjacent to GPIO12 |
-| 19   | Y-DIAG         | Motor 2 TMC2209 DIAG output     |
+| 19   | Y-DIAG         | Lane 2 TMC2209 DIAG output     |
 | 20   | —              | Status LED via R24 1 kΩ → 3.3 V |
 | 21   | NEO_PIXEL      | WS2812 NeoPixel data            |
 | 22   | ENCODER        | Encoder signal                  |
@@ -49,9 +49,9 @@ Schematic: ERB V2.0 Release SCH.pdf (in FYSETC-ERB/V2.0/hardware/)
 
 ---
 
-## Motor Drivers — TMC2209 (U7 = Motor 1 / X, U8 = Motor 2 / Y)
+## Motor Drivers — TMC2209 (U7 = Lane 1 / X, U8 = Lane 2 / Y)
 
-### U7 TMC2209 — Motor 1 (X)
+### U7 TMC2209 — Lane 1 (X)
 
 | TMC pin | Pin # | Connected to        | Note                                    |
 |---------|-------|---------------------|-----------------------------------------|
@@ -73,7 +73,7 @@ Schematic: ERB V2.0 Release SCH.pdf (in FYSETC-ERB/V2.0/hardware/)
 | OUTB2/B1/A1/A2 | 1/26/24/21 | J3 connector | Motor coil outputs              |
 | R44     | —     | NC (unpopulated)    | Optional pull-down on PDN_UART, not installed |
 
-### U8 TMC2209 — Motor 2 (Y)
+### U8 TMC2209 — Lane 2 (Y)
 
 Same topology as U7. Net names are Y-* instead of X-*.
 
@@ -165,8 +165,8 @@ all-zero bytes — DIAG was holding the line LOW throughout, not PDN_UART.
 
 | Ref | Function |
 |-----|----------|
-| J3  | Motor 1 coil output (4-pin: OUTB2, OUTB1, OUTA1, OUTA2) |
-| J5  | Motor 2 coil output (4-pin: same order) |
+| J3  | Lane 1 coil output (4-pin: OUTB2, OUTB1, OUTA1, OUTA2) |
+| J5  | Lane 2 coil output (4-pin: same order) |
 | J8  | USB header (USB_D_N, USB_D_P) |
 | JP1 | CAN 120 Ω termination resistor (R27). Close to enable. |
 | JP2 | USB 5 V → board 5 V enable. Close only when no 24 V present. |
@@ -203,15 +203,15 @@ PIN_Y_SPLIT = 6
 PIN_BUF_ADVANCE  = 18   // GPIO18: no named ERB net, accessible on header (row above GPIO12)
 PIN_BUF_TRAILING = 12   // GPIO12: PRE_GATE_0 connector
 
-// Motor 1
-PIN_M1_EN   = 8    PIN_M1_DIR  = 9    PIN_M1_STEP = 10
-PIN_M1_UART_TX = 11
-PIN_M1_DIAG    = 13   // same GPIO as PIN_M1_UART_RX (DIAG only, not UART RX)
+// Lane 1
+PIN_L1_EN   = 8    PIN_L1_DIR  = 9    PIN_L1_STEP = 10
+PIN_L1_UART_TX = 11
+PIN_L1_DIAG    = 13   // same GPIO as PIN_L1_UART_RX (DIAG only, not UART RX)
 
-// Motor 2
-PIN_M2_EN   = 14   PIN_M2_DIR  = 15   PIN_M2_STEP = 16
-PIN_M2_UART_TX = 17
-PIN_M2_DIAG    = 19   // same GPIO as PIN_M2_UART_RX (DIAG only, not UART RX)
+// Lane 2
+PIN_L2_EN   = 14   PIN_L2_DIR  = 15   PIN_L2_STEP = 16
+PIN_L2_UART_TX = 17
+PIN_L2_DIAG    = 19   // same GPIO as PIN_L2_UART_RX (DIAG only, not UART RX)
 
 // Peripherals
 PIN_SERVO    = 23

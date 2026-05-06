@@ -36,28 +36,28 @@ static int RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
 static int JOIN_SPS = CONF_JOIN_SPS;
 static int PRESS_SPS = CONF_PRESS_SPS;
 static int TRAILING_SPS = CONF_TRAILING_SPS;
-static int SG_DERIV[NUM_LANES] = {CONF_M1_SG_DERIV, CONF_M2_SG_DERIV};
-static float SG_TARGET[NUM_LANES] = {CONF_M1_SG_TARGET, CONF_M2_SG_TARGET};
-static int FOLLOW_TIMEOUT_MS[NUM_LANES] = {CONF_M1_FOLLOW_TIMEOUT_MS, CONF_M2_FOLLOW_TIMEOUT_MS};
+static int SG_DERIV[NUM_LANES] = {CONF_L1_SG_DERIV, CONF_L2_SG_DERIV};
+static float SG_TARGET[NUM_LANES] = {CONF_L1_SG_TARGET, CONF_L2_SG_TARGET};
+static int FOLLOW_TIMEOUT_MS[NUM_LANES] = {CONF_L1_FOLLOW_TIMEOUT_MS, CONF_L2_FOLLOW_TIMEOUT_MS};
 
 static int RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
 static int RAMP_TICK_MS = CONF_RAMP_TICK_MS;
 
-static int TMC_RUN_CURRENT_MA[NUM_LANES] = {CONF_M1_RUN_CURRENT_MA, CONF_M2_RUN_CURRENT_MA};
-static int TMC_HOLD_CURRENT_MA[NUM_LANES] = {CONF_M1_HOLD_CURRENT_MA, CONF_M2_HOLD_CURRENT_MA};
-static int TMC_MICROSTEPS[NUM_LANES] = {CONF_M1_MICROSTEPS, CONF_M2_MICROSTEPS};
-static bool TMC_SPREADCYCLE[NUM_LANES] = {CONF_M1_SPREADCYCLE, CONF_M2_SPREADCYCLE};
-static int TMC_SGTHRS[NUM_LANES] = {CONF_M1_SGTHRS, CONF_M2_SGTHRS};
-static int TMC_TCOOLTHRS[NUM_LANES] = {CONF_M1_TCOOLTHRS, CONF_M2_TCOOLTHRS};
-static float TMC_ROTATION_DISTANCE[NUM_LANES] = {CONF_M1_ROTATION_DISTANCE, CONF_M2_ROTATION_DISTANCE};
-static float TMC_GEAR_RATIO[NUM_LANES] = {CONF_M1_GEAR_RATIO, CONF_M2_GEAR_RATIO};
-static int TMC_FULL_STEPS[NUM_LANES] = {CONF_M1_FULL_STEPS, CONF_M2_FULL_STEPS};
-static int TMC_TBL[NUM_LANES] = {CONF_M1_TBL, CONF_M2_TBL};
-static int TMC_TOFF[NUM_LANES] = {CONF_M1_TOFF, CONF_M2_TOFF};
-static int TMC_HSTRT[NUM_LANES] = {CONF_M1_HSTRT, CONF_M2_HSTRT};
-static int TMC_HEND[NUM_LANES] = {CONF_M1_HEND, CONF_M2_HEND};
-static bool TMC_INTERPOLATE[NUM_LANES] = {CONF_M1_INTPOL, CONF_M2_INTPOL};
-static int SG_CURRENT_MA[NUM_LANES] = {CONF_M1_SG_CURRENT_MA, CONF_M2_SG_CURRENT_MA};
+static int TMC_RUN_CURRENT_MA[NUM_LANES] = {CONF_L1_RUN_CURRENT_MA, CONF_L2_RUN_CURRENT_MA};
+static int TMC_HOLD_CURRENT_MA[NUM_LANES] = {CONF_L1_HOLD_CURRENT_MA, CONF_L2_HOLD_CURRENT_MA};
+static int TMC_MICROSTEPS[NUM_LANES] = {CONF_L1_MICROSTEPS, CONF_L2_MICROSTEPS};
+static bool TMC_SPREADCYCLE[NUM_LANES] = {CONF_L1_SPREADCYCLE, CONF_L2_SPREADCYCLE};
+static int TMC_SGTHRS[NUM_LANES] = {CONF_L1_SGTHRS, CONF_L2_SGTHRS};
+static int TMC_TCOOLTHRS[NUM_LANES] = {CONF_L1_TCOOLTHRS, CONF_L2_TCOOLTHRS};
+static float TMC_ROTATION_DISTANCE[NUM_LANES] = {CONF_L1_ROTATION_DISTANCE, CONF_L2_ROTATION_DISTANCE};
+static float TMC_GEAR_RATIO[NUM_LANES] = {CONF_L1_GEAR_RATIO, CONF_L2_GEAR_RATIO};
+static int TMC_FULL_STEPS[NUM_LANES] = {CONF_L1_FULL_STEPS, CONF_L2_FULL_STEPS};
+static int TMC_TBL[NUM_LANES] = {CONF_L1_TBL, CONF_L2_TBL};
+static int TMC_TOFF[NUM_LANES] = {CONF_L1_TOFF, CONF_L2_TOFF};
+static int TMC_HSTRT[NUM_LANES] = {CONF_L1_HSTRT, CONF_L2_HSTRT};
+static int TMC_HEND[NUM_LANES] = {CONF_L1_HEND, CONF_L2_HEND};
+static bool TMC_INTERPOLATE[NUM_LANES] = {CONF_L1_INTPOL, CONF_L2_INTPOL};
+static int SG_CURRENT_MA[NUM_LANES] = {CONF_L1_SG_CURRENT_MA, CONF_L2_SG_CURRENT_MA};
 
 static float g_sg_load = 0.0f;   // MA-filtered SG_RESULT; updated only during RELOAD states
 static int STALL_RECOVERY_MS = CONF_STALL_RECOVERY_MS;
@@ -114,7 +114,7 @@ static int BUF_SIZE_MM = CONF_BUF_SIZE_MM;
 // Derived Physical Path Constants
 #define Y_TO_BUF_NEUTRAL      ((float)DIST_Y_BUF + (float)BUF_SIZE_MM / 2.0f)
 
-static float MM_PER_STEP[NUM_LANES] = {CONF_M1_MM_PER_STEP, CONF_M2_MM_PER_STEP}; 
+static float MM_PER_STEP[NUM_LANES] = {CONF_L1_MM_PER_STEP, CONF_L2_MM_PER_STEP}; 
 
 static inline int mm_per_min_to_sps_idx(float mm_per_min, int idx) {
     return (int)(mm_per_min / 60.0f / MM_PER_STEP[idx] + 0.5f);
@@ -433,15 +433,15 @@ static void tc_enter_error(const char *reason);
 static void lane_stop(lane_t *L);
 
 // ===================== Globals =====================
-static lane_t g_lane1;
-static lane_t g_lane2;
+static lane_t g_lane_l1;
+static lane_t g_lane_l2;
 static din_t g_y_split;
 
 static din_t g_buf_adv_din;
 static din_t g_buf_trl_din;
 
-static tmc_t g_tmc1;
-static tmc_t g_tmc2;
+static tmc_t g_tmc_l1;
+static tmc_t g_tmc_l2;
 
 static cutter_ctx_t g_cut = {0};
 static tc_ctx_t g_tc_ctx = { .state = TC_IDLE };
@@ -489,8 +489,8 @@ static inline bool lane_in_present(lane_t *L) { return on_al(&L->in_sw); }
 static inline bool lane_out_present(lane_t *L) { return on_al(&L->out_sw); }
 
 static int detect_active_lane_from_out(void) {
-    bool l1 = lane_out_present(&g_lane1);
-    bool l2 = lane_out_present(&g_lane2);
+    bool l1 = lane_out_present(&g_lane_l1);
+    bool l2 = lane_out_present(&g_lane_l2);
     if (l1 && !l2) return 1;
     if (l2 && !l1) return 2;
     return 0;
@@ -507,8 +507,8 @@ static void set_active_lane(int lane) {
 }
 
 static inline lane_t *lane_ptr(int lane) {
-    if (lane == 1) return &g_lane1;
-    if (lane == 2) return &g_lane2;
+    if (lane == 1) return &g_lane_l1;
+    if (lane == 2) return &g_lane_l2;
     return NULL;
 }
 
@@ -850,8 +850,8 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
 }
 
 static void stop_all(void) {
-    lane_stop(&g_lane1);
-    lane_stop(&g_lane2);
+    lane_stop(&g_lane_l1);
+    lane_stop(&g_lane_l2);
 }
 
 // ===================== Servo =====================
@@ -1459,42 +1459,42 @@ static void tc_tick(uint32_t now_ms) {
 
 static void autopreload_tick(uint32_t now_ms) {
     if (!AUTO_MODE && !AUTO_PRELOAD) {
-        prev_lane1_in_present = lane_in_present(&g_lane1);
-        prev_lane2_in_present = lane_in_present(&g_lane2);
+        prev_lane1_in_present = lane_in_present(&g_lane_l1);
+        prev_lane2_in_present = lane_in_present(&g_lane_l2);
         return;
     }
 
-    bool in1 = lane_in_present(&g_lane1);
-    bool in2 = lane_in_present(&g_lane2);
+    bool in1 = lane_in_present(&g_lane_l1);
+    bool in2 = lane_in_present(&g_lane_l2);
 
     // MMU is completely empty if neither OUT sensor is present.
-    bool mmu_empty = !lane_out_present(&g_lane1) && !lane_out_present(&g_lane2);
+    bool mmu_empty = !lane_out_present(&g_lane_l1) && !lane_out_present(&g_lane_l2);
 
     if (in1 && !prev_lane1_in_present) {
-        if (g_lane1.task == TASK_IDLE && tc_state() == TC_IDLE && !cutter_busy() && !lane_out_present(&g_lane1)) {
+        if (g_lane_l1.task == TASK_IDLE && tc_state() == TC_IDLE && !cutter_busy() && !lane_out_present(&g_lane_l1)) {
             if (AUTO_MODE && mmu_empty) {
                 // Completely empty MMU: auto-load all the way to toolhead.
-                lane_start(&g_lane1, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
+                lane_start(&g_lane_l1, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
                 cmd_event("AUTO_LOAD", "1");
             } else if (AUTO_PRELOAD) {
                 // Other lane loaded (or AUTO_MODE off): just preload to Y-splitter.
-                lane_start(&g_lane1, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, (float)AUTOLOAD_MAX_MM);
+                lane_start(&g_lane_l1, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, (float)AUTOLOAD_MAX_MM);
                 cmd_event("PRELOAD", "1");
             }
-            if (!lane_out_present(&g_lane2)) set_active_lane(1);
+            if (!lane_out_present(&g_lane_l2)) set_active_lane(1);
         }
     }
 
     if (in2 && !prev_lane2_in_present) {
-        if (g_lane2.task == TASK_IDLE && tc_state() == TC_IDLE && !cutter_busy() && !lane_out_present(&g_lane2)) {
+        if (g_lane_l2.task == TASK_IDLE && tc_state() == TC_IDLE && !cutter_busy() && !lane_out_present(&g_lane_l2)) {
             if (AUTO_MODE && mmu_empty) {
-                lane_start(&g_lane2, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
+                lane_start(&g_lane_l2, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
                 cmd_event("AUTO_LOAD", "2");
             } else if (AUTO_PRELOAD) {
-                lane_start(&g_lane2, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, (float)AUTOLOAD_MAX_MM);
+                lane_start(&g_lane_l2, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, (float)AUTOLOAD_MAX_MM);
                 cmd_event("PRELOAD", "2");
             }
-            if (!lane_out_present(&g_lane1)) set_active_lane(2);
+            if (!lane_out_present(&g_lane_l1)) set_active_lane(2);
         }
     }
 
@@ -1774,20 +1774,20 @@ static void lane_fault(lane_t *L, fault_t f) {
 static void __not_in_flash_func(stall_irq)(uint gpio, uint32_t events) {
     if (!(events & GPIO_IRQ_EDGE_RISE)) return;
 
-    if (gpio == PIN_M1_DIAG && g_lane1.stall_armed) {
-        motor_stop(&g_lane1.m);
+    if (gpio == PIN_L1_DIAG && g_lane_l1.stall_armed) {
+        motor_stop(&g_lane_l1.m);
         stall_pending_l1 = true;
     }
-    if (gpio == PIN_M2_DIAG && g_lane2.stall_armed) {
-        motor_stop(&g_lane2.m);
+    if (gpio == PIN_L2_DIAG && g_lane_l2.stall_armed) {
+        motor_stop(&g_lane_l2.m);
         stall_pending_l2 = true;
     }
 }
 
 static void stall_init(void) {
     // Pins already configured by tmc_init (PIO RX). Just enable IRQ.
-    gpio_set_irq_enabled_with_callback(PIN_M1_DIAG, GPIO_IRQ_EDGE_RISE, true, &stall_irq);
-    gpio_set_irq_enabled(PIN_M2_DIAG, GPIO_IRQ_EDGE_RISE, true);
+    gpio_set_irq_enabled_with_callback(PIN_L1_DIAG, GPIO_IRQ_EDGE_RISE, true, &stall_irq);
+    gpio_set_irq_enabled(PIN_L2_DIAG, GPIO_IRQ_EDGE_RISE, true);
 }
 
 static void stall_handle(lane_t *L, const char *lane_s) {
@@ -1809,11 +1809,11 @@ static void stall_handle(lane_t *L, const char *lane_s) {
 static void stall_pump(void) {
     if (stall_pending_l1) {
         stall_pending_l1 = false;
-        stall_handle(&g_lane1, "1");
+        stall_handle(&g_lane_l1, "1");
     }
     if (stall_pending_l2) {
         stall_pending_l2 = false;
-        stall_handle(&g_lane2, "2");
+        stall_handle(&g_lane_l2, "2");
     }
 }
 
@@ -1943,16 +1943,16 @@ static void settings_defaults(void) {
 
     MOTION_STARTUP_MS = CONF_MOTION_STARTUP_MS;
     for (int i = 0; i < NUM_LANES; i++) {
-        SG_DERIV[i] = (i == 0) ? CONF_M1_SG_DERIV : CONF_M2_SG_DERIV;
-        SG_TARGET[i] = (i == 0) ? CONF_M1_SG_TARGET : CONF_M2_SG_TARGET;
-        FOLLOW_TIMEOUT_MS[i] = (i == 0) ? CONF_M1_FOLLOW_TIMEOUT_MS : CONF_M2_FOLLOW_TIMEOUT_MS;
-        TMC_SGTHRS[i] = (i == 0) ? CONF_M1_SGTHRS : CONF_M2_SGTHRS;
-        TMC_TCOOLTHRS[i] = (i == 0) ? CONF_M1_TCOOLTHRS : CONF_M2_TCOOLTHRS;
-        SG_CURRENT_MA[i] = (i == 0) ? CONF_M1_SG_CURRENT_MA : CONF_M2_SG_CURRENT_MA;
-        TMC_RUN_CURRENT_MA[i] = (i == 0) ? CONF_M1_RUN_CURRENT_MA : CONF_M2_RUN_CURRENT_MA;
-        TMC_HOLD_CURRENT_MA[i] = (i == 0) ? CONF_M1_HOLD_CURRENT_MA : CONF_M2_HOLD_CURRENT_MA;
-        TMC_MICROSTEPS[i] = (i == 0) ? CONF_M1_MICROSTEPS : CONF_M2_MICROSTEPS;
-        TMC_SPREADCYCLE[i] = (i == 0) ? CONF_M1_SPREADCYCLE : CONF_M2_SPREADCYCLE;
+        SG_DERIV[i] = (i == 0) ? CONF_L1_SG_DERIV : CONF_L2_SG_DERIV;
+        SG_TARGET[i] = (i == 0) ? CONF_L1_SG_TARGET : CONF_L2_SG_TARGET;
+        FOLLOW_TIMEOUT_MS[i] = (i == 0) ? CONF_L1_FOLLOW_TIMEOUT_MS : CONF_L2_FOLLOW_TIMEOUT_MS;
+        TMC_SGTHRS[i] = (i == 0) ? CONF_L1_SGTHRS : CONF_L2_SGTHRS;
+        TMC_TCOOLTHRS[i] = (i == 0) ? CONF_L1_TCOOLTHRS : CONF_L2_TCOOLTHRS;
+        SG_CURRENT_MA[i] = (i == 0) ? CONF_L1_SG_CURRENT_MA : CONF_L2_SG_CURRENT_MA;
+        TMC_RUN_CURRENT_MA[i] = (i == 0) ? CONF_L1_RUN_CURRENT_MA : CONF_L2_RUN_CURRENT_MA;
+        TMC_HOLD_CURRENT_MA[i] = (i == 0) ? CONF_L1_HOLD_CURRENT_MA : CONF_L2_HOLD_CURRENT_MA;
+        TMC_MICROSTEPS[i] = (i == 0) ? CONF_L1_MICROSTEPS : CONF_L2_MICROSTEPS;
+        TMC_SPREADCYCLE[i] = (i == 0) ? CONF_L1_SPREADCYCLE : CONF_L2_SPREADCYCLE;
     }
 
     SERVO_OPEN_US = CONF_SERVO_OPEN_US;
@@ -1981,47 +1981,47 @@ static void settings_defaults(void) {
     SYNC_KP_SPS = CONF_SYNC_KP_SPS;
     TS_BUF_FALLBACK_MS = CONF_TS_BUF_FALLBACK_MS;
 
-    MM_PER_STEP[0] = CONF_M1_MM_PER_STEP;
-    MM_PER_STEP[1] = CONF_M2_MM_PER_STEP;
+    MM_PER_STEP[0] = CONF_L1_MM_PER_STEP;
+    MM_PER_STEP[1] = CONF_L2_MM_PER_STEP;
 
     for (int i = 0; i < NUM_LANES; i++) {
-        SG_DERIV[i] = (i == 0) ? CONF_M1_SG_DERIV : CONF_M2_SG_DERIV;
-        SG_TARGET[i] = (i == 0) ? CONF_M1_SG_TARGET : CONF_M2_SG_TARGET;
-        FOLLOW_TIMEOUT_MS[i] = (i == 0) ? CONF_M1_FOLLOW_TIMEOUT_MS : CONF_M2_FOLLOW_TIMEOUT_MS;
-        TMC_SGTHRS[i] = (i == 0) ? CONF_M1_SGTHRS : CONF_M2_SGTHRS;
-        TMC_TCOOLTHRS[i] = (i == 0) ? CONF_M1_TCOOLTHRS : CONF_M2_TCOOLTHRS;
-        SG_CURRENT_MA[i] = (i == 0) ? CONF_M1_SG_CURRENT_MA : CONF_M2_SG_CURRENT_MA;
+        SG_DERIV[i] = (i == 0) ? CONF_L1_SG_DERIV : CONF_L2_SG_DERIV;
+        SG_TARGET[i] = (i == 0) ? CONF_L1_SG_TARGET : CONF_L2_SG_TARGET;
+        FOLLOW_TIMEOUT_MS[i] = (i == 0) ? CONF_L1_FOLLOW_TIMEOUT_MS : CONF_L2_FOLLOW_TIMEOUT_MS;
+        TMC_SGTHRS[i] = (i == 0) ? CONF_L1_SGTHRS : CONF_L2_SGTHRS;
+        TMC_TCOOLTHRS[i] = (i == 0) ? CONF_L1_TCOOLTHRS : CONF_L2_TCOOLTHRS;
+        SG_CURRENT_MA[i] = (i == 0) ? CONF_L1_SG_CURRENT_MA : CONF_L2_SG_CURRENT_MA;
     }
     SYNC_SG_INTERP = CONF_SYNC_SG_INTERP;
     RELOAD_SG_INTERP = CONF_RELOAD_SG_INTERP;
 
-    TMC_ROTATION_DISTANCE[0] = CONF_M1_ROTATION_DISTANCE;
-    TMC_ROTATION_DISTANCE[1] = CONF_M2_ROTATION_DISTANCE;
-    TMC_GEAR_RATIO[0] = CONF_M1_GEAR_RATIO;
-    TMC_GEAR_RATIO[1] = CONF_M2_GEAR_RATIO;
-    TMC_FULL_STEPS[0] = CONF_M1_FULL_STEPS;
-    TMC_FULL_STEPS[1] = CONF_M2_FULL_STEPS;
-    TMC_MICROSTEPS[0] = CONF_M1_MICROSTEPS;
-    TMC_MICROSTEPS[1] = CONF_M2_MICROSTEPS;
-    TMC_TBL[0] = CONF_M1_TBL;
-    TMC_TBL[1] = CONF_M2_TBL;
-    TMC_TOFF[0] = CONF_M1_TOFF;
-    TMC_TOFF[1] = CONF_M2_TOFF;
-    TMC_HSTRT[0] = CONF_M1_HSTRT;
-    TMC_HSTRT[1] = CONF_M2_HSTRT;
-    TMC_HEND[0] = CONF_M1_HEND;
-    TMC_HEND[1] = CONF_M2_HEND;
-    TMC_INTERPOLATE[0] = CONF_M1_INTPOL;
-    TMC_INTERPOLATE[1] = CONF_M2_INTPOL;
-    TMC_SPREADCYCLE[0] = CONF_M1_SPREADCYCLE;
-    TMC_SPREADCYCLE[1] = CONF_M2_SPREADCYCLE;
-    TMC_RUN_CURRENT_MA[0] = CONF_M1_RUN_CURRENT_MA;
-    TMC_RUN_CURRENT_MA[1] = CONF_M2_RUN_CURRENT_MA;
-    TMC_HOLD_CURRENT_MA[0] = CONF_M1_HOLD_CURRENT_MA;
-    TMC_HOLD_CURRENT_MA[1] = CONF_M2_HOLD_CURRENT_MA;
+    TMC_ROTATION_DISTANCE[0] = CONF_L1_ROTATION_DISTANCE;
+    TMC_ROTATION_DISTANCE[1] = CONF_L2_ROTATION_DISTANCE;
+    TMC_GEAR_RATIO[0] = CONF_L1_GEAR_RATIO;
+    TMC_GEAR_RATIO[1] = CONF_L2_GEAR_RATIO;
+    TMC_FULL_STEPS[0] = CONF_L1_FULL_STEPS;
+    TMC_FULL_STEPS[1] = CONF_L2_FULL_STEPS;
+    TMC_MICROSTEPS[0] = CONF_L1_MICROSTEPS;
+    TMC_MICROSTEPS[1] = CONF_L2_MICROSTEPS;
+    TMC_TBL[0] = CONF_L1_TBL;
+    TMC_TBL[1] = CONF_L2_TBL;
+    TMC_TOFF[0] = CONF_L1_TOFF;
+    TMC_TOFF[1] = CONF_L2_TOFF;
+    TMC_HSTRT[0] = CONF_L1_HSTRT;
+    TMC_HSTRT[1] = CONF_L2_HSTRT;
+    TMC_HEND[0] = CONF_L1_HEND;
+    TMC_HEND[1] = CONF_L2_HEND;
+    TMC_INTERPOLATE[0] = CONF_L1_INTPOL;
+    TMC_INTERPOLATE[1] = CONF_L2_INTPOL;
+    TMC_SPREADCYCLE[0] = CONF_L1_SPREADCYCLE;
+    TMC_SPREADCYCLE[1] = CONF_L2_SPREADCYCLE;
+    TMC_RUN_CURRENT_MA[0] = CONF_L1_RUN_CURRENT_MA;
+    TMC_RUN_CURRENT_MA[1] = CONF_L2_RUN_CURRENT_MA;
+    TMC_HOLD_CURRENT_MA[0] = CONF_L1_HOLD_CURRENT_MA;
+    TMC_HOLD_CURRENT_MA[1] = CONF_L2_HOLD_CURRENT_MA;
 
-    MM_PER_STEP[0] = CONF_M1_MM_PER_STEP;
-    MM_PER_STEP[1] = CONF_M2_MM_PER_STEP;
+    MM_PER_STEP[0] = CONF_L1_MM_PER_STEP;
+    MM_PER_STEP[1] = CONF_L2_MM_PER_STEP;
 }
 
 static void settings_save(void) {
@@ -2137,7 +2137,7 @@ static void settings_save(void) {
 
 static void sync_tmc_settings(int lane) {
     int idx = lane_to_idx(lane);
-    tmc_t *t = (lane == 1) ? &g_tmc1 : &g_tmc2;
+    tmc_t *t = (lane == 1) ? &g_tmc_l1 : &g_tmc_l2;
 
     // Recalculate MM_PER_STEP for this lane
     MM_PER_STEP[idx] = TMC_ROTATION_DISTANCE[idx] / (float)(TMC_FULL_STEPS[idx] * TMC_GEAR_RATIO[idx] * TMC_MICROSTEPS[idx]);
@@ -2148,18 +2148,18 @@ static void sync_tmc_settings(int lane) {
 }
 
 static void tmc_apply_all(void) {
-    tmc_set_pwmconf(&g_tmc1);
-    tmc_set_pwmconf(&g_tmc2);
-    tmc_set_spreadcycle(&g_tmc1, TMC_SPREADCYCLE[0]);
-    tmc_set_spreadcycle(&g_tmc2, TMC_SPREADCYCLE[1]);
-    tmc_setup_chopconf(&g_tmc1, TMC_MICROSTEPS[0], TMC_TOFF[0], TMC_TBL[0], TMC_HSTRT[0], TMC_HEND[0], TMC_INTERPOLATE[0]);
-    tmc_setup_chopconf(&g_tmc2, TMC_MICROSTEPS[1], TMC_TOFF[1], TMC_TBL[1], TMC_HSTRT[1], TMC_HEND[1], TMC_INTERPOLATE[1]);
-    tmc_set_run_current_ma(&g_tmc1, TMC_RUN_CURRENT_MA[0], TMC_HOLD_CURRENT_MA[0]);
-    tmc_set_run_current_ma(&g_tmc2, TMC_RUN_CURRENT_MA[1], TMC_HOLD_CURRENT_MA[1]);
-    tmc_set_tcoolthrs(&g_tmc1, (uint32_t)TMC_TCOOLTHRS[0]);
-    tmc_set_tcoolthrs(&g_tmc2, (uint32_t)TMC_TCOOLTHRS[1]);
-    tmc_set_sgthrs(&g_tmc1, (uint8_t)TMC_SGTHRS[0]);
-    tmc_set_sgthrs(&g_tmc2, (uint8_t)TMC_SGTHRS[1]);
+    tmc_set_pwmconf(&g_tmc_l1);
+    tmc_set_pwmconf(&g_tmc_l2);
+    tmc_set_spreadcycle(&g_tmc_l1, TMC_SPREADCYCLE[0]);
+    tmc_set_spreadcycle(&g_tmc_l2, TMC_SPREADCYCLE[1]);
+    tmc_setup_chopconf(&g_tmc_l1, TMC_MICROSTEPS[0], TMC_TOFF[0], TMC_TBL[0], TMC_HSTRT[0], TMC_HEND[0], TMC_INTERPOLATE[0]);
+    tmc_setup_chopconf(&g_tmc_l2, TMC_MICROSTEPS[1], TMC_TOFF[1], TMC_TBL[1], TMC_HSTRT[1], TMC_HEND[1], TMC_INTERPOLATE[1]);
+    tmc_set_run_current_ma(&g_tmc_l1, TMC_RUN_CURRENT_MA[0], TMC_HOLD_CURRENT_MA[0]);
+    tmc_set_run_current_ma(&g_tmc_l2, TMC_RUN_CURRENT_MA[1], TMC_HOLD_CURRENT_MA[1]);
+    tmc_set_tcoolthrs(&g_tmc_l1, (uint32_t)TMC_TCOOLTHRS[0]);
+    tmc_set_tcoolthrs(&g_tmc_l2, (uint32_t)TMC_TCOOLTHRS[1]);
+    tmc_set_sgthrs(&g_tmc_l1, (uint8_t)TMC_SGTHRS[0]);
+    tmc_set_sgthrs(&g_tmc_l2, (uint8_t)TMC_SGTHRS[1]);
 
     // Firmware defaults configure VSENSE=1 in CHOPCONF, so seed shadow accordingly.
     g_shadow_vsense[0] = true;
@@ -2321,8 +2321,8 @@ static void cmd_event(const char *type, const char *data) {
 static void status_dump(void) {
     uint16_t sg1 = 0;
     uint16_t sg2 = 0;
-    (void)tmc_read_sg_result(&g_tmc1, &sg1);
-    (void)tmc_read_sg_result(&g_tmc2, &sg2);
+    (void)tmc_read_sg_result(&g_tmc_l1, &sg1);
+    (void)tmc_read_sg_result(&g_tmc_l2, &sg2);
 
     char b[256];
     snprintf(b, sizeof(b),
@@ -2331,11 +2331,11 @@ static void status_dump(void) {
         "TH:%d,YS:%d,BUF:%s,SPS:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,RELOAD:%d,"
         "SG1:%u,SG2:%u,SGF:%d",
         active_lane, tc_state_name(g_tc_ctx.state),
-        task_name(g_lane1.task), task_name(g_lane2.task),
-        lane_in_present(&g_lane1) ? 1 : 0,
-        lane_out_present(&g_lane1) ? 1 : 0,
-        lane_in_present(&g_lane2) ? 1 : 0,
-        lane_out_present(&g_lane2) ? 1 : 0,
+        task_name(g_lane_l1.task), task_name(g_lane_l2.task),
+        lane_in_present(&g_lane_l1) ? 1 : 0,
+        lane_out_present(&g_lane_l1) ? 1 : 0,
+        lane_in_present(&g_lane_l2) ? 1 : 0,
+        lane_out_present(&g_lane_l2) ? 1 : 0,
         toolhead_has_filament ? 1 : 0,
         on_al(&g_y_split) ? 1 : 0,
         buf_state_name(g_buf.state),
@@ -2498,7 +2498,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             cmd_reply("ER", "ARG");
         } else {
             uint16_t sg = 0;
-            tmc_t *t = (ln == 1) ? &g_tmc1 : &g_tmc2;
+            tmc_t *t = (ln == 1) ? &g_tmc_l1 : &g_tmc_l2;
             if (tmc_read_sg_result(t, &sg)) {
                 char out[24];
                 snprintf(out, sizeof(out), "%d:%u", ln, sg);
@@ -2511,7 +2511,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         int ln = 0;
         int ma = 0;
         if (sscanf(p, "%d:%d", &ln, &ma) == 2 && (ln == 1 || ln == 2) && ma >= 0 && ma <= 2000) {
-            tmc_t *t = (ln == 1) ? &g_tmc1 : &g_tmc2;
+            tmc_t *t = (ln == 1) ? &g_tmc_l1 : &g_tmc_l2;
             int idx = lane_to_idx(ln);
             if (tmc_set_run_current_ma(t, ma, TMC_HOLD_CURRENT_MA[idx])) {
                 TMC_RUN_CURRENT_MA[idx] = ma;
@@ -2621,9 +2621,9 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "SYNC_SG_INTERP"))      SYNC_SG_INTERP = (iv != 0);
         else if (!strcmp(base_param, "RELOAD_SG_INTERP"))    RELOAD_SG_INTERP = (iv != 0);
         else if (!strcmp(base_param, "SGTHRS")) {
-            SET_LANE({ TMC_SGTHRS[idx] = clamp_i(iv, 0, 255); tmc_set_sgthrs((l==1?&g_tmc1:&g_tmc2), (uint8_t)TMC_SGTHRS[idx]); });
+            SET_LANE({ TMC_SGTHRS[idx] = clamp_i(iv, 0, 255); tmc_set_sgthrs((l==1?&g_tmc_l1:&g_tmc_l2), (uint8_t)TMC_SGTHRS[idx]); });
         }
-        else if (!strcmp(base_param, "TCOOLTHRS")) { SET_LANE({ TMC_TCOOLTHRS[idx] = clamp_i(iv, 0, 0xFFFFF); tmc_set_tcoolthrs((l==1?&g_tmc1:&g_tmc2), (uint32_t)TMC_TCOOLTHRS[idx]); }); }
+        else if (!strcmp(base_param, "TCOOLTHRS")) { SET_LANE({ TMC_TCOOLTHRS[idx] = clamp_i(iv, 0, 0xFFFFF); tmc_set_tcoolthrs((l==1?&g_tmc_l1:&g_tmc_l2), (uint32_t)TMC_TCOOLTHRS[idx]); }); }
         else if (!strcmp(base_param, "SG_CURRENT_MA")) { SET_LANE({ SG_CURRENT_MA[idx] = clamp_i(iv, 0, 2000); }); }
         else if (!strcmp(base_param, "SERVO_OPEN"))   SERVO_OPEN_US = clamp_i(iv, 400, 2600);
         else if (!strcmp(base_param, "SERVO_CLOSE"))  SERVO_CLOSE_US = clamp_i(iv, 400, 2600);
@@ -2736,7 +2736,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         int ln, reg;
         uint32_t val;
         if (sscanf(p, "%d:%d:%i", &ln, &reg, &val) == 3 && (ln == 1 || ln == 2) && reg >= 0 && reg <= 127) {
-            tmc_t *t = (ln == 1) ? &g_tmc1 : &g_tmc2;
+            tmc_t *t = (ln == 1) ? &g_tmc_l1 : &g_tmc_l2;
             if (tmc_write(t, (uint8_t)reg, val)) {
                 int idx = lane_to_idx(ln);
                 if (reg == TMC_REG_IHOLD_IRUN) {
@@ -2767,7 +2767,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
                 cmd_reply("OK", out);
                 return;
             }
-            tmc_t *t = (ln == 1) ? &g_tmc1 : &g_tmc2;
+            tmc_t *t = (ln == 1) ? &g_tmc_l1 : &g_tmc_l2;
             uint32_t val = 0;
             if (tmc_read(t, (uint8_t)reg, &val)) {
                 char out[32];
@@ -2786,7 +2786,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         if (ln != 1 && ln != 2) {
             cmd_reply("ER", "ARG");
         } else {
-            tmc_t probe = (ln == 1) ? g_tmc1 : g_tmc2;
+            tmc_t probe = (ln == 1) ? g_tmc_l1 : g_tmc_l2;
             char out[128];
             int pos = snprintf(out, sizeof(out), "%d:", ln);
             for (uint8_t a = 0; a < 4; a++) {
@@ -2854,10 +2854,10 @@ typedef enum {
 } led_state_t;
 
 static led_state_t led_state_from_system(void) {
-    if (g_lane1.fault || g_lane2.fault || g_tc_ctx.state == TC_ERROR) return LED_ERROR;
+    if (g_lane_l1.fault || g_lane_l2.fault || g_tc_ctx.state == TC_ERROR) return LED_ERROR;
     if (g_cut.state != CUT_IDLE) return LED_CUTTING;
     if (g_tc_ctx.state != TC_IDLE) return LED_TC;
-    if (g_lane1.task == TASK_AUTOLOAD || g_lane2.task == TASK_AUTOLOAD) return LED_LOADING;
+    if (g_lane_l1.task == TASK_AUTOLOAD || g_lane_l2.task == TASK_AUTOLOAD) return LED_LOADING;
     if (sync_enabled && sync_current_sps > 0) return LED_ACTIVE;
     return LED_IDLE;
 }
@@ -2897,15 +2897,15 @@ int main(void) {
     stdio_init_all();
     sleep_ms(200);
 
-    motor_t m1;
-    motor_t m2;
-    motor_init(&m1, PIN_M1_EN, PIN_M1_DIR, PIN_M1_STEP, CONF_M1_DIR_INVERT);
-    motor_init(&m2, PIN_M2_EN, PIN_M2_DIR, PIN_M2_STEP, CONF_M2_DIR_INVERT);
-    tmc_init(&g_tmc1, PIN_M1_UART_TX, PIN_M1_UART_RX, 0);
-    tmc_init(&g_tmc2, PIN_M2_UART_TX, PIN_M2_UART_RX, 0);
+    motor_t l1;
+    motor_t l2;
+    motor_init(&l1, PIN_L1_EN, PIN_L1_DIR, PIN_L1_STEP, CONF_L1_DIR_INVERT);
+    motor_init(&l2, PIN_L2_EN, PIN_L2_DIR, PIN_L2_STEP, CONF_L2_DIR_INVERT);
+    tmc_init(&g_tmc_l1, PIN_L1_UART_TX, PIN_L1_UART_RX, 0);
+    tmc_init(&g_tmc_l2, PIN_L2_UART_TX, PIN_L2_UART_RX, 0);
 
-    lane_setup(&g_lane1, PIN_L1_IN, PIN_L1_OUT, m1, 1, PIN_M1_DIAG, &g_tmc1);
-    lane_setup(&g_lane2, PIN_L2_IN, PIN_L2_OUT, m2, 2, PIN_M2_DIAG, &g_tmc2);
+    lane_setup(&g_lane_l1, PIN_L1_IN, PIN_L1_OUT, l1, 1, PIN_L1_DIAG, &g_tmc_l1);
+    lane_setup(&g_lane_l2, PIN_L2_IN, PIN_L2_OUT, l2, 2, PIN_L2_DIAG, &g_tmc_l2);
 
     din_init(&g_y_split, PIN_Y_SPLIT);
     din_init(&g_buf_adv_din, PIN_BUF_ADVANCE);
@@ -2926,10 +2926,10 @@ int main(void) {
     // din_init reads GPIOs once without debounce; sensors may not have settled.
     // Spin din_update for 25 ms so the 10 ms debounce threshold commits correctly.
     for (int i = 0; i < 25; i++) {
-        din_update(&g_lane1.in_sw);
-        din_update(&g_lane1.out_sw);
-        din_update(&g_lane2.in_sw);
-        din_update(&g_lane2.out_sw);
+        din_update(&g_lane_l1.in_sw);
+        din_update(&g_lane_l1.out_sw);
+        din_update(&g_lane_l2.in_sw);
+        din_update(&g_lane_l2.out_sw);
         din_update(&g_y_split);
         sleep_ms(1);
     }
@@ -2938,22 +2938,22 @@ int main(void) {
     if (active_lane == 0) {
         // Fall back: filament parked before OUT (pre-loaded state).
         // Pick lane 1 first; if only lane 2 has filament, pick lane 2.
-        if (lane_in_present(&g_lane1) && !lane_out_present(&g_lane1))
+        if (lane_in_present(&g_lane_l1) && !lane_out_present(&g_lane_l1))
             active_lane = 1;
-        else if (lane_in_present(&g_lane2) && !lane_out_present(&g_lane2))
+        else if (lane_in_present(&g_lane_l2) && !lane_out_present(&g_lane_l2))
             active_lane = 2;
     }
-    prev_lane1_in_present = lane_in_present(&g_lane1);
-    prev_lane2_in_present = lane_in_present(&g_lane2);
+    prev_lane1_in_present = lane_in_present(&g_lane_l1);
+    prev_lane2_in_present = lane_in_present(&g_lane_l2);
 
     while (true) {
         g_now_ms = to_ms_since_boot(get_absolute_time());
 
         // Inputs
-        din_update(&g_lane1.in_sw);
-        din_update(&g_lane1.out_sw);
-        din_update(&g_lane2.in_sw);
-        din_update(&g_lane2.out_sw);
+        din_update(&g_lane_l1.in_sw);
+        din_update(&g_lane_l1.out_sw);
+        din_update(&g_lane_l2.in_sw);
+        din_update(&g_lane_l2.out_sw);
         din_update(&g_y_split);
         din_update(&g_buf_adv_din);
         din_update(&g_buf_trl_din);
@@ -2968,8 +2968,8 @@ int main(void) {
         cutter_tick(g_now_ms);
         tc_tick(g_now_ms);
         autopreload_tick(g_now_ms);
-        lane_tick(&g_lane1, g_now_ms);
-        lane_tick(&g_lane2, g_now_ms);
+        lane_tick(&g_lane_l1, g_now_ms);
+        lane_tick(&g_lane_l2, g_now_ms);
         buf_sensor_tick(g_now_ms);
         sync_tick(g_now_ms);
 

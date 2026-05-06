@@ -33,19 +33,19 @@
 #define PIN_BUF_TRAILING 12
 #define PIN_BUF_ANALOG   26  // GP26 = ADC0; change to 27/28/29 if needed
 
-#define PIN_M1_EN        8
-#define PIN_M1_DIR       9
-#define PIN_M1_STEP      10
-#define PIN_M1_UART_TX   11
-#define PIN_M1_UART_RX   13
-#define PIN_M1_DIAG      13  // same as UART_RX on ERB
+#define PIN_L1_EN        8
+#define PIN_L1_DIR       9
+#define PIN_L1_STEP      10
+#define PIN_L1_UART_TX   11
+#define PIN_L1_UART_RX   13
+#define PIN_L1_DIAG      13  // same as UART_RX on ERB
 
-#define PIN_M2_EN        14
-#define PIN_M2_DIR       15
-#define PIN_M2_STEP      16
-#define PIN_M2_UART_TX   17
-#define PIN_M2_UART_RX   19
-#define PIN_M2_DIAG      19  // same as UART_RX on ERB
+#define PIN_L2_EN        14
+#define PIN_L2_DIR       15
+#define PIN_L2_STEP      16
+#define PIN_L2_UART_TX   17
+#define PIN_L2_UART_RX   19
+#define PIN_L2_DIAG      19  // same as UART_RX on ERB
 
 #define PIN_SERVO        23
 #define PIN_NEOPIXEL     21
