@@ -1886,8 +1886,9 @@ static void sync_tick(uint32_t now_ms) {
     //            -1 = TRAILING (buffer filling, slow down MMU).
     // Both sensor modes produce the same [-1, +1] range via EMA in buf_sensor_tick.
     float buf_pos = g_buf_pos;
-    // Slight trailing bias: avoid sitting forward in ADVANCE at high speed.
-    float biased_buf_pos = clamp_f(buf_pos - 0.12f, -1.0f, 1.0f);
+    // Trailing bias: keep steady-state a bit behind neutral to reduce
+    // repeated ADVANCE triggers at higher flow rates.
+    float biased_buf_pos = clamp_f(buf_pos - 0.20f, -1.0f, 1.0f);
     int kp_sps = sync_effective_kp_sps(s);
 
     if (s == BUF_TRAILING) {
@@ -1924,6 +1925,11 @@ static void sync_tick(uint32_t now_ms) {
     } else {
         if (sync_fast_brake_until_ms != 0 && now_ms >= sync_fast_brake_until_ms) sync_fast_brake_until_ms = 0;
         float correction = (float)kp_sps * biased_buf_pos;
+        if (s == BUF_ADVANCE) {
+            // ADVANCE overshoot: intentionally push beyond neutral so the buffer
+            // is replenished toward TRAILING and does not chatter around ADVANCE.
+            correction += (float)(kp_sps / 2);
+        }
         if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
 
         int base_target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, sync_clamp_max_sps(SYNC_MAX_SPS));
