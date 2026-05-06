@@ -106,7 +106,8 @@ These parameters describe the physical layout of your MMU and are used for intel
 - **DIST_IN_OUT**: Measure the tube distance between the IN and OUT sensors.
 - **DIST_OUT_Y**: Measure the tube distance between the OUT sensor and the Y-splitter entry.
 - **DIST_Y_BUF**: Measure the tube distance between the Y-splitter exit and the entry of the buffer body.
-- **Buffer Neutral**: The firmware automatically calculates the "Neutral" point as `DIST_Y_BUF + (BUF_SIZE / 2)`. Ensure your buffer arm is centered at this physical displacement.
+- **Y to Neutral**: The physical center point of the buffer is calculated as `Y_TO_NEUTRAL = DIST_Y_BUF + (BUF_SIZE / 2)`.
+- **Neutral to Exit**: The distance from the center point to the buffer exit is `NEUTRAL_TO_EXIT = BUF_BODY_LEN - Y_TO_NEUTRAL`.
 - **BUF_SIZE**: This is the total physical travel distance of the buffer arm between the two endstops.
 
 ### Toolchange & Hardware
