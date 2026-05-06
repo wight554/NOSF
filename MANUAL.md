@@ -88,6 +88,7 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 | `BUF_STAB_RATE` | `buf_stab_rate` | Buffer stabilization speed for boot neutralization and UL advance-recovery move | 600 |
 | `JOIN_RATE` | `join_rate` | RELOAD: Fast approach speed | 2000 |
 | `PRESS_RATE` | `press_rate` | RELOAD: Slow follow-sync speed | 1000 |
+| `SYNC_HARD_MAX_RATE` | `sync_hard_max_rate` | Absolute sync speed ceiling (independent of `SYNC_MAX_RATE`) | 2500 |
 | `SYNC_MAX_RATE` | `sync_max_rate` | Max speed allowed during sync | 20000 |
 
 ### Safety & Timeouts

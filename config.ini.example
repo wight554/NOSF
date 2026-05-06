@@ -58,6 +58,7 @@ run_current:
 # baseline_rate: 2100        # starting sync speed (mm/min); set to your print feed rate
 # baseline_alpha: 0.15
 # buf_predict_thr_ms: 250
+# sync_hard_max_rate: 2500      # absolute sync speed ceiling (mm/min), independent of sync_max_rate
 # sync_kp_rate: 850
 # sync_overshoot_pct: 50         # ADVANCE-only extra push as % of KP correction (0..200)
 # sync_auto_stop_ms: 5000          # Auto-mode only: disable auto-started sync after buffer

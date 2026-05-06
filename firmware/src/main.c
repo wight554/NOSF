@@ -92,6 +92,7 @@ static int TC_TIMEOUT_TH_MS = CONF_TC_TIMEOUT_TH_MS;
 static int TC_TIMEOUT_Y_MS = CONF_TC_TIMEOUT_Y_MS;
 
 static int SYNC_MAX_SPS = CONF_SYNC_MAX_SPS;
+static int SYNC_HARD_MAX_SPS = CONF_SYNC_HARD_MAX_SPS;
 static int SYNC_MIN_SPS = CONF_SYNC_MIN_SPS;
 static int SYNC_RAMP_UP_SPS = CONF_SYNC_RAMP_UP_SPS;
 static int SYNC_RAMP_DN_SPS = CONF_SYNC_RAMP_DN_SPS;
@@ -1720,7 +1721,7 @@ static void baseline_update_on_settle(uint32_t mid_dwell_ms) {
 }
 
 static int sync_hard_max_sps(void) {
-    return mm_per_min_to_sps(2500.0f);
+    return SYNC_HARD_MAX_SPS;
 }
 
 static int sync_clamp_max_sps(int requested_sps) {
@@ -2018,14 +2019,14 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 35u
+#define SETTINGS_VERSION 36u
 
 typedef struct {
     uint32_t magic;
     uint32_t version;
 
     int feed_sps, rev_sps, auto_sps;
-    int sync_max_sps, sync_min_sps;
+    int sync_max_sps, sync_hard_max_sps, sync_min_sps;
     int sync_ramp_up, sync_ramp_dn;
     int sync_tick_ms, pre_ramp_sps;
     int sync_auto_stop_ms;
@@ -2112,6 +2113,7 @@ static void settings_defaults(void) {
     REV_SPS = CONF_REV_SPS;
     AUTO_SPS = CONF_AUTO_SPS;
 
+    SYNC_HARD_MAX_SPS = clamp_i(CONF_SYNC_HARD_MAX_SPS, mm_per_min_to_sps(1000.0f), mm_per_min_to_sps(5000.0f));
     SYNC_MAX_SPS = sync_clamp_max_sps(CONF_SYNC_MAX_SPS);
     SYNC_MIN_SPS = CONF_SYNC_MIN_SPS;
     SYNC_RAMP_UP_SPS = CONF_SYNC_RAMP_UP_SPS;
@@ -2236,6 +2238,7 @@ static void settings_save(void) {
     s.auto_sps = AUTO_SPS;
 
     s.sync_max_sps = SYNC_MAX_SPS;
+    s.sync_hard_max_sps = SYNC_HARD_MAX_SPS;
     s.sync_min_sps = SYNC_MIN_SPS;
     s.sync_ramp_up = SYNC_RAMP_UP_SPS;
     s.sync_ramp_dn = SYNC_RAMP_DN_SPS;
@@ -2394,6 +2397,7 @@ static void settings_load(void) {
     REV_SPS = s->rev_sps;
     AUTO_SPS = s->auto_sps;
 
+    SYNC_HARD_MAX_SPS = clamp_i(s->sync_hard_max_sps, mm_per_min_to_sps(1000.0f), mm_per_min_to_sps(5000.0f));
     SYNC_MAX_SPS = sync_clamp_max_sps(s->sync_max_sps);
     SYNC_MIN_SPS = s->sync_min_sps;
     SYNC_RAMP_UP_SPS = s->sync_ramp_up;
@@ -2793,6 +2797,10 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "REV_RATE"))     REV_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "AUTO_RATE"))    AUTO_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "SYNC_MAX_RATE")) SYNC_MAX_SPS = sync_clamp_max_sps(clamp_i(mm_per_min_to_sps(fv), 200, 50000));
+        else if (!strcmp(base_param, "SYNC_HARD_MAX_RATE")) {
+            SYNC_HARD_MAX_SPS = clamp_i(mm_per_min_to_sps(fv), mm_per_min_to_sps(1000.0f), mm_per_min_to_sps(5000.0f));
+            SYNC_MAX_SPS = sync_clamp_max_sps(SYNC_MAX_SPS);
+        }
         else if (!strcmp(base_param, "SYNC_MIN_RATE")) SYNC_MIN_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
         else if (!strcmp(base_param, "SYNC_UP_RATE"))   SYNC_RAMP_UP_SPS = clamp_i(mm_per_min_to_sps(fv), 1, 50000);
         else if (!strcmp(base_param, "SYNC_DN_RATE"))   SYNC_RAMP_DN_SPS = clamp_i(mm_per_min_to_sps(fv), 1, 50000);
@@ -2885,6 +2893,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "REV_RATE"))     snprintf(out, sizeof(out), "REV_RATE:%.1f", (double)sps_to_mm_per_min_idx(REV_SPS, idx));
         else if (!strcmp(param, "AUTO_RATE"))    snprintf(out, sizeof(out), "AUTO_RATE:%.1f", (double)sps_to_mm_per_min_idx(AUTO_SPS, idx));
         else if (!strcmp(param, "SYNC_MAX_RATE")) snprintf(out, sizeof(out), "SYNC_MAX_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_MAX_SPS, idx));
+        else if (!strcmp(param, "SYNC_HARD_MAX_RATE")) snprintf(out, sizeof(out), "SYNC_HARD_MAX_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_HARD_MAX_SPS, idx));
         else if (!strcmp(param, "SYNC_MIN_RATE")) snprintf(out, sizeof(out), "SYNC_MIN_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_MIN_SPS, idx));
         else if (!strcmp(param, "SYNC_UP_RATE"))   snprintf(out, sizeof(out), "SYNC_UP_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_RAMP_UP_SPS, idx));
         else if (!strcmp(param, "SYNC_DN_RATE"))   snprintf(out, sizeof(out), "SYNC_DN_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_RAMP_DN_SPS, idx));

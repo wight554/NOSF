@@ -39,6 +39,7 @@ DEFAULTS = {
     "auto_rate": "2100",
     "buf_stab_rate": "600",
     "sync_max_rate": "2500",
+    "sync_hard_max_rate": "2500",
     "sync_min_rate": "0",
     "pre_ramp_rate": "35",
 
@@ -335,6 +336,7 @@ def main():
         f"#define CONF_BASELINE_SPS       {mm_min_to_sps(get('baseline_rate'), l1)}",
         f"#define CONF_BASELINE_ALPHA     {get_float('baseline_alpha')}f",
         f"#define CONF_BUF_PREDICT_THR_MS {get('buf_predict_thr_ms')}",
+        f"#define CONF_SYNC_HARD_MAX_SPS  {mm_min_to_sps(get('sync_hard_max_rate'), l1)}",
         f"#define CONF_SYNC_KP_SPS        {mm_min_to_sps(get('sync_kp_rate'), l1)}",
         f"#define CONF_SYNC_OVERSHOOT_PCT {get('sync_overshoot_pct')}",
         f"#define CONF_SYNC_AUTO_STOP_MS {get('sync_auto_stop_ms')}",
