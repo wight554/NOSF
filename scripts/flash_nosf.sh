@@ -188,16 +188,37 @@ import time
 
 port = ${port@Q}
 try:
-    s = serial.Serial(port, 115200, timeout=2)
-    deadline = time.time() + 6.0
+    s = serial.Serial(port, 115200, timeout=0.5)
+    deadline = time.time() + 8.0
+    next_request_at = 0.0
+    pending = ""
     out = ""
+    time.sleep(0.5)
+    s.reset_input_buffer()
     while time.time() < deadline:
-        s.reset_input_buffer()
-        s.write(b"VR:\n")
-        time.sleep(0.5)
-        out = s.read(max(s.in_waiting, 1)).decode(errors="replace").strip()
+        now = time.time()
+        if now >= next_request_at:
+            s.write(b"VR:\n")
+            next_request_at = now + 1.0
+
+        chunk = s.read(max(s.in_waiting, 1)).decode(errors="replace")
+        if not chunk:
+            continue
+
+        pending += chunk
+        lines = pending.replace("\r", "\n").split("\n")
+        pending = lines.pop() if lines else ""
+
+        for line in lines:
+            line = line.strip()
+            if line:
+                out = line
+                break
         if out:
             break
+
+    if not out:
+        out = pending.strip()
     print(out or "No VR response")
     s.close()
 except Exception as e:
