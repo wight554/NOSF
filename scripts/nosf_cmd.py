@@ -87,12 +87,13 @@ DUMP_PARAMS = [
     ("RELOAD_Y_MS",       "reload_y_timeout_ms",     False),
     # --- Safety ---
     ("AUTO_PRELOAD",      "auto_preload",            False),
+    ("AUTOLOAD_MAX",      "autoload_max_mm",         False),
+    ("LOAD_MAX",          "load_max_mm",             False),
+    ("UNLOAD_MAX",        "unload_max_mm",           False),
     ("RETRACT_MM",        "autoload_retract_mm",     False),
     # --- Timeouts ---
     ("TC_CUT_MS",         "tc_timeout_cut_ms",       False),
-    ("TC_UNLOAD_MS",      "tc_timeout_unload_ms",    False),
     ("TC_TH_MS",          "tc_timeout_th_ms",        False),
-    ("TC_LOAD_MS",        "tc_timeout_load_ms",      False),
     ("TC_Y_MS",           "tc_timeout_y_ms",         False),
     # --- Cutter ---
     ("CUTTER",            "enable_cutter",           False),

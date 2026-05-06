@@ -1,153 +1,137 @@
-
 # NOSF – Git Workflow
 
-This repo is firmware for real hardware. The goal of this workflow is simple:
-- `main` is always buildable/flashable
-- known-good restore points are easy to reach
+This repo drives real hardware. The workflow goals are simple:
+
+- `main` stays buildable and flashable
+- experimental work is easy to isolate when needed
+- each commit leaves a clear recovery point
 
 ---
 
-## Branch policy
+## Branch Policy
 
 ### `main`
-- The primary development branch.
-- Always **buildable**
-- Always **flashable**
 
-### Short-lived branches (Optional)
-For larger experiments, use one of these patterns before merging back to `main`:
-- `feature/<name>` – new functionality
-- `fix/<name>` – bugfixes
-- `hw/<name>` – hardware-specific changes (pins, display quirks, timing)
+- primary development branch
+- expected to stay buildable
+- expected to stay flashable on hardware
+
+### Optional short-lived branches
+
+Use a branch when the work is risky, long-running, or hardware-specific.
+
+- `feature/<name>`: new functionality
+- `fix/<name>`: bug fixes
+- `hw/<name>`: board/pin/timing/hardware experiments
+
+For small, validated changes, direct work on `main` is acceptable.
 
 ---
 
-## Daily workflow
+## Daily Flow
 
-### 1) Sync and work on `main`
+### 1. Start from current `main`
+
 ```bash
 git switch main
 git pull
 ```
 
-### 2) Create a branch
+### 2. Decide whether to branch
 
-Feature:
+Stay on `main` for small contained work, or create a branch:
+
 ```bash
 git switch -c feature/<name>
 ```
 
-Bugfix:
-```bash
-git switch -c fix/<name>
-```
+### 3. Validate before every commit
 
-Hardware tweak:
-```bash
-git switch -c hw/<name>
-```
-
-### 3) Work + commit in small steps
+Firmware changes:
 
 ```bash
-git add firmware/src/main.c firmware/CMakeLists.txt
-git commit -m "Short, specific message"
-```
-
-Examples of good commit messages:
-- `Fix swap: keep feeding until Y empty`
-- `Manual: allow live speed adjust while running`
-- `Runout: add 12s cooldown setting`
-
----
-
-## Build / Flash quick reference
-
-Clean build:
-```bash
-cmake -S firmware -B build_local -G Ninja -DPICO_SDK_PATH=/path/to/pico-sdk
 ninja -C build_local
 ```
 
-Flash:
+If scripts changed:
+
 ```bash
-bash scripts/flash_nosf.sh
+python3 -m py_compile scripts/*.py
+```
+
+If parameter names, commands, or behavior changed, update the docs in the same pass.
+
+### 4. Commit with the project format
+
+```text
+<short description>
+
+<why the change was made>
+
+Generated-By: <Agent Name> (<Model>)
+```
+
+Example:
+
+```text
+docs: refresh module ownership notes
+
+Replace stale monolithic main.c references in the internal docs so future
+sessions start from the current split architecture instead of historical
+implementation details.
+
+Generated-By: GitHub Copilot (GPT-5.4)
+```
+
+### 5. Push immediately after commit
+
+```bash
+git push
 ```
 
 ---
 
-## Merge flow
+## Restore Points
 
-### Merge feature/fix into `dev` when it works
+Use annotated tags for firmware states verified on real hardware.
+
+Create a tag:
+
 ```bash
-git switch dev || git switch -c dev
-git merge --no-ff feature/<name>
-git push
-```
-
-### Merge `dev` into `main` only when tested on hardware
-```bash
-git switch main
-git merge --no-ff dev
-git push
-```
-
-(Optional) delete the finished branch:
-```bash
-git branch -d feature/<name>
-```
-
----
-
-## Tags (restore points)
-
-Use tags for firmware states that are verified on real hardware.
-
-Create a baseline tag:
-```bash
-git tag -a baseline_$(date +%Y%m%d)_v1 -m "Tested on ERB v2: stable firmware baseline"
+git tag -a baseline_$(date +%Y%m%d)_v1 -m "Verified NOSF hardware baseline"
 git push --tags
 ```
 
 List tags:
+
 ```bash
 git tag
 ```
 
-Restore a baseline:
-```bash
-git fetch --tags
-git checkout baseline_swap_yempty_v1
-```
+Branch from a known-good baseline:
 
-Continue development from that point:
 ```bash
-git switch -c rescue/from-baseline
+git switch -c rescue/from-baseline <tag>
 ```
 
 ---
 
-## Hard rule
-
-**Never hack directly on `main`.**
-
-If it’s an experiment, create a branch first.
-
----
-
-## Quick diagnostics
+## Quick Diagnostics
 
 Current branch:
+
 ```bash
 git branch --show-current
 ```
 
 Recent commits:
+
 ```bash
 git log -5 --oneline --decorate
 ```
 
 Working tree status:
+
 ```bash
 git status
 ```

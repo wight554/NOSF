@@ -27,7 +27,7 @@ Controls whether the MMU handles internal breakpoints automatically or waits for
     - **Auto-Load**: If the MMU is empty, inserting filament triggers a full load to the toolhead.
 - **Host-Controlled Flow (`AUTO_MODE:0`)**:
     - **Wait for Commands**: No unsolicited motion. NOSF only moves when it receives a serial command (`LO:`, `FL:`, `UL:`, `SM:1`, etc.).
-    - **Status Only**: Emits events (`EV:IN:1`, `EV:RUNOUT`, etc.) and waits for host instructions.
+    - **Status Only**: Emits runtime events (`EV:RUNOUT`, `EV:ACTIVE`, `EV:SYNC:...`, etc.) and waits for host instructions.
 
 ### 2. Redundancy Control (`RELOAD_MODE`)
 Controls whether the MMU automatically swaps lanes on filament runout.
@@ -48,6 +48,7 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 ### Motion Control
 | Command | Mode | Description |
 |---------|------|-------------|
+| `T:n` | Both | **Select Active Lane** — set active lane to `1` or `2` without moving filament. |
 | `LO:` | Manual| **Preload** — runs forward until OUT sensor triggers. Limit: `AUTOLOAD_MAX`. |
 | `FL:` | Manual| **Full Load** — runs forward until toolhead sensor triggers (`TS:1`). Limit: `LOAD_MAX`. |
 | `UL:` | Both  | **Unload (Extruder)** — reverse until OUT sensor clears. If buffer enters `ADVANCE`, performs a one-shot gentle forward recovery move (~half buffer travel), then resumes reverse unload. Limit: `UNLOAD_MAX`. |
@@ -69,6 +70,17 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 | `SV:` | OK | **Save Settings** — persist current runtime parameters to flash. Rejected with `ER:PERSIST_BUSY` while motion, toolchange, cutter activity, or boot buffer stabilization is active. |
 | `LD:` | OK | **Load Settings** — reload persisted settings from flash. Rejected with `ER:PERSIST_BUSY` while motion, toolchange, cutter activity, or boot buffer stabilization is active. |
 | `RS:` | OK | **Reset Settings** — restore defaults and save them to flash. Rejected with `ER:PERSIST_BUSY` while motion, toolchange, cutter activity, or boot buffer stabilization is active. |
+| `CA:lane:ma` | OK | **Set Run Current** — immediately program the lane TMC run current in mA. |
+| `BOOT:` | OK | **Reboot To BOOTSEL** — reboot into RP2040 USB boot mode for flashing. |
+
+### Driver Access
+| Command | Response | Description |
+|---------|----------|-------------|
+| `TW:lane:reg:val` | OK | **TMC Write** — write raw TMC register value. Bring-up / diagnostics only. |
+| `TR:lane:reg` | `OK:lane:reg:0x...` | **TMC Read** — read raw TMC register value. |
+| `RR:lane` | Probe dump | **UART Probe** — try TMC addresses `0..3` and return the raw reply frames for bring-up/debug. |
+
+These commands are intended for low-level diagnostics and board bring-up. Prefer normal `SET:` / `GET:` parameters for supported runtime configuration.
 
 ---
 
@@ -123,12 +135,21 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 
 | Event | Data | Description |
 |-------|------|-------------|
+| `AUTO_LOAD` | `lane` | Automatic full-load was started because the controller was empty when filament was inserted. |
+| `PRELOAD` | `lane` | Automatic preload-to-OUT was started on filament insertion. |
 | `RUNOUT` | `lane` | Filament runout detected on specified lane. |
 | `LOADED` | `lane` | Filament successfully reached the toolhead/gears. |
 | `UNLOADED`| `lane` | Filament successfully retracted past the OUT or IN sensor. |
+| `LOAD_TIMEOUT` | `lane` | A load task hit its configured distance limit before completion. |
+| `UNLOAD_TIMEOUT` | `lane` | An unload task hit its configured distance limit before completion. |
+| `MOVE_DONE` | `lane` | Exact move completed. |
 | `ACTIVE` | `lane\|NONE`| Reported when the active lane changes. |
 | `FAULT:DRY_SPIN`| `lane` | Motor spinning > 8s without filament (`IN` clear). |
 | `SYNC` | `AUTO_START\|AUTO_STOP` | Automatic sync state transitions. |
+| `BS` | Mode-specific snapshot | Periodic buffer/sync status event used during sync and RELOAD follow. |
+| `TC:*` | Phase-specific | Toolchange progress events such as `TC:UNLOADING`, `TC:SWAPPING`, `TC:LOADING`, `TC:DONE`, `TC:ERROR`. |
+| `RELOAD:*` | Phase-specific | RELOAD progress and fault events such as `RELOAD:SWITCHING`, `RELOAD:JOINING`, `RELOAD:LOADED`, `RELOAD:FAULT`. |
+| `CUT:FEEDING` | — | Cutter feed phase started. |
 
 ### Fault Recovery
 Most faults (`TIMEOUT`, sensor-related faults) are transient and reset on the next command.

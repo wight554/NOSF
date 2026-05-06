@@ -80,10 +80,7 @@ DEFAULTS = {
     "tc_timeout_y_ms": "5000",
 
     # Safety / Swap
-    "low_delay_ms": "400",
-    "swap_cooldown_ms": "500",
     "runout_cooldown_ms": "12000",
-    "require_y_empty_swap": "True",
     "load_max_mm": "3000",
     "unload_max_mm": "3000",
     "autoload_max_mm": "600",
@@ -345,10 +342,7 @@ def main():
         f"#define CONF_AUTO_PRELOAD           {1 if get_bool('auto_preload') else 0}",
         "",
         "// --- Safety / Swap ---",
-        f"#define CONF_LOW_DELAY_MS           {get('low_delay_ms')}",
-        f"#define CONF_SWAP_COOLDOWN_MS       {get('swap_cooldown_ms')}",
         f"#define CONF_RUNOUT_COOLDOWN_MS     {get('runout_cooldown_ms')}",
-        f"#define CONF_REQUIRE_Y_EMPTY_SWAP   {'true' if get_bool('require_y_empty_swap') else 'false'}",
         "",
         "// --- Analog Buffer Sensor ---",
         f"#define CONF_BUF_SENSOR_TYPE    {get('buf_sensor_type')}",

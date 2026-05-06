@@ -2,16 +2,16 @@
 
 NOSF is a standalone dual-lane filament controller for ERB v2.0 (RP2040).
 It can run without a host plugin and handles lane switching, buffer-driven feed,
-and TMC2209 register/config tuning over USB serial.
+and TMC2209 configuration and diagnostics over USB serial.
 
 ## Tested Configuration
-*   **Motors**: [FYSETC G36HSY4405-6D-1200](https://github.com/FYSETC/FYSETC-MOTORS/blob/main/G36HSY4405-6D-1200/G36HSY4405-6D-1200.pdf) (Included in Fysetc NightOwl kits)
-*   **Buffer**: [QuattroSync](https://github.com/Batalhoti/QuattroSync) (Superior tension management via springs vs. TurtleNeck design)
+- **Motors**: [FYSETC G36HSY4405-6D-1200](https://github.com/FYSETC/FYSETC-MOTORS/blob/main/G36HSY4405-6D-1200/G36HSY4405-6D-1200.pdf) (included in Fysetc NightOwl kits)
+- **Buffer**: [QuattroSync](https://github.com/Batalhoti/QuattroSync) (spring-managed dual-lane buffer with more consistent RELOAD behavior than gravity-based TurtleNeck-style designs)
 
 ## What Is In This Repo
 
 - `firmware/`: RP2040 firmware (C, Pico SDK)
-- `scripts/`: build/config/flash/tuning helpers
+- `scripts/`: serial/config/flash helpers
 - `config.ini`: user tuning source for motor and TMC defaults
 - `config.ini.example`: template for new setups
 
@@ -64,7 +64,7 @@ Runtime changes (serial protocol `SET:/GET:/TW:/TR:`) can be saved to flash via 
 
 ## Serial Runtime Commands
 
-Core control:
+Common control commands:
 
 - `T:<lane>`: set active lane (`1` or `2`)
 - `LO:`: autoload active lane until output sensor or timeout
@@ -86,7 +86,7 @@ Runtime toggles (`SET:/GET:`):
 - `BI` (`0/1`): buffer sensor invert
 - `AUTO_PRELOAD` (`0/1`): auto-start preload on IN sensor rising edge
 
-Other runtime boolean state:
+Other runtime state:
 
 - `TS:<0|1>`: host-reported toolhead filament presence
 
@@ -104,7 +104,7 @@ Persist runtime values to flash:
 python3 scripts/nosf_cmd.py "SV:"
 ```
 
-## Tuning Scripts
+## Helper Scripts
 
 - `scripts/nosf_cmd.py`: Serial helper — send commands and dump live config
 - `scripts/gen_config.py`: Generate `tune.h` from `config.ini`
@@ -135,21 +135,18 @@ python3 scripts/nosf_cmd.py --dump --raw
 
 - `HARDWARE.md`: board wiring and hardware assumptions
 - `MANUAL.md`: runtime behavior and operator guidance
-- `WORKFLOW.md`: Git branching and release discipline
+- `WORKFLOW.md`: current Git workflow for `main` and optional short-lived branches
 
 ---
 
-# Development
+## Development
 
-Branches:
-
-main      primary development branch
-feature/* optional experimental branches
-fix/*     optional bug fixes
+- `main`: primary branch, expected to stay buildable and flashable
+- `feature/*`, `fix/*`, `hw/*`: optional short-lived branches for risky or long-running work
 
 ---
 
-# Safety
+## Safety
 
 Always test firmware changes at low speed.
 

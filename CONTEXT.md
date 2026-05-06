@@ -1,235 +1,178 @@
 # NOSF — Project Context
 
-Deep-dive reference for AI agents. Do not read this top-to-bottom — use the
-navigation guide at the bottom to load only the sections relevant to your task.
+Deep reference for firmware work. This file is the architectural source of truth
+for agents; `TASK.md` is a task log and may contain historical notes that no
+longer describe the current tree.
 
 ---
 
 ## Firmware Architecture
 
-Firmware is split into focused modules under `firmware/src/`.
-There is no RTOS. The main loop calls a set of tick functions every iteration;
-each tick function is a non-blocking state machine that checks `now_ms` and
-returns immediately if nothing needs doing.
+NOSF is a cooperative firmware for RP2040 with no RTOS. The main loop calls a
+small set of non-blocking module ticks every iteration.
 
-Primary ownership by module:
+### Module ownership
 
-- `main.c`: top-level init, autopreload, LED state, main loop
-- `motion.c`: per-lane motor/sensor state and task execution
-- `sync.c`: buffer sensing, estimator-driven sync, boot stabilization
-- `toolchange.c`: cutter, toolchange, RELOAD orchestration
-- `protocol.c`: USB serial command parser, replies, status dump
-- `settings_store.c`: persisted settings defaults/save/load and TMC apply
+- `firmware/src/main.c`
+  - hardware bring-up
+  - shared runtime globals
+  - autopreload edge detection
+  - LED state
+  - main-loop ordering
+- `firmware/src/motion.c`
+  - debounced IN / OUT sensors
+  - stepper PWM helpers
+  - per-lane task execution (`TASK_AUTOLOAD`, `TASK_UNLOAD`, `TASK_LOAD_FULL`, `TASK_MOVE`, `TASK_FEED`)
+- `firmware/src/sync.c`
+  - buffer sensing
+  - estimator-driven sync controller
+  - auto-start / auto-stop sync behavior
+  - boot-time buffer stabilization
+- `firmware/src/toolchange.c`
+  - cutter state machine
+  - toolchange state machine
+  - RELOAD approach / follow logic
+- `firmware/src/protocol.c`
+  - USB CDC parser
+  - `OK:` / `ER:` replies and best-effort `EV:` events
+  - `?:`, `SET:`, `GET:`, and advanced TMC access commands
+- `firmware/src/settings_store.c`
+  - flash-backed settings schema
+  - defaults/save/load/reset
+  - TMC re-apply after settings changes
 
-Key shared globals (declared via `controller_shared.h`):
-
-```c
-static lane_t   g_lane1, g_lane2;   // per-lane state
-static tmc_t    g_tmc1,  g_tmc2;    // TMC2209 UART handles
-static tc_ctx_t g_tc_ctx;           // toolchange / RELOAD state
-static buf_t    g_buf;              // buffer arm position + zone
-static int      active_lane;        // 1 or 2
-```
-
-All runtime-tunable parameters follow the same pattern — declared as a
-`static` variable initialised from a `CONF_` compile-time constant:
-
-```c
-static int FEED_SPS = CONF_FEED_SPS;   // runtime var
-// CONF_FEED_SPS is defined in firmware/include/config.h
-```
-
----
-
-## Key Data Structures
-
-### `lane_t` — per-lane state
-
-```c
-typedef struct lane_s {
-    din_t    in_sw, out_sw;          // IN / OUT sensor debounce state
-    motor_t  m;                      // step/dir PWM motor handle
-    task_t   task;                   // current lane task (see below)
-    tmc_t   *tmc;                    // pointer to TMC2209 handle
-    uint32_t motion_started_ms;      // timestamp of last lane_start()
-  fault_t  fault;                  // FAULT_NONE / FAULT_TIMEOUT / …
-    int      lane_id;                // 1 or 2
-    // … other fields
-} lane_t;
-```
-
-`task_t` values: `TASK_IDLE`, `TASK_FEED`, `TASK_AUTOLOAD`, `TASK_UNLOAD`,
-`TASK_UNLOAD_MMU`, `TASK_LOAD_FULL`, `TASK_MOVE`
-
-`fault_t` values: `FAULT_NONE`, `FAULT_TIMEOUT`,
-`FAULT_SENSOR`, `FAULT_BUF`, `FAULT_CUT`
-
-### `tc_state_t` — toolchange / RELOAD state machine
-
-```c
-TC_IDLE
-TC_UNLOAD_CUT → TC_UNLOAD_WAIT_CUT → TC_UNLOAD_REVERSE →
-  TC_UNLOAD_WAIT_OUT → TC_UNLOAD_WAIT_Y → TC_UNLOAD_WAIT_TH → TC_UNLOAD_DONE
-TC_SWAP
-TC_LOAD_START → TC_LOAD_WAIT_OUT → TC_LOAD_WAIT_TH → TC_LOAD_DONE
-TC_RELOAD_WAIT_Y → TC_RELOAD_APPROACH → TC_RELOAD_FOLLOW          ← RELOAD path
-TC_ERROR
-```
-
-RELOAD path detail:
-- `TC_RELOAD_WAIT_Y`: old tail cleared OUT; wait for Y-splitter sensor to clear
-- `TC_RELOAD_APPROACH`: motor at `JOIN_SPS`; exits to FOLLOW when the buffer
-  enters `BUF_TRAILING`
-- `TC_RELOAD_FOLLOW`: estimator-driven under-feed bounded by buffer state;
-  exits on `BUF_ADVANCE` (extruder pickup confirmed) or timeout
-
-### `tc_ctx_t` — RELOAD context
-
-```c
-typedef struct {
-    tc_state_t state;
-    int   target_lane, from_lane;
-    uint32_t phase_start_ms;
-    uint32_t reload_tick_ms;              // rate-limiter for SYNC_TICK_MS ticks
-    int      sync_current_sps;
-} tc_ctx_t;
-```
-
-### Buffer zones
-
-`BUF_MID`, `BUF_ADVANCE`, `BUF_TRAILING` — declared in `buf_state_t`.
-`BUF_SENSOR_TYPE`: `0` = dual-endstop, `1` = analog PSF.
+Shared types, globals, and cross-module helpers live in `firmware/include/controller_shared.h`.
 
 ---
 
-## Settings Pattern
+## Key Runtime Structures
 
-Every runtime parameter that must survive reboot goes through `settings_t`.
+### `lane_t`
 
-**To add a new runtime parameter — complete checklist:**
+Per-lane motion and sensor state.
 
-1. Add key to `config.ini.example` (and `config.ini` when needed).
-2. Add default key to `scripts/gen_config.py` `DEFAULTS` and emit `CONF_*` in generated output.
+Important fields:
+
+- `in_sw`, `out_sw`: debounced IN / OUT inputs
+- `m`: step/dir/enable motor handle
+- `task`: current lane task
+- `task_limit_mm`, `task_dist_mm`: distance-based task limits and progress
+- `target_sps`, `current_sps`: ramp target and current command speed
+- `fault`: `FAULT_NONE`, `FAULT_TIMEOUT`, `FAULT_SENSOR`, `FAULT_BUF`, `FAULT_CUT`, `FAULT_DRY_SPIN`
+- `unload_to_in`, `unload_buf_recover_done`: unload-path bookkeeping
+
+### `tc_ctx_t`
+
+Toolchange / RELOAD state.
+
+Important fields:
+
+- `state`: `TC_IDLE` through `TC_ERROR`
+- `target_lane`, `from_lane`
+- `phase_start_ms`: current phase timing origin
+- `reload_tick_ms`, `reload_current_sps`, `last_trailing_ms`: RELOAD follow control state
+
+### `buf_tracker_t`
+
+Buffer-zone transition history used by the estimator.
+
+Important fields:
+
+- `state`: `BUF_MID`, `BUF_ADVANCE`, `BUF_TRAILING`, `BUF_FAULT`
+- `entered_ms`, `dwell_ms`
+- `arm_vel_mm_s`
+- `mmu_sps_at_entry`, `mmu_sps_dwell_sum`, `mmu_sps_dwell_samples`
+
+---
+
+## Runtime Parameter Pattern
+
+Persistent tunables follow this path:
+
+1. Add or update the key in `config.ini.example` and `config.ini`.
+2. Add the default and generated `CONF_*` macro in `scripts/gen_config.py`.
 3. Regenerate `firmware/include/tune.h` with `python3 scripts/gen_config.py`.
-4. Add the runtime variable to the owning module (or shared runtime declaration if needed).
-5. Add field to `settings_t` struct (around line 1660)
-6. Add to `settings_defaults()`: `MY_PARAM = CONF_MY_PARAM;`
-7. Add to `settings_save()`: `s.my_param = MY_PARAM;`
-8. Add to `settings_load()`: `MY_PARAM = s->my_param;`
-9. If the value must be written to hardware on load, add to the hardware-apply
-  block after `settings_load()` in `settings_store.c`
-10. Add `SET:` handler in `protocol.c`
-11. Add `GET:` handler in `protocol.c`
-12. **Bump `SETTINGS_VERSION`** at line ~1659
+4. Add or update the owning runtime variable in the appropriate module (`main.c`, `motion.c`, `sync.c`, `toolchange.c`, or another owner; shared externs belong in `controller_shared.h`).
+5. Add the field to `settings_t` in `firmware/src/settings_store.c` if the value must persist.
+6. Wire defaults/save/load/reset in `settings_store.c`.
+7. If the value affects hardware registers, update the TMC apply path in `settings_store.c`.
+8. Add `SET:` / `GET:` handling in `firmware/src/protocol.c`.
+9. Update the relevant docs (`MANUAL.md`, `BEHAVIOR.md`, `README.md`, etc.).
+10. Bump `SETTINGS_VERSION` in `firmware/src/settings_store.c` whenever `settings_t` layout changes.
 
-Current `SETTINGS_VERSION`: **21** (grep `main.c` to confirm before bumping)
+Current `SETTINGS_VERSION`: `38` in `firmware/src/settings_store.c`.
 
 ---
 
 ## Critical Gotchas
 
-### 1. `lane_start()` always resets `stall_armed` to `false`
+### 1. Sync only runs in `TC_IDLE`
 
-```c
-static void lane_start(lane_t *L, ...) {
-    L->stall_armed = false;   // ← always cleared
-    L->fault = FAULT_NONE;
-    L->motion_started_ms = now_ms;
-    // …
-}
-```
+`sync_tick()` is guarded so normal sync never runs during toolchange or RELOAD.
+If you change RELOAD behavior, do not expect the normal sync tick to rescue it.
 
-In normal operation the main loop re-arms it after `MOTION_STARTUP_MS`.
-For RELOAD approach, `stall_armed = true` must be set **after** `lane_start()`:
+### 2. RELOAD is buffer-driven now
 
-```c
-lane_start(NL, TASK_FEED, JOIN_SPS, true, now_ms, 0);
-NL->stall_armed = true;   // must come after lane_start, not before
-```
+- `TC_RELOAD_APPROACH` waits for `BUF_TRAILING` contact.
+- `TC_RELOAD_FOLLOW` reuses the estimator with `RELOAD_LEAN_FACTOR`.
+- There is no driver-load or DIAG-based stall handling in the current firmware flow.
 
-### 2. `sync_tick()` guard — only runs in `TC_IDLE`
+### 3. Load / unload safety is distance-based
 
-```c
-if (!sync_enabled || tc_state() != TC_IDLE) return;
-```
+- `AUTOLOAD_MAX`, `LOAD_MAX`, and `UNLOAD_MAX` are travel limits.
+- Toolchange phases such as `TC_LOAD_WAIT_TH` or `TC_UNLOAD_WAIT_OUT` observe the underlying lane task and react when it stops.
+- Older names like `TC_LOAD_MS` / `TC_UNLOAD_MS` are legacy protocol aliases, not real time-based limits.
 
-Buffer sync must not run during any toolchange or RELOAD state.
+### 4. Persistence is activity-gated
 
-### 3. RELOAD is buffer-driven
+`SV:`, `LD:`, and `RS:` are rejected with `ER:PERSIST_BUSY` while motion,
+toolchange, cutter activity, or boot stabilization is active.
 
-- `TC_RELOAD_APPROACH` no longer depends on driver load telemetry.
-- Contact is defined by the buffer entering `BUF_TRAILING`.
-- Safety comes from lane travel limits, `RELOAD_Y_MS`, and follow timeouts.
+### 5. Speed conversion helpers are shared
 
-### 4. Sync and RELOAD share the same estimator
+`mm_per_min_to_sps*()` and `sps_to_mm_per_min*()` are implemented in `main.c`
+and declared in `controller_shared.h`. Protocol and settings code rely on them.
 
-- Normal sync uses the extruder-rate estimator plus bounded zone bias.
-- RELOAD follow reuses that estimator with an intentional under-feed factor.
-- Dual-endstop and analog buffers differ only in how buffer state/position
-  constrains the final target speed.
+### 6. Board pins live in `config.h`
 
-### 5. Fault handling is sensor- and timeout-driven
-
-- Lane tasks still raise `FAULT_TIMEOUT`, `FAULT_SENSOR`, `FAULT_BUF`, and
-  `FAULT_CUT`.
-- `FAULT:DRY_SPIN` remains the sticky protection against spinning an empty lane.
-- There is no driver-load-specific fault or recovery path anymore.
-
-### 6. `MM_PER_STEP` and Speed Conversion
-
-Speed params exposed over serial (SET/GET) are in **mm/min** and use the **`_RATE`** suffix. Internally all speeds are **SPS (steps per second)**. Helper functions in `main.c` handle the conversion:
-
-```c
-static inline int mm_per_min_to_sps(float mm_per_min);
-static inline float sps_to_mm_per_min(int sps);
-```
-
-When adding a speed parameter, ensure the SET handler uses `mm_per_min_to_sps()` and the GET handler uses `sps_to_mm_per_min()`.
+`firmware/include/config.h` is the source of truth for pin assignment and other
+board constants. DIAG pins remain defined for board completeness, but current
+firmware does not attach DIAG IRQ handling.
 
 ---
 
 ## Common Operations
 
-### Add a SET/GET parameter (quick reference)
+### Add a new `SET:` / `GET:` parameter
 
-Look for `!strcmp(param, "STARTUP_MS")` in the SET block and
-`snprintf(out, sizeof(out), "STARTUP_MS:%d"` in the GET block.
+- Add config key and generated macro.
+- Update the runtime variable and persistence path if needed.
+- Add `SET` / `GET` branches in `firmware/src/protocol.c`.
+- Regenerate `tune.h` and update the docs.
 
-Pattern for speed parameters:
-```c
-// SET:
-else if (!strcmp(param, "FEED_RATE")) FEED_SPS = mm_per_min_to_sps(fv);
+### Add a new serial command
 
-// GET:
-else if (!strcmp(param, "FEED_RATE")) snprintf(out, sizeof(out), "FEED_RATE:%.1f", (double)sps_to_mm_per_min(FEED_SPS));
-```
+- Implement the command in `cmd_execute()` in `firmware/src/protocol.c`.
+- Use module APIs from `motion.h`, `sync.h`, `toolchange.h`, and `settings_store.h`.
+- Document it in `MANUAL.md`.
 
-### Emit an event
+### Emit a reply or event
 
-```c
-cmd_event("MY_EVENT", "payload");   // → prints EV:MY_EVENT:payload\n
-```
+- `cmd_reply("OK", data)` / `cmd_reply("ER", reason)`
+- `cmd_event("TYPE", data)`
 
-### Emit a reply
-
-```c
-cmd_reply("OK", NULL);              // → OK:
-cmd_reply("OK", "KEY:VALUE");       // → OK:KEY:VALUE
-cmd_reply("ER", "REASON");          // → ER:REASON
-```
+Remember that `EV:` output is best-effort and rate-limited.
 
 ---
 
-## Navigation Guide — What to Read for Each Task
+## Navigation Guide
 
 | Task | Read |
 |------|------|
-| Add/modify runtime parameter | This file §Settings Pattern + §Gotcha 1 |
-| Modify RELOAD approach or follow logic | `toolchange.c` around `TC_RELOAD_APPROACH` / `TC_RELOAD_FOLLOW` + `BEHAVIOR.md` §RELOAD contact and follow |
-| Modify buffer sync | `sync.c` `sync_tick()` + `BEHAVIOR.md` §Buffer sync speed control |
-| RELOAD tuning | `BEHAVIOR.md` §RELOAD contact and follow |
-| Add a new serial command | `protocol.c` command dispatch block |
-| Hardware pinout / sensor wiring | `HARDWARE.md` |
-| Klipper macros or shell helper | `KLIPPER.md` |
-| Full command / parameter reference | `MANUAL.md` |
-| Cutter / servo logic | `toolchange.c` `cutter_tick()` + `BEHAVIOR.md` §Toolchange |
+| Add or modify a runtime parameter | This file + `protocol.c` + `settings_store.c` + `config.ini.example` |
+| Change motion, load, unload, or runout behavior | `motion.c` + `BEHAVIOR.md` |
+| Change sync / buffer behavior | `sync.c` + `BEHAVIOR.md` |
+| Change RELOAD or toolchange flow | `toolchange.c` + `BEHAVIOR.md` |
+| Change serial protocol behavior | `protocol.c` + `MANUAL.md` |
+| Change board pins or hardware assumptions | `config.h` + `HARDWARE.md` |
+| Change agent workflow / repo rules | `AGENTS.md` + `WORKFLOW.md` |

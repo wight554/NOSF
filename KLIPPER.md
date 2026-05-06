@@ -1,8 +1,7 @@
 # NOSF — Klipper Integration
 
-This document covers connecting Klipper to the NOSF: serial
-setup, the shell command helper, toolhead sensor and toolchange macros, and the
-advanced profiling workflow for buffer and sync tuning.
+This document covers connecting Klipper to NOSF: serial setup, the shell
+command helper, toolhead sensor and toolchange macros, and buffer/sync tuning.
 
 For the NOSF command reference see `MANUAL.md`; for behavioral details see
 `BEHAVIOR.md`.
@@ -51,7 +50,7 @@ timeout: 130.0
 verbose: True
 ```
 
-Adjust the path to match your Pi home directory. Test:
+Adjust the path to match your Pi home directory. Test it with:
 ```
 RUN_SHELL_COMMAND CMD=nosf PARAMS="?:"
 ```
@@ -123,8 +122,9 @@ gcode:
 
 > **Temperature management:** `gcode_shell_command` holds the Klipper scheduler
 > while the shell process runs — heaters stay regulated, but no additional G-code
-> is processed until the command returns. Set `TC_LOAD_MS` and `TC_UNLOAD_MS`
-> conservatively so a jam does not hold Klipper indefinitely.
+> is processed until the command returns. Keep `LOAD_MAX` / `UNLOAD_MAX`
+> conservative enough that a jam cannot hold Klipper indefinitely, and tune
+> `TC_TH_MS` / `TC_Y_MS` only for the host-facing wait phases.
 
 If `TC:` returns an error, `nosf_cmd.py` exits with code 1.
 `gcode_shell_command` logs the failure; add a PAUSE if you want automatic
@@ -171,7 +171,7 @@ gcode:
 Buffer sync enables automatically when `TS:1` is received and disables when
 unload starts. No explicit `SM:` calls are normally needed.
 
-For manual override — e.g., before tip-shaping retraction moves:
+For manual override, for example before tip-shaping retraction moves:
 ```ini
 [gcode_macro SYNC_OFF]
 gcode:
@@ -186,10 +186,12 @@ gcode:
 
 ## Buffer sync tuning
 
-### SYNC_KP_RATE — proportional buffer correction
+### BASELINE_RATE and SYNC_KP_RATE
 
-`SYNC_KP_RATE` (mm/min per unit arm deflection) is the main speed correction when
-the buffer arm deflects toward the extruder side. Default 850 mm/min.
+The current sync controller is estimator-driven. `BASELINE_RATE` seeds and
+stabilizes the controller around your expected steady-state print speed, while
+`SYNC_KP_RATE` adds bounded correction when the buffer keeps leaning away from
+MID.
 
 Monitor buffer state during a print:
 ```bash
@@ -205,16 +207,15 @@ EV:BS:ADVANCE,2500.0,0.43    ← extruder accelerating
 EV:BS:MID,2250.0,0.11        ← settling back
 ```
 
-**If the arm stays at ADVANCE during steady extrusion:** increase `SYNC_KP_RATE`:
+**If the arm stays at ADVANCE during steady extrusion:** first raise `BASELINE_RATE`, then increase `SYNC_KP_RATE` only if recovery is still too weak:
 ```bash
-python3 scripts/nosf_cmd.py "SET:SYNC_KP_RATE:1200"
+python3 scripts/nosf_cmd.py "SET:BASELINE_RATE:2300" "SET:SYNC_KP_RATE:1200"
 ```
 
-**If speed oscillates MID ↔ ADVANCE ↔ MID rapidly:** decrease `SYNC_KP_RATE`.
+**If speed oscillates MID ↔ ADVANCE ↔ MID rapidly:** decrease `SYNC_KP_RATE` or lower `BASELINE_RATE` if the whole controller is biased too fast.
 
-Target: arm at MID during steady extrusion, touching ADVANCE only on
-acceleration ramps. For a stiff bowden or fast printer, 1000–2000 mm/min is
-typical.
+Target: MID during steady extrusion, with brief ADVANCE / TRAILING excursions
+only on real flow changes.
 
 ### BUF_ALPHA — EMA weight for arm position
 
@@ -238,7 +239,7 @@ oscillates.
 |---------|--------------|-----|
 | `nosf_cmd.py` exits "no serial port found" | Port not present | `ls /dev/ttyACM*`; check `dialout` group |
 | `TS:1` not reaching NOSF | Sensor wiring or config | Test: `RUN_SHELL_COMMAND CMD=nosf PARAMS="TS:1"` |
-| `TC:` times out | Bowden too long / jam | Increase `TC_LOAD_MS` / `TC_UNLOAD_MS` |
+| `TC:` times out | Bowden too long / jam | Increase `LOAD_MAX` / `UNLOAD_MAX` if travel is genuinely too short; otherwise tune `TC_TH_MS` / `TC_Y_MS` or fix the path |
 | Sync not enabling after load | No `TS:1` sent | Check sensor or enable `TS_BUF_MS` fallback |
 | RELOAD approach never detects contact | Buffer sensor never reaches `TRAILING` | Verify buffer wiring and travel; reduce `JOIN_RATE` if the path is too aggressive |
 | RELOAD approach exits too early | Buffer sensor chatter or preload already trailing | Verify hysteresis/sensor state and make sure the standby path starts with real slack |

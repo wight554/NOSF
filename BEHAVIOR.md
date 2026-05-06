@@ -64,7 +64,7 @@ Fires automatically when an IN sensor rises (filament freshly inserted).
 
 ### `LO:` — Lane autoload (to pre-loaded state)
 
-Runs `TASK_AUTOLOAD` at `AUTO_RATE` until OUT triggers, then retracts
+Runs `TASK_AUTOLOAD` at `AUTO_RATE` until OUT triggers, then retracts by
 `RETRACT_MM`. Parks filament just before OUT.
 
 ### `FL:` — Full load to toolhead
@@ -85,7 +85,7 @@ Runs `TASK_LOAD_FULL` at `FEED_RATE` continuously until the host sends `TS:1`
 | IN goes low >1 s after start | 1.2x DIST_IN_OUT | `EV:RUNOUT:<lane>` (waits for transit) |
 | OUT never seen after 10 s | 10 s | `EV:RUNOUT:<lane>` |
 | Buffer holds TRAILING after OUT for `TS_BUF_MS` | `TS_BUF_MS` | `EV:LOADED:<lane>` (fallback) |
-| `TS:1` never received | `TC_LOAD_MS` (60 s) | `EV:LOAD_TIMEOUT:<lane>` |
+| Load task exceeds travel limit | `LOAD_MAX` distance | `EV:LOAD_TIMEOUT:<lane>` |
 
 ---
 
@@ -117,14 +117,14 @@ Full automated cycle. Emits phase events at each step.
 TC_IDLE
   → TC_UNLOAD_CUT       (if CUTTER=1: run cutter sequence)
   → TC_UNLOAD_REVERSE   (start TASK_UNLOAD on current lane)
-  → TC_UNLOAD_WAIT_OUT  (wait for OUT to clear, timeout = TC_UNLOAD_MS)
+  → TC_UNLOAD_WAIT_OUT  (wait for OUT to clear; lane task is bounded by `UNLOAD_MAX`)
   → TC_UNLOAD_WAIT_Y    (wait for Y-splitter to clear, if TC_Y_MS > 0)
   → TC_UNLOAD_WAIT_TH   (wait for TS:0 from host, if TC_TH_MS > 0)
   → TC_UNLOAD_DONE
   → TC_SWAP             (set active_lane = target)
   → TC_LOAD_START       (check Y-splitter clear; start TASK_LOAD_FULL)
   → TC_LOAD_WAIT_OUT    (non-stopping checkpoint)
-  → TC_LOAD_WAIT_TH     (wait for TASK_LOAD_FULL to complete)
+  → TC_LOAD_WAIT_TH     (wait for TASK_LOAD_FULL to complete; lane task is bounded by `LOAD_MAX`)
   → TC_LOAD_DONE        → EV:TC:DONE:<lane>
 ```
 
@@ -245,10 +245,10 @@ TRAILING persists for `SYNC_AUTO_STOP_MS`.
 **AUTO sync sequence:**
 
 1. `BUF_ADVANCE` auto-starts sync in `AUTO_MODE` and seeds the estimator from
-  the current baseline.
+   the current baseline.
 2. Normal sync runs from the estimator, bounded by buffer state.
 3. Sustained `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` disables sync and resets the
-  estimator to 0.
+   estimator to 0.
 4. The next `BUF_ADVANCE` event bootstraps sync again.
 
 ---

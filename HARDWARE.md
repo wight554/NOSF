@@ -7,8 +7,8 @@ Schematic: ERB V2.0 Release SCH.pdf (in FYSETC-ERB/V2.0/hardware/)
 ---
 
 ## Tested Hardware Configuration
-*   **Motors**: [FYSETC G36HSY4405-6D-1200](https://github.com/FYSETC/FYSETC-MOTORS/blob/main/G36HSY4405-6D-1200/G36HSY4405-6D-1200.pdf). This motor is included in Fysetc NightOwl kits and has been verified to work well with the default NOSF feed and retract profiles.
-*   **Buffer**: [QuattroSync](https://github.com/Batalhoti/QuattroSync). A dual-lane buffer that utilizes springs for tension management, offering more consistent performance for RELOAD than gravity-based designs like the TurtleNeck.
+- **Motors**: [FYSETC G36HSY4405-6D-1200](https://github.com/FYSETC/FYSETC-MOTORS/blob/main/G36HSY4405-6D-1200/G36HSY4405-6D-1200.pdf). This motor is included in Fysetc NightOwl kits and has been verified to work well with the default NOSF feed and retract profiles.
+- **Buffer**: [QuattroSync](https://github.com/Batalhoti/QuattroSync). A dual-lane spring buffer that has produced more consistent RELOAD behavior than gravity-based designs such as TurtleNeck.
 
 ---
 
@@ -29,13 +29,13 @@ Schematic: ERB V2.0 Release SCH.pdf (in FYSETC-ERB/V2.0/hardware/)
 | 10   | X-STEP         | Lane 1 step (PWM)              |
 | 11   | X-UART         | Lane 1 PDN_UART (single-wire)  |
 | 12   | PRE_GATE_0     | Filament pre-gate sensor (gate 0), used by Klipper MMU |
-| 13   | X-DIAG         | Lane 1 TMC2209 DIAG output     |
+| 13   | X-DIAG         | Lane 1 TMC2209 DIAG output (wired, not used by current firmware) |
 | 14   | Y-EN           | Lane 2 enable (active LOW)     |
 | 15   | Y-DIR          | Lane 2 direction               |
 | 16   | Y-STEP         | Lane 2 step (PWM)              |
 | 17   | Y-UART         | Lane 2 PDN_UART (single-wire)  |
 | 18   | —              | No named net (unused by ERB design); RP2040 GPIO accessible on header, adjacent to GPIO12 |
-| 19   | Y-DIAG         | Lane 2 TMC2209 DIAG output     |
+| 19   | Y-DIAG         | Lane 2 TMC2209 DIAG output (wired, not used by current firmware) |
 | 20   | —              | Status LED via R24 1 kΩ → 3.3 V |
 | 21   | NEO_PIXEL      | WS2812 NeoPixel data            |
 | 22   | ENCODER        | Encoder signal                  |
@@ -60,7 +60,7 @@ Schematic: ERB V2.0 Release SCH.pdf (in FYSETC-ERB/V2.0/hardware/)
 | STEP    | 16    | GPIO10 (X-STEP)     |                                         |
 | MS1_AD0 | 9     | X-MS1               | Sets UART address bit 0                 |
 | MS2_AD1 | 10    | X-MS2               | Sets UART address bit 1                 |
-| DIAG    | 11    | GPIO13 (X-DIAG)     | Push-pull, LOW=normal, HIGH=stall       |
+| DIAG    | 11    | GPIO13 (X-DIAG)     | Wired on the board; not consumed by current NOSF firmware |
 | INDEX   | 12    | X-INDEX             |                                         |
 | SPREAD  | 7     | X-SPREAD            |                                         |
 | VREF    | 17    | X-VREF              |                                         |
@@ -91,8 +91,9 @@ Optional 0 Ω jumpers R38, R39 near DIR/STEP (unpopulated = NC).
 ### TMC2209 UART Address
 
 Address is set by MS1/MS2 pin state at reset. Default (both LOW) = address 0.
-Firmware uses addr=0 for both motors. MS1/MS2 are not driven by RP2040 GPIOs
-in the current schematic — they float or are hardwired; behavior is addr=0.
+Firmware uses address `0` for both motors. MS1/MS2 are not driven by RP2040
+GPIOs in the current schematic; they float or are hardwired, so effective
+behavior is address `0`.
 
 ---
 
@@ -132,17 +133,12 @@ overcomes the TMC pull-down for '1' bits and stop bits. Before this fix, using
 line_idle() (INPUT/PULL_UP) for '1' bits caused the TMC pull-down to corrupt
 every '1' bit — all writes were silently corrupted.
 
-### DIAG pin behaviour
+### DIAG wiring note
 
-| State           | GPIO13 / GPIO19 level |
-|-----------------|-----------------------|
-| Normal (no stall)| LOW (push-pull output) |
-| Stall detected  | HIGH (push-pull output) |
-| Motor disabled  | LOW                    |
-
-DIAG is a push-pull output. In normal operation it permanently holds the GPIO
-LOW. This is why earlier attempts to receive UART on GPIO13 always returned
-all-zero bytes — DIAG was holding the line LOW throughout, not PDN_UART.
+GPIO13 / GPIO19 are connected to the TMC2209 DIAG outputs on the board, but
+the current buffer-driven firmware does not use DIAG interrupts or stall events.
+The pins remain relevant only if future bring-up work revisits low-level driver
+features.
 
 ---
 
@@ -191,7 +187,7 @@ all-zero bytes — DIAG was holding the line LOW throughout, not PDN_UART.
 
 ---
 
-## Firmware Pin Assignments (as used in main.c)
+## Firmware Pin Assignments (as defined in `firmware/include/config.h`)
 
 ```c
 // Lane sensors
@@ -206,12 +202,14 @@ PIN_BUF_TRAILING = 12   // GPIO12: PRE_GATE_0 connector
 // Lane 1
 PIN_L1_EN   = 8    PIN_L1_DIR  = 9    PIN_L1_STEP = 10
 PIN_L1_UART_TX = 11
-PIN_L1_DIAG    = 13   // same GPIO as PIN_L1_UART_RX (DIAG only, not UART RX)
+PIN_L1_UART_RX = 13
+PIN_L1_DIAG    = 13   // board wiring alias; current firmware does not use DIAG IRQs
 
 // Lane 2
 PIN_L2_EN   = 14   PIN_L2_DIR  = 15   PIN_L2_STEP = 16
 PIN_L2_UART_TX = 17
-PIN_L2_DIAG    = 19   // same GPIO as PIN_L2_UART_RX (DIAG only, not UART RX)
+PIN_L2_UART_RX = 19
+PIN_L2_DIAG    = 19   // board wiring alias; current firmware does not use DIAG IRQs
 
 // Peripherals
 PIN_SERVO    = 23
