@@ -1458,7 +1458,7 @@ static void tc_tick(uint32_t now_ms) {
 }
 
 static void autopreload_tick(uint32_t now_ms) {
-    if (!AUTO_MODE) {
+    if (!AUTO_MODE && !AUTO_PRELOAD) {
         prev_lane1_in_present = lane_in_present(&g_lane1);
         prev_lane2_in_present = lane_in_present(&g_lane2);
         return;
@@ -1472,12 +1472,12 @@ static void autopreload_tick(uint32_t now_ms) {
 
     if (in1 && !prev_lane1_in_present) {
         if (g_lane1.task == TASK_IDLE && tc_state() == TC_IDLE && !cutter_busy() && !lane_out_present(&g_lane1)) {
-            if (mmu_empty) {
+            if (AUTO_MODE && mmu_empty) {
                 // Completely empty MMU: auto-load all the way to toolhead.
                 lane_start(&g_lane1, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
                 cmd_event("AUTO_LOAD", "1");
-            } else {
-                // Other lane loaded: just preload to Y-splitter.
+            } else if (AUTO_PRELOAD) {
+                // Other lane loaded (or AUTO_MODE off): just preload to Y-splitter.
                 lane_start(&g_lane1, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, (float)AUTOLOAD_MAX_MM);
                 cmd_event("PRELOAD", "1");
             }
@@ -1487,10 +1487,10 @@ static void autopreload_tick(uint32_t now_ms) {
 
     if (in2 && !prev_lane2_in_present) {
         if (g_lane2.task == TASK_IDLE && tc_state() == TC_IDLE && !cutter_busy() && !lane_out_present(&g_lane2)) {
-            if (mmu_empty) {
+            if (AUTO_MODE && mmu_empty) {
                 lane_start(&g_lane2, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
                 cmd_event("AUTO_LOAD", "2");
-            } else {
+            } else if (AUTO_PRELOAD) {
                 lane_start(&g_lane2, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, (float)AUTOLOAD_MAX_MM);
                 cmd_event("PRELOAD", "2");
             }
@@ -1820,7 +1820,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 33u
+#define SETTINGS_VERSION 34u
 
 typedef struct {
     uint32_t magic;
@@ -1924,6 +1924,7 @@ static void settings_defaults(void) {
     UNLOAD_MAX_MM = CONF_UNLOAD_MAX_MM;
     RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
     AUTO_MODE = 1;
+    AUTO_PRELOAD = true;
     DIST_IN_OUT = CONF_DIST_IN_OUT;
     DIST_OUT_Y  = CONF_DIST_OUT_Y;
     DIST_Y_BUF  = CONF_DIST_Y_BUF;
@@ -2044,6 +2045,7 @@ static void settings_save(void) {
     s.unload_max_mm = UNLOAD_MAX_MM;
     s.reload_y_timeout_ms = RELOAD_Y_TIMEOUT_MS;
     s.auto_mode = AUTO_MODE;
+    s.auto_preload = AUTO_PRELOAD ? 1 : 0;
     s.buf_half_travel_mm = BUF_HALF_TRAVEL_MM;
     s.dist_in_out = DIST_IN_OUT;
     s.dist_out_y = DIST_OUT_Y;
@@ -2200,6 +2202,7 @@ static void settings_load(void) {
     UNLOAD_MAX_MM = s->unload_max_mm;
     RELOAD_Y_TIMEOUT_MS = s->reload_y_timeout_ms;
     AUTO_MODE = s->auto_mode;
+    AUTO_PRELOAD = (s->auto_preload != 0);
     BUF_HALF_TRAVEL_MM = s->buf_half_travel_mm;
     DIST_IN_OUT = s->dist_in_out;
     DIST_OUT_Y = s->dist_out_y;
