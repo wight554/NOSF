@@ -260,8 +260,8 @@ bool tmc_set_pwmconf(tmc_t *t) {
     return tmc_write(t, TMC_REG_PWMCONF, val);
 }
 
-bool tmc_set_sgthrs(tmc_t *t, uint8_t sgt) {
-    return tmc_write(t, TMC_REG_SGTHRS, (uint32_t)sgt);
+bool tmc_set_sgthrs(tmc_t *t, uint8_t sgthrs) {
+    return tmc_write(t, TMC_REG_SGTHRS, (uint32_t)sgthrs);
 }
 
 bool tmc_set_tcoolthrs(tmc_t *t, uint32_t v) {

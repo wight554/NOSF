@@ -213,7 +213,7 @@ def main():
         
         # Direction / StallGuard / CoolStep
         dir_invert = int(gm("dir_invert", "0"))
-        sgt = int(gm("sgthrs", "0"))
+        sgthrs = int(gm("sgthrs", "0"))
         tcoolthrs = int(gm("tcoolthrs", "0xFFFFF"), 0)
         sg_current_ma = int(gm("sg_current_ma", "800"))
         sg_target = float(gm("sg_target", "320.0"))
@@ -239,7 +239,7 @@ def main():
             "mm_per_step": mm_per_step,
             "spreadcycle": spreadcycle,
             "dir_invert": dir_invert,
-            "sgthrs": sgt,
+            "sgthrs": sgthrs,
             "tcoolthrs": tcoolthrs,
             "sg_current_ma": sg_current_ma,
             "sg_target": sg_target,

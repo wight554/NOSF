@@ -46,7 +46,7 @@ Two operating modes controlled by `RELOAD_MODE`:
 | `KLIPPER.md` | Klipper integration: shell helper setup, toolchange macros, sync tuning |
 | `HARDWARE.md` | Board pinout, sensor wiring |
 | `BUILD_FLASH.md` | Build and flash instructions |
-| `scripts/tune_reload_sg_interp.py` | RELOAD StallGuard tuning script (SG_TARGET, SG_DERIV_THR, SGTHRS_Lx) |
+| `scripts/tune_reload_sg.py` | RELOAD StallGuard tuning script (SG_TARGET, SG_DERIV_THR, SGTHRS_Lx) |
 | `scripts/sg_monitor.py` | Real-time SG monitor — use `--reload` flag for approach-speed calibration |
 | `scripts/nosf_cmd.py` | Single-command serial helper for Klipper shell integration |
 
