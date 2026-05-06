@@ -308,10 +308,9 @@ typedef enum {
     TASK_IDLE = 0,
     TASK_AUTOLOAD,
     TASK_FEED,
-    TASK_UNLOAD,      // extruder unload: reverse until OUT clears
-    TASK_UNLOAD_MMU,  // MMU unload: reverse until IN clears
+    TASK_UNLOAD,      // unload: reverse until OUT (and optionally IN) clears
     TASK_LOAD_FULL,   // full load: forward until toolhead sensor (TS:1), then stop
-    TASK_MOVE         // timed exact-distance move; stops at autoload_deadline_ms
+    TASK_MOVE         // timed exact-distance move
 } task_t;
 
 typedef enum {
@@ -356,6 +355,7 @@ typedef struct lane_s {
     uint32_t last_dist_tick_ms;        // for distance integration
     float dist_at_in_clear_mm;         // distance at which IN sensor cleared
     bool prev_in;                      // for IN sensor edge detection
+    bool unload_to_in;                 // target sensor for TASK_UNLOAD
 } lane_t;
 
 typedef enum {
@@ -570,6 +570,7 @@ static void lane_setup(lane_t *L, uint pin_in, uint pin_out, motor_t m, int lane
     L->buf_advance_since_ms = 0;
     L->dist_at_in_clear_mm = 0.0f;
     L->prev_in = false;
+    L->unload_to_in = false;
 }
 
 static void lane_stop(lane_t *L) {
@@ -747,16 +748,15 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
 
     if (L->task == TASK_UNLOAD) {
         if (L->retract_deadline_ms == 0) {
-            if (L->unload_sensor_latch) {
+            // Stage 0: Buffer recovery safeguard (one-shot).
+            if (L->unload_sensor_latch && !L->unload_to_in) {
                 // Buffer recovery phase: forward-feed ~half buffer at safe speed,
                 // then resume reverse unload.
                 float moved_mm = L->task_dist_mm - L->dist_at_out_mm;
                 if (moved_mm >= BUF_HALF_TRAVEL_MM) {
-                    // Ignore the recovery forward distance for unload distance limits.
                     L->task_dist_mm = L->dist_at_out_mm;
                     L->unload_sensor_latch = false;
 
-                    // Resume reverse unload at REV speed.
                     motor_stop(&L->m);
                     L->target_sps = REV_SPS;
                     L->current_sps = REV_SPS;
@@ -765,9 +765,8 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
                     motor_set_dir(&L->m, false);
                     motor_set_rate_sps(&L->m, L->current_sps);
                 }
-            // One-shot UL safeguard: if buffer enters ADVANCE while unloading,
-            // stop reverse and do a short gentle forward feed to release tension.
-            } else if (!L->unload_buf_recover_done && g_buf.state == BUF_ADVANCE) {
+            } else if (!L->unload_to_in && !L->unload_buf_recover_done && g_buf.state == BUF_ADVANCE) {
+                // Safeguard for UL: if buffer enters ADVANCE, do a short gentle forward feed.
                 motor_stop(&L->m);
                 L->unload_buf_recover_done = true;
                 L->unload_sensor_latch = true;
@@ -779,49 +778,34 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
                 motor_enable(&L->m, true);
                 motor_set_dir(&L->m, true);
                 motor_set_rate_sps(&L->m, L->current_sps);
-            // Stage 1: reverse until OUT sensor clears.
-            } else if (!lane_out_present(L)) {
-                // Tip reached OUT. Back off Tip-to-Gears distance.
-                float secs = (float)AUTOLOAD_RETRACT_MM / ((float)REV_SPS * MM_PER_STEP[L->lane_id-1]);
-                if (secs < 0.2f) secs = 0.2f; 
-                L->retract_deadline_ms = now_ms + (uint32_t)(secs * 1000.0f);
-            } else if (L->task_limit_mm > 0 && L->task_dist_mm >= L->task_limit_mm) {
-                lane_stop(L);
-                cmd_event("UNLOAD_TIMEOUT", NULL);
+            } 
+            // Stage 1: Wait for OUT to clear.
+            else if (lane_out_present(L)) {
+                // Still at OUT, keep reversing.
             }
-        } else {
-            // Stage 2: timed back-off.
-            if ((int32_t)(now_ms - L->retract_deadline_ms) >= 0) {
-                lane_stop(L);
-                char lane_s[2] = { (char)('0' + L->lane_id), 0 };
-                cmd_event("UNLOADED", lane_s);
-            }
-        }
-    }
-
-    if (L->task == TASK_UNLOAD_MMU) {
-        if (L->retract_deadline_ms == 0) {
-            // Stage 1: If filament is currently at OUT, we must see it clear OUT
-            // before we consider the unload complete at IN.
-            if (!L->unload_sensor_latch) {
-                if (!lane_out_present(L)) {
+            // Stage 2: Wait for IN to clear (only if unload_to_in is set).
+            else if (L->unload_to_in && lane_in_present(L)) {
+                if (!L->unload_sensor_latch) {
                     L->unload_sensor_latch = true;
-                    L->dist_at_out_mm = L->task_dist_mm; // Mark where OUT cleared
+                    L->dist_at_out_mm = L->task_dist_mm; // Mark where OUT cleared for jam detection
+                }
+                // Jam detection: once OUT has cleared, we should clear IN within a reasonable distance.
+                float dist_since_out = L->task_dist_mm - L->dist_at_out_mm;
+                if (dist_since_out > (float)DIST_IN_OUT * 2.0f) {
+                    lane_stop(L);
+                    tc_enter_error("UNLOAD_JAM");
                 }
             }
-
-            // Stage 2: Wait for IN to clear.
-            if (L->unload_sensor_latch) {
-                if (!lane_in_present(L)) {
-                    // IN clear! Extra 0.5s to fully exit the intake gears.
+            // Stage 3: Target reached! Start timed back-off.
+            else {
+                if (L->unload_to_in) {
+                    // Fully exiting the intake gears.
                     L->retract_deadline_ms = now_ms + 500;
                 } else {
-                    // Jam detection: once OUT has cleared, we should clear IN within a reasonable distance.
-                    float dist_since_out = L->task_dist_mm - L->dist_at_out_mm;
-                    if (dist_since_out > (float)DIST_IN_OUT * 2.0f) {
-                        lane_stop(L);
-                        tc_enter_error("UNLOAD_JAM");
-                    }
+                    // Tip reached OUT. Back off Tip-to-Gears distance.
+                    float secs = (float)AUTOLOAD_RETRACT_MM / ((float)REV_SPS * MM_PER_STEP[L->lane_id-1]);
+                    if (secs < 0.2f) secs = 0.2f; 
+                    L->retract_deadline_ms = now_ms + (uint32_t)(secs * 1000.0f);
                 }
             }
 
@@ -830,7 +814,7 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
                 cmd_event("UNLOAD_TIMEOUT", NULL);
             }
         } else {
-            // Stage 2: timed back-off.
+            // Stage 4: Timed back-off.
             if ((int32_t)(now_ms - L->retract_deadline_ms) >= 0) {
                 lane_stop(L);
                 char lane_s[2] = { (char)('0' + L->lane_id), 0 };
@@ -1231,7 +1215,6 @@ static const char *task_name(task_t t) {
         case TASK_AUTOLOAD: return "AUTOLOAD";
         case TASK_FEED: return "FEED";
         case TASK_UNLOAD: return "UNLOAD";
-        case TASK_UNLOAD_MMU: return "UNLOAD_MMU";
         case TASK_LOAD_FULL: return "LOAD_FULL";
         case TASK_MOVE: return "MOVE";
         default: return "?";
@@ -1829,7 +1812,7 @@ static void sync_apply_to_active(void) {
 
     // Prevent sync from overriding direction during unload/autoload tasks.
     // These tasks have specific directions (reverse for unload) that must be preserved.
-    bool is_protected_task = (A->task == TASK_UNLOAD || A->task == TASK_UNLOAD_MMU || A->task == TASK_AUTOLOAD);
+    bool is_protected_task = (A->task == TASK_UNLOAD || A->task == TASK_AUTOLOAD);
 
     if (sync_current_sps > 0) {
         if (is_protected_task) {
@@ -2647,6 +2630,13 @@ static void status_dump(void) {
     cmd_reply("OK", b);
 }
 
+static lane_t* get_active_lane_and_clear_error(void) {
+    if (g_tc_ctx.state == TC_ERROR) tc_abort();
+    lane_t *A = lane_ptr(active_lane);
+    if (!A) { cmd_reply("ER", "NO_ACTIVE_LANE"); return NULL; }
+    return A;
+}
+
 static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
     if (!strcmp(cmd, "TC")) {
         int ln = atoi(p);
@@ -2669,31 +2659,29 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             cmd_reply("ER", "ARG");
         }
     } else if (!strcmp(cmd, "LO")) {
-        if (g_tc_ctx.state == TC_ERROR) tc_abort();
-        lane_t *A = lane_ptr(active_lane);
-        if (!A) { cmd_reply("ER", "NO_ACTIVE_LANE"); return; }
+        lane_t *A = get_active_lane_and_clear_error();
+        if (!A) return;
         lane_start(A, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, (float)AUTOLOAD_MAX_MM);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "UL")) {
-        if (g_tc_ctx.state == TC_ERROR) tc_abort();
-        lane_t *A = lane_ptr(active_lane);
-        if (!A) { cmd_reply("ER", "NO_ACTIVE_LANE"); return; }
+        lane_t *A = get_active_lane_and_clear_error();
+        if (!A) return;
         if (!lane_out_present(A)) { cmd_reply("ER", "NOT_LOADED"); return; }
         set_toolhead_filament(false);
+        A->unload_to_in = false;
         lane_start(A, TASK_UNLOAD, REV_SPS, false, now_ms, (float)UNLOAD_MAX_MM);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "UM")) {
-        if (g_tc_ctx.state == TC_ERROR) tc_abort();
-        lane_t *A = lane_ptr(active_lane);
-        if (!A) { cmd_reply("ER", "NO_ACTIVE_LANE"); return; }
+        lane_t *A = get_active_lane_and_clear_error();
+        if (!A) return;
         if (!lane_in_present(A)) { cmd_reply("ER", "NOT_LOADED"); return; }
         set_toolhead_filament(false);
-        lane_start(A, TASK_UNLOAD_MMU, REV_SPS, false, now_ms, (float)UNLOAD_MAX_MM);
+        A->unload_to_in = true;
+        lane_start(A, TASK_UNLOAD, REV_SPS, false, now_ms, (float)UNLOAD_MAX_MM);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "FL")) {
-        if (g_tc_ctx.state == TC_ERROR) tc_abort();
-        lane_t *A = lane_ptr(active_lane);
-        if (!A) { cmd_reply("ER", "NO_ACTIVE_LANE"); return; }
+        lane_t *A = get_active_lane_and_clear_error();
+        if (!A) return;
         if (!lane_in_present(A)) { cmd_reply("ER", "NO_FILAMENT"); return; }
         lane_t *other = lane_ptr(other_lane(active_lane));
         if (other && lane_out_present(other) && other->task == TASK_IDLE) {
@@ -2704,12 +2692,8 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         lane_start(A, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "FD")) {
-        if (g_tc_ctx.state == TC_ERROR) tc_abort();
-        lane_t *A = lane_ptr(active_lane);
-        if (!A) {
-            cmd_reply("ER", "NO_ACTIVE_LANE");
-            return;
-        }
+        lane_t *A = get_active_lane_and_clear_error();
+        if (!A) return;
         lane_start(A, TASK_FEED, FEED_SPS, true, now_ms, 0);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "CU")) {
@@ -2717,20 +2701,13 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             cmd_reply("ER", "CUTTER_DISABLED");
             return;
         }
-        lane_t *A = lane_ptr(active_lane);
-        if (!A) {
-            cmd_reply("ER", "NO_ACTIVE_LANE");
-            return;
-        }
+        lane_t *A = get_active_lane_and_clear_error();
+        if (!A) return;
         cutter_start(A, now_ms);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "MV")) {
-        if (g_tc_ctx.state == TC_ERROR) tc_abort();
-        lane_t *A = lane_ptr(active_lane);
-        if (!A) {
-            cmd_reply("ER", "NO_ACTIVE_LANE");
-            return;
-        }
+        lane_t *A = get_active_lane_and_clear_error();
+        if (!A) return;
         float mm = 0.0f;
         float feed_mm_min = 0.0f;
         char dir_tok[8] = {0};
