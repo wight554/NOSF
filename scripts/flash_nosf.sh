@@ -160,18 +160,21 @@ send_bootsel() {
     PYTHONPATH="$REPO/scripts${PYTHONPATH:+:$PYTHONPATH}" python3 - <<PYEOF
 import serial
 import time
+import errno
 
 port = ${port@Q}
 try:
     s = serial.Serial(port, 115200, timeout=2)
-    time.sleep(0.3)
-    s.reset_input_buffer()
+    time.sleep(0.1)
     s.write(b"BOOT:\n")
-    time.sleep(0.3)
-    out = s.read(s.in_waiting).decode(errors="replace").strip()
-    if out:
-        print(out)
+    # Pico reboots immediately; write or close might fail with Errno 5 (I/O error).
     s.close()
+    print("Reboot command sent.")
+except OSError as e:
+    if e.errno == errno.EIO:
+        print("Rebooting into BOOTSEL...")
+    else:
+        print(f"BOOTSEL trigger skipped ({e})")
 except Exception as e:
     print(f"BOOTSEL trigger skipped ({e})")
 PYEOF
