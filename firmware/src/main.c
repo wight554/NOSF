@@ -354,6 +354,8 @@ typedef struct lane_s {
     float task_dist_mm;                // distance traveled in current task
     float dist_at_out_mm;              // displacement when OUT sensor was first hit
     uint32_t last_dist_tick_ms;        // for distance integration
+    float dist_at_in_clear_mm;         // distance at which IN sensor cleared
+    bool prev_in;                      // for IN sensor edge detection
 } lane_t;
 
 typedef enum {
@@ -513,7 +515,7 @@ static inline bool lane_out_present(lane_t *L) { return on_al(&L->out_sw); }
 // this as immediate runout until we've moved roughly the sensor spacing.
 static inline bool lane_tail_in_transit(lane_t *L) {
     return !lane_in_present(L) && !lane_out_present(L) &&
-           (L->task_dist_mm < ((float)DIST_IN_OUT * 1.2f));
+           ((L->task_dist_mm - L->dist_at_in_clear_mm) < ((float)DIST_IN_OUT * 1.2f));
 }
 
 static int detect_active_lane_from_out(void) {
@@ -566,6 +568,8 @@ static void lane_setup(lane_t *L, uint pin_in, uint pin_out, motor_t m, int lane
     L->retract_deadline_ms = 0;
     L->unload_sensor_latch = false;
     L->buf_advance_since_ms = 0;
+    L->dist_at_in_clear_mm = 0.0f;
+    L->prev_in = false;
 }
 
 static void lane_stop(lane_t *L) {
@@ -596,6 +600,7 @@ static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_
     L->stall_armed = false;
     L->unload_sensor_latch = false;
     L->retract_deadline_ms = 0;
+    L->dist_at_in_clear_mm = 0.0f;
 
     L->task_limit_mm = limit_mm;
 
@@ -676,6 +681,13 @@ static int sync_apply_scaling(lane_t *L, int base_sps, bool use_sg) {
 
 static void lane_tick(lane_t *L, uint32_t now_ms) {
     char lane_s[2] = { (char)('0' + L->lane_id), 0 };
+
+    // IN sensor edge detection: capture distance when tail leaves intake.
+    bool in_p = lane_in_present(L);
+    if (L->prev_in && !in_p) {
+        L->dist_at_in_clear_mm = L->task_dist_mm;
+    }
+    L->prev_in = in_p;
     // Acceleration ramp: step current_sps toward target_sps every RAMP_TICK_MS.
     if (L->task != TASK_IDLE && L->current_sps < L->target_sps) {
         if ((int32_t)(now_ms - L->ramp_last_tick_ms) >= RAMP_TICK_MS) {
@@ -948,7 +960,7 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
 
     if (L->reload_tail_ms != 0 && (L->task == TASK_FEED || L->task == TASK_LOAD_FULL || L->task == TASK_AUTOLOAD)) {
         uint32_t tail_age = now_ms - L->reload_tail_ms;
-        if (!lane_out_present(L) || (RELOAD_MODE && g_buf.state == BUF_ADVANCE) || tail_age >= 10000u) {
+        if (!lane_out_present(L) || tail_age >= 10000u) {
             char lane_s[2] = { (char)('0' + L->lane_id), 0 };
             L->reload_tail_ms = 0;
             L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
