@@ -337,6 +337,7 @@ typedef struct lane_s {
     uint32_t buf_advance_since_ms;  // for TS:1 buffer fallback
     uint32_t reload_tail_ms;           // RELOAD: timestamp when IN cleared; 0 = not tracking
     float task_dist_mm;                // distance traveled in current task
+    float dist_at_out_mm;              // displacement when OUT sensor was first hit
     uint32_t last_dist_tick_ms;        // for distance integration
 } lane_t;
 
@@ -552,9 +553,9 @@ static void lane_stop(lane_t *L) {
 static void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_ms, float limit_mm) {
     L->task = t;
     L->fault = FAULT_NONE;
-    L->motion_started_ms = now_ms;
-    L->task_dist_mm = 0.0f;
     L->last_dist_tick_ms = now_ms;
+    L->task_dist_mm = 0.0f;
+    L->dist_at_out_mm = 0.0f;
     L->stall_armed = false;
     L->unload_sensor_latch = false;
     L->retract_deadline_ms = 0;
@@ -735,7 +736,10 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
 
     if (L->task == TASK_LOAD_FULL) {
         // Track whether filament has passed OUT (reuse unload_sensor_latch as out_seen).
-        if (lane_out_present(L)) L->unload_sensor_latch = true;
+        if (lane_out_present(L) && !L->unload_sensor_latch) {
+            L->unload_sensor_latch = true;
+            L->dist_at_out_mm = L->task_dist_mm;
+        }
 
         // TS:1 buffer fallback: after filament passes OUT, if buffer stays TRAILING
         // for TS_BUF_FALLBACK_MS, the tip is pressing against the toolhead entry (filament
@@ -755,10 +759,15 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         // 1. Host reported TS:1
         // 2. Buffer Advance (Extruder is pulling)
         // 3. Buffer Trailing (Filament reached gears/blockage) AFTER passing OUT sensor
-        // Sanity: Ignore buffer advance until we've traveled at least DIST_OUT_Y mm after OUT sensor.
+        // Sanity: Ignore buffer advance until we've traveled at least DIST_OUT_Y + DIST_Y_BUF after OUT.
         bool buf_advance_sane = (g_buf.state == BUF_ADVANCE);
-        if (L->unload_sensor_latch && L->task_dist_mm < (float)DIST_OUT_Y * 0.8f) {
-            buf_advance_sane = false; // Ghost trigger or birdnesting before Y
+        if (L->unload_sensor_latch) {
+            float dist_since_out = L->task_dist_mm - L->dist_at_out_mm;
+            if (dist_since_out < (float)(DIST_OUT_Y + DIST_Y_BUF) * 0.8f) {
+                buf_advance_sane = false; // Path Sanity: Tip hasn't reached buffer yet.
+            }
+        } else {
+            buf_advance_sane = false; // Tip hasn't even reached OUT.
         }
 
         bool loaded = toolhead_has_filament || buf_advance_sane || 
