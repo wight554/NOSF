@@ -462,6 +462,7 @@ static uint32_t sync_idle_since_ms = 0;
 static int sync_current_sps = 0;
 static int g_baseline_sps = CONF_BASELINE_SPS;
 static float g_baseline_alpha = CONF_BASELINE_ALPHA;
+static uint32_t sync_fast_brake_until_ms = 0;
 
 static buf_tracker_t g_buf = { .state = BUF_MID };
 static zone_event_t g_history[HISTORY_LEN] = {0};
@@ -1779,7 +1780,11 @@ static void sync_apply_to_active(void) {
     }
 }
 
-static void sync_on_transition(buf_state_t prev, buf_state_t now_state) {
+static void sync_on_transition(buf_state_t prev, buf_state_t now_state, uint32_t now_ms) {
+    if (prev == BUF_ADVANCE && now_state == BUF_TRAILING) {
+        // Fast-drop guard: brief hard brake when flow demand collapses suddenly.
+        sync_fast_brake_until_ms = now_ms + 250u;
+    }
     if (prev != BUF_MID && now_state == BUF_MID && sync_enabled) {
         baseline_update_on_settle(g_buf.dwell_ms);
     }
@@ -1805,7 +1810,7 @@ static void buf_sensor_tick(uint32_t now_ms) {
     buf_state_t s = buf_read_stable(now_ms);
     if (s != prev) {
         buf_update(s, now_ms);
-        sync_on_transition(prev, s);
+        sync_on_transition(prev, s, now_ms);
     }
 
     // Endstop: update g_buf_pos AFTER state is committed so the EMA target is
@@ -1881,6 +1886,8 @@ static void sync_tick(uint32_t now_ms) {
     //            -1 = TRAILING (buffer filling, slow down MMU).
     // Both sensor modes produce the same [-1, +1] range via EMA in buf_sensor_tick.
     float buf_pos = g_buf_pos;
+    // Slight trailing bias: avoid sitting forward in ADVANCE at high speed.
+    float biased_buf_pos = clamp_f(buf_pos - 0.12f, -1.0f, 1.0f);
     int kp_sps = sync_effective_kp_sps(s);
 
     if (s == BUF_TRAILING) {
@@ -1891,10 +1898,13 @@ static void sync_tick(uint32_t now_ms) {
         if (is_reload_mode) {
             // RELOAD: bang-bang — hard stop maintains filament tip against previous tail
             sync_current_sps = 0;
+        } else if (sync_fast_brake_until_ms != 0 && now_ms < sync_fast_brake_until_ms) {
+            // Brief hard brake after ADVANCE->TRAILING to react to sudden flow drops.
+            sync_current_sps = 0;
         } else {
             // Normal sync: don't fully stop; use proportional feedback with floor at TRAILING_SPS.
             // AUTO_MODE shutdown is handled separately by SYNC_AUTO_STOP_MS above.
-            float correction = (float)kp_sps * buf_pos;  // buf_pos = -1.0 in TRAILING
+            float correction = (float)kp_sps * biased_buf_pos;
             if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
 
             int base_target = clamp_i(g_baseline_sps + (int)correction, TRAILING_SPS, sync_clamp_max_sps(SYNC_MAX_SPS));
@@ -1912,7 +1922,8 @@ static void sync_tick(uint32_t now_ms) {
             sync_current_sps = clamp_i(sync_current_sps, TRAILING_SPS, sync_clamp_max_sps(SYNC_MAX_SPS));
         }
     } else {
-        float correction = (float)kp_sps * buf_pos;
+        if (sync_fast_brake_until_ms != 0 && now_ms >= sync_fast_brake_until_ms) sync_fast_brake_until_ms = 0;
+        float correction = (float)kp_sps * biased_buf_pos;
         if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
 
         int base_target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, sync_clamp_max_sps(SYNC_MAX_SPS));
