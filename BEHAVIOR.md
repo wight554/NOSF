@@ -136,29 +136,6 @@ All lane tasks start at `RAMP_STEP_RATE` (default 17 mm/min) and increment by
 `RAMP_STEP_RATE` every `RAMP_TICK_MS` (default 5 ms) until the target rate is
 reached.
 
-StallGuard is not armed until `STARTUP_MS` (default 1000 ms) after motion starts.
-
----
-
-## StallGuard
-
-StallGuard is used exclusively in **RELOAD mode** (dual-endstop buffer sensor)
-to detect filament contact during the approach phase and to gate the DIAG
-hard-stop fallback during follow.
-
-### How it works (TMC2209)
-
-`SG_RESULT` is a 10-bit value (0–511) produced continuously by the chip:
-- **High value (~200–511)** → low motor load (free spin or light load).
-- **Low value (~0–100)** → high load or stall.
-
-The chip asserts the DIAG pin (triggering `EV:STALL`) when
-`SG_RESULT ≤ 2 × SGTHRS`. `SGTHRS` is set per lane at runtime via
-`SET:SGTHRS_L1:<value>` / `SET:SGTHRS_L2:<value>`.
-
-`TCOOLTHRS` gates when SG_RESULT is computed: StallGuard is **active** when
-`TSTEP ≤ TCOOLTHRS`.
-
 ### Buffer sync speed control
 
 The sync controller runs every `SYNC_TICK_MS` (20 ms). In dual-endstop mode it
@@ -215,9 +192,8 @@ the estimator remains the dominant term.
 
 - In analog-buffer mode, `g_buf_pos` scales the target between
   `TRAILING_RATE` and the requested target.
-- In endstop mode, optional `SYNC_SG_INTERP=1` scales the target from
-  StallGuard load, but the buffer still has priority: ADVANCE enforces a floor
-  and TRAILING enforces a ceiling.
+- In dual-endstop mode, the buffer zone alone shapes the target: ADVANCE
+  enforces a floor and TRAILING enforces a ceiling.
 
 On a direct `ADVANCE→TRAILING` transition, firmware arms a short fast-brake
 window. During that window the sync target is forced to 0 before normal
@@ -228,33 +204,22 @@ When the buffer returns to MID after a non-MID dwell and settles there for
 still used for bootstrapping and conservative limits, but it is no longer the
 primary sync controller.
 
-### StallGuard in Sync modes
+### RELOAD contact and follow
 
-StallGuard is used in three distinct ways:
-1. **Normal Sync (`SYNC_SG_INTERP=1`)**: optional target scaling on top of the estimator-driven controller.
-2. **RELOAD approach**: soft-contact detection before the buffer arm has time to move.
-3. **RELOAD follow**: hard-contact / jam detection via DIAG, not primary speed control.
+**`TC_RELOAD_APPROACH` — buffer-driven contact detection**
 
-| Layer | Mechanism | What it catches |
-|-------|-----------|-----------------|
-| Soft contact | SG_RESULT MA derivative vs `SG_DERIV` | Gentle tip-to-tail touch |
-| Hard contact | DIAG interrupt via `SGTHRS` (`SGTHRS_L1`/`SGTHRS_L2`) | Jams, hard crashes |
+The motor runs at `JOIN_RATE` while the controller waits for the buffer to move
+into `BUF_TRAILING`, which is treated as the first reliable sign that the new
+lane has made contact and started pushing filament toward the extruder.
 
-**`TC_RELOAD_APPROACH` — contact detection at approach speed**
-
-The motor runs at `JOIN_RATE`. The per-tick MA derivative is compared to
-`SG_DERIV`: a sharp negative drop **AND** a raw value below 50% of `SG_TARGET`
-triggers handoff to follow sync. This ensures that minor path friction does not
-cause premature triggering.
-
-`BUF_TRAILING` and a DIAG stall remain valid fallback contact signals.
-If contact never arrives, the approach phase also has a hard escape via its
-configured travel limit so RELOAD cannot run forever on bad SG tuning or silent
-sensor failure.
+If contact never arrives, the approach phase still has hard escape paths: the
+lane task has its configured travel limit and the RELOAD state machine has its
+own timeout/abort logic, so RELOAD cannot run forever on a bad path or failed
+sensor.
 
 **`TC_RELOAD_FOLLOW` — pressure maintenance during bowden journey**
 
-RELOAD follow no longer derives speed directly from filtered StallGuard load.
+RELOAD follow no longer derives speed from driver-load telemetry.
 Instead it reuses the normal sync estimator and deliberately under-feeds:
 
 ```
@@ -267,9 +232,9 @@ target = extruder_est_sps × RELOAD_LEAN
 - `BUF_TRAILING` keeps the motor at the low trailing push rate.
 - `BUF_ADVANCE` or `TS:1` means the extruder has taken over, so follow exits.
 
-A DIAG stall during follow no longer relies on normal sync recovery. Instead,
-the follow state machine drops its ramped speed back to `TRAILING_RATE`, counts
-the event, and treats repeated close-together stalls as `FOLLOW_JAM`.
+Follow protection is now sensor- and timeout-driven: if the lane task faults or
+the state exceeds `FOLLOW_TIMEOUT_MS`, RELOAD aborts instead of trying to infer
+jam severity from driver load telemetry.
 
 ### Trailing behavior and auto-stop
 
@@ -281,8 +246,7 @@ TRAILING persists for `SYNC_AUTO_STOP_MS`.
 
 1. `BUF_ADVANCE` auto-starts sync in `AUTO_MODE` and seeds the estimator from
   the current baseline.
-2. Normal sync runs from the estimator, bounded by buffer state and optional SG
-  scaling.
+2. Normal sync runs from the estimator, bounded by buffer state.
 3. Sustained `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` disables sync and resets the
   estimator to 0.
 4. The next `BUF_ADVANCE` event bootstraps sync again.

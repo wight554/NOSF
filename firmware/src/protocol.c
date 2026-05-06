@@ -69,24 +69,11 @@ void cmd_event(const char *type, const char *data) {
 }
 
 static void status_dump(void) {
-    static uint16_t last_sg1 = 0, last_sg2 = 0;
-    static uint32_t last_sg_read_ms = 0;
-    uint32_t now = to_ms_since_boot(get_absolute_time());
-
-    if ((now - last_sg_read_ms) >= 100u) {
-        last_sg_read_ms = now;
-        (void)tmc_read_sg_result(&g_tmc_l1, &last_sg1);
-        (void)tmc_read_sg_result(&g_tmc_l2, &last_sg2);
-    }
-    uint16_t sg1 = last_sg1;
-    uint16_t sg2 = last_sg2;
-
     char b[256];
     snprintf(b, sizeof(b),
         "LN:%d,TC:%s,L1T:%s,L2T:%s,"
         "I1:%d,O1:%d,I2:%d,O2:%d,"
-        "TH:%d,YS:%d,BUF:%s,SPS:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,RELOAD:%d,"
-        "SG1:%u,SG2:%u,SGF:%d",
+        "TH:%d,YS:%d,BUF:%s,SPS:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,RELOAD:%d",
         active_lane, tc_state_name(g_tc_ctx.state),
         task_name(g_lane_l1.task), task_name(g_lane_l2.task),
         lane_in_present(&g_lane_l1) ? 1 : 0,
@@ -103,10 +90,7 @@ static void status_dump(void) {
         BUF_INVERT ? 1 : 0,
         AUTO_PRELOAD ? 1 : 0,
         ENABLE_CUTTER ? 1 : 0,
-        RELOAD_MODE,
-        sg1,
-        sg2,
-        (int)g_sg_load);
+        RELOAD_MODE);
 
     cmd_reply("OK", b);
 }
@@ -258,21 +242,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         } else {
             cmd_reply("ER", "ARG");
         }
-    } else if (!strcmp(cmd, "SG")) {
-        int ln = atoi(p);
-        if (ln != 1 && ln != 2) {
-            cmd_reply("ER", "ARG");
-        } else {
-            uint16_t sg = 0;
-            tmc_t *t = (ln == 1) ? &g_tmc_l1 : &g_tmc_l2;
-            if (tmc_read_sg_result(t, &sg)) {
-                char out[24];
-                snprintf(out, sizeof(out), "%d:%u", ln, sg);
-                cmd_reply("OK", out);
-            } else {
-                cmd_reply("ER", "SG:NO_RESPONSE");
-            }
-        }
     } else if (!strcmp(cmd, "CA")) {
         int ln = 0;
         int ma = 0;
@@ -388,8 +357,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "DRIVER_TOFF")) { SET_LANE({ TMC_TOFF[idx] = clamp_i(iv, 0, 15); }); }
         else if (!strcmp(base_param, "DRIVER_HSTRT")) { SET_LANE({ TMC_HSTRT[idx] = clamp_i(iv, 0, 7); }); }
         else if (!strcmp(base_param, "DRIVER_HEND")) { SET_LANE({ TMC_HEND[idx] = clamp_i(iv, -3, 12); }); }
-        else if (!strcmp(base_param, "SG_DERIV")) { SET_LANE({ SG_DERIV[idx] = clamp_i(iv, 0, 1000); }); }
-        else if (!strcmp(base_param, "SG_TARGET")) { SET_LANE({ SG_TARGET[idx] = clamp_f(fv, 0.0f, 1023.0f); }); }
         else if (!strcmp(base_param, "FOLLOW_MS")) { SET_LANE({ FOLLOW_TIMEOUT_MS[idx] = clamp_i(iv, 1000, 60000); }); }
         else if (!strcmp(base_param, "BASELINE_RATE")) g_baseline_sps = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "BUF_SENSOR")) BUF_SENSOR_TYPE = clamp_i(iv, 0, 1);
@@ -405,14 +372,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "SYNC_AUTO_STOP")) SYNC_AUTO_STOP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "TS_BUF_MS")) TS_BUF_FALLBACK_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "STARTUP_MS")) MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
-        else if (!strcmp(base_param, "STALL_MS")) STALL_RECOVERY_MS = clamp_i(iv, 0, 10000);
-        else if (!strcmp(base_param, "SYNC_SG_INTERP")) SYNC_SG_INTERP = (iv != 0);
-        else if (!strcmp(base_param, "RELOAD_SG_INTERP")) RELOAD_SG_INTERP = (iv != 0);
-        else if (!strcmp(base_param, "SGTHRS")) {
-            SET_LANE({ TMC_SGTHRS[idx] = clamp_i(iv, 0, 255); tmc_set_sgthrs((l == 1 ? &g_tmc_l1 : &g_tmc_l2), (uint8_t)TMC_SGTHRS[idx]); });
-        } else if (!strcmp(base_param, "TCOOLTHRS")) {
-            SET_LANE({ TMC_TCOOLTHRS[idx] = clamp_i(iv, 0, 0xFFFFF); tmc_set_tcoolthrs((l == 1 ? &g_tmc_l1 : &g_tmc_l2), (uint32_t)TMC_TCOOLTHRS[idx]); });
-        } else if (!strcmp(base_param, "SG_CURRENT_MA")) { SET_LANE({ SG_CURRENT_MA[idx] = clamp_i(iv, 0, 2000); }); }
         else if (!strcmp(base_param, "SERVO_OPEN")) SERVO_OPEN_US = clamp_i(iv, 400, 2600);
         else if (!strcmp(base_param, "SERVO_CLOSE")) SERVO_CLOSE_US = clamp_i(iv, 400, 2600);
         else if (!strcmp(base_param, "SERVO_SETTLE")) SERVO_SETTLE_MS = clamp_i(iv, 100, 2000);
@@ -471,8 +430,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "PRESS_RATE")) snprintf(out, sizeof(out), "PRESS_RATE:%.1f", (double)sps_to_mm_per_min_idx(PRESS_SPS, idx));
         else if (!strcmp(param, "TRAILING_RATE")) snprintf(out, sizeof(out), "TRAILING_RATE:%.1f", (double)sps_to_mm_per_min_idx(TRAILING_SPS, idx));
         else if (!strcmp(param, "BUF_STAB_RATE")) snprintf(out, sizeof(out), "BUF_STAB_RATE:%.1f", (double)sps_to_mm_per_min_idx(BUF_STAB_SPS, idx));
-        else if (!strcmp(param, "SG_DERIV")) snprintf(out, sizeof(out), "SG_DERIV:%d", SG_DERIV[idx]);
-        else if (!strcmp(param, "SG_TARGET")) snprintf(out, sizeof(out), "SG_TARGET:%.1f", (double)SG_TARGET[idx]);
         else if (!strcmp(param, "FOLLOW_MS")) snprintf(out, sizeof(out), "FOLLOW_MS:%d", FOLLOW_TIMEOUT_MS[idx]);
         else if (!strcmp(param, "BASELINE_RATE")) snprintf(out, sizeof(out), "BASELINE_RATE:%.1f", (double)sps_to_mm_per_min_idx(g_baseline_sps, idx));
         else if (!strcmp(param, "BUF_SENSOR")) snprintf(out, sizeof(out), "BUF_SENSOR:%d", BUF_SENSOR_TYPE);
@@ -493,18 +450,12 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "SYNC_AUTO_STOP")) snprintf(out, sizeof(out), "SYNC_AUTO_STOP:%d", SYNC_AUTO_STOP_MS);
         else if (!strcmp(param, "TS_BUF_MS")) snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
         else if (!strcmp(param, "STARTUP_MS")) snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
-        else if (!strcmp(param, "STALL_MS")) snprintf(out, sizeof(out), "STALL_MS:%d", STALL_RECOVERY_MS);
-        else if (!strcmp(param, "SYNC_SG_INTERP")) snprintf(out, sizeof(out), "SYNC_SG_INTERP:%d", SYNC_SG_INTERP ? 1 : 0);
-        else if (!strcmp(param, "RELOAD_SG_INTERP")) snprintf(out, sizeof(out), "RELOAD_SG_INTERP:%d", RELOAD_SG_INTERP ? 1 : 0);
         else if (!strcmp(param, "EST_ALPHA_MIN")) snprintf(out, sizeof(out), "EST_ALPHA_MIN:%.3f", (double)EST_ALPHA_MIN);
         else if (!strcmp(param, "EST_ALPHA_MAX")) snprintf(out, sizeof(out), "EST_ALPHA_MAX:%.3f", (double)EST_ALPHA_MAX);
         else if (!strcmp(param, "ZONE_BIAS_BASE")) snprintf(out, sizeof(out), "ZONE_BIAS_BASE:%.1f", (double)sps_to_mm_per_min(ZONE_BIAS_BASE_SPS));
         else if (!strcmp(param, "ZONE_BIAS_RAMP")) snprintf(out, sizeof(out), "ZONE_BIAS_RAMP:%.1f", (double)sps_to_mm_per_min(ZONE_BIAS_RAMP_SPS_S));
         else if (!strcmp(param, "ZONE_BIAS_MAX")) snprintf(out, sizeof(out), "ZONE_BIAS_MAX:%.1f", (double)sps_to_mm_per_min(ZONE_BIAS_MAX_SPS));
         else if (!strcmp(param, "RELOAD_LEAN")) snprintf(out, sizeof(out), "RELOAD_LEAN:%.2f", (double)RELOAD_LEAN_FACTOR);
-        else if (!strcmp(param, "SGTHRS")) snprintf(out, sizeof(out), "SGTHRS:%d", TMC_SGTHRS[idx]);
-        else if (!strcmp(param, "TCOOLTHRS")) snprintf(out, sizeof(out), "TCOOLTHRS:%d", TMC_TCOOLTHRS[idx]);
-        else if (!strcmp(param, "SG_CURRENT_MA")) snprintf(out, sizeof(out), "SG_CURRENT_MA:%d", SG_CURRENT_MA[idx]);
         else if (!strcmp(param, "MICROSTEPS")) snprintf(out, sizeof(out), "MICROSTEPS:%d", TMC_MICROSTEPS[idx]);
         else if (!strcmp(param, "INTERPOLATE")) snprintf(out, sizeof(out), "INTERPOLATE:%d", TMC_INTERPOLATE[idx] ? 1 : 0);
         else if (!strcmp(param, "STEALTHCHOP")) snprintf(out, sizeof(out), "STEALTHCHOP:%d", TMC_SPREADCYCLE[idx] ? 0 : 1);

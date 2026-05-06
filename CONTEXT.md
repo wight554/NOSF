@@ -7,19 +7,27 @@ navigation guide at the bottom to load only the sections relevant to your task.
 
 ## Firmware Architecture
 
-All firmware logic lives in one file: `firmware/src/main.c` (~2700 lines).
+Firmware is split into focused modules under `firmware/src/`.
 There is no RTOS. The main loop calls a set of tick functions every iteration;
 each tick function is a non-blocking state machine that checks `now_ms` and
 returns immediately if nothing needs doing.
 
-Key globals (all `static`, declared at the top of `main.c`):
+Primary ownership by module:
+
+- `main.c`: top-level init, autopreload, LED state, main loop
+- `motion.c`: per-lane motor/sensor state and task execution
+- `sync.c`: buffer sensing, estimator-driven sync, boot stabilization
+- `toolchange.c`: cutter, toolchange, RELOAD orchestration
+- `protocol.c`: USB serial command parser, replies, status dump
+- `settings_store.c`: persisted settings defaults/save/load and TMC apply
+
+Key shared globals (declared via `controller_shared.h`):
 
 ```c
 static lane_t   g_lane1, g_lane2;   // per-lane state
 static tmc_t    g_tmc1,  g_tmc2;    // TMC2209 UART handles
 static tc_ctx_t g_tc_ctx;           // toolchange / RELOAD state
 static buf_t    g_buf;              // buffer arm position + zone
-static float    g_sg_load;          // MA-filtered SG_RESULT (RELOAD / sync)
 static int      active_lane;        // 1 or 2
 ```
 
@@ -43,11 +51,8 @@ typedef struct lane_s {
     motor_t  m;                      // step/dir PWM motor handle
     task_t   task;                   // current lane task (see below)
     tmc_t   *tmc;                    // pointer to TMC2209 handle
-    uint     diag_pin;               // GPIO for DIAG interrupt
     uint32_t motion_started_ms;      // timestamp of last lane_start()
-    bool     stall_armed;            // DIAG interrupt active when true
-    bool     stall_recovery;         // first stall in sync → recovery mode
-    fault_t  fault;                  // FAULT_NONE / FAULT_STALL / …
+  fault_t  fault;                  // FAULT_NONE / FAULT_TIMEOUT / …
     int      lane_id;                // 1 or 2
     // … other fields
 } lane_t;
@@ -56,7 +61,7 @@ typedef struct lane_s {
 `task_t` values: `TASK_IDLE`, `TASK_FEED`, `TASK_AUTOLOAD`, `TASK_UNLOAD`,
 `TASK_UNLOAD_MMU`, `TASK_LOAD_FULL`, `TASK_MOVE`
 
-`fault_t` values: `FAULT_NONE`, `FAULT_STALL`, `FAULT_TIMEOUT`,
+`fault_t` values: `FAULT_NONE`, `FAULT_TIMEOUT`,
 `FAULT_SENSOR`, `FAULT_BUF`, `FAULT_CUT`
 
 ### `tc_state_t` — toolchange / RELOAD state machine
@@ -73,9 +78,9 @@ TC_ERROR
 
 RELOAD path detail:
 - `TC_RELOAD_WAIT_Y`: old tail cleared OUT; wait for Y-splitter sensor to clear
-- `TC_RELOAD_APPROACH`: motor at `JOIN_SPS`; SG MA derivative detects soft contact;
-  DIAG stall (SGTHRS) catches hard jams; exits to FOLLOW on any contact
-- `TC_RELOAD_FOLLOW`: SG-interpolated speed (2-endstop) or arm position (analog);
+- `TC_RELOAD_APPROACH`: motor at `JOIN_SPS`; exits to FOLLOW when the buffer
+  enters `BUF_TRAILING`
+- `TC_RELOAD_FOLLOW`: estimator-driven under-feed bounded by buffer state;
   exits on `BUF_ADVANCE` (extruder pickup confirmed) or timeout
 
 ### `tc_ctx_t` — RELOAD context
@@ -86,9 +91,6 @@ typedef struct {
     int   target_lane, from_lane;
     uint32_t phase_start_ms;
     uint32_t reload_tick_ms;              // rate-limiter for SYNC_TICK_MS ticks
-    float    sg_ma_buf[CONF_SG_MA_LEN];
-    uint8_t  sg_ma_idx, sg_ma_fill;
-    float    sg_ma_prev;
     int      sync_current_sps;
 } tc_ctx_t;
 ```
@@ -109,15 +111,15 @@ Every runtime parameter that must survive reboot goes through `settings_t`.
 1. Add key to `config.ini.example` (and `config.ini` when needed).
 2. Add default key to `scripts/gen_config.py` `DEFAULTS` and emit `CONF_*` in generated output.
 3. Regenerate `firmware/include/tune.h` with `python3 scripts/gen_config.py`.
-4. Add `static` runtime var to `main.c` top: `static int MY_PARAM = CONF_MY_PARAM;`
+4. Add the runtime variable to the owning module (or shared runtime declaration if needed).
 5. Add field to `settings_t` struct (around line 1660)
 6. Add to `settings_defaults()`: `MY_PARAM = CONF_MY_PARAM;`
 7. Add to `settings_save()`: `s.my_param = MY_PARAM;`
 8. Add to `settings_load()`: `MY_PARAM = s->my_param;`
 9. If the value must be written to hardware on load, add to the hardware-apply
-   block after `settings_load()` (search for `tmc_set_sgthrs` for an example)
-10. Add `SET:` handler (search for `!strcmp(param, "STARTUP_MS")` for location)
-11. Add `GET:` handler (search for `snprintf(out` block)
+  block after `settings_load()` in `settings_store.c`
+10. Add `SET:` handler in `protocol.c`
+11. Add `GET:` handler in `protocol.c`
 12. **Bump `SETTINGS_VERSION`** at line ~1659
 
 Current `SETTINGS_VERSION`: **21** (grep `main.c` to confirm before bumping)
@@ -153,31 +155,25 @@ if (!sync_enabled || tc_state() != TC_IDLE) return;
 
 Buffer sync must not run during any toolchange or RELOAD state.
 
-### 3. `SG_RESULT` ≠ `SGTHRS`
+### 3. RELOAD is buffer-driven
 
-- **`SG_RESULT`** (0–511): continuous load measurement read via UART. Used for
-  RELOAD speed interpolation and derivative contact detection.
-- **`SGTHRS`** (0–255): threshold that controls the **DIAG pin** only.
-  `DIAG` fires when `SG_RESULT ≤ 2 × SGTHRS`.
-- **`TCOOLTHRS`**: gates both. SG active when `TSTEP ≤ TCOOLTHRS`.
+- `TC_RELOAD_APPROACH` no longer depends on driver load telemetry.
+- Contact is defined by the buffer entering `BUF_TRAILING`.
+- Safety comes from lane travel limits, `RELOAD_Y_MS`, and follow timeouts.
 
-### 4. RELOAD SG parameters — global vs per-lane
+### 4. Sync and RELOAD share the same estimator
 
-| Parameter | Scope | Reason |
-|-----------|-------|--------|
-| `SG_TARGET` | Global | Speed interpolation setpoint |
-| `SG_DERIV` | Global | Contact detection sensitivity |
-| `TMC_SGTHRS_L1` / `TMC_SGTHRS_L2` | Per-lane | Lanes may have different bowden friction |
-| `TMC_TCOOLTHRS` | Global (both TMCs updated together) | Single threshold for both |
+- Normal sync uses the extruder-rate estimator plus bounded zone bias.
+- RELOAD follow reuses that estimator with an intentional under-feed factor.
+- Dual-endstop and analog buffers differ only in how buffer state/position
+  constrains the final target speed.
 
-### 5. Stall handling differs by context
+### 5. Fault handling is sensor- and timeout-driven
 
-- **During sync**: first stall → recovery mode (ramp back up);
-  second stall within `STALL_RECOVERY_MS` → `FAULT_STALL` hard stop.
-- **During `TC_RELOAD_APPROACH`**: stall = contact detected → clear fault,
-  stop motor, transition to `TC_RELOAD_FOLLOW`.
-- **During `TC_RELOAD_FOLLOW`**: stall = pressure spike → clear fault, drop
-  speed to `TRAILING_SPS`, continue.
+- Lane tasks still raise `FAULT_TIMEOUT`, `FAULT_SENSOR`, `FAULT_BUF`, and
+  `FAULT_CUT`.
+- `FAULT:DRY_SPIN` remains the sticky protection against spinning an empty lane.
+- There is no driver-load-specific fault or recovery path anymore.
 
 ### 6. `MM_PER_STEP` and Speed Conversion
 
@@ -229,11 +225,11 @@ cmd_reply("ER", "REASON");          // → ER:REASON
 | Task | Read |
 |------|------|
 | Add/modify runtime parameter | This file §Settings Pattern + §Gotcha 1 |
-| Modify RELOAD approach or follow logic | `main.c` around `TC_RELOAD_APPROACH` / `TC_RELOAD_FOLLOW` cases + `BEHAVIOR.md` §StallGuard in RELOAD |
-| Modify buffer sync | `main.c` `sync_tick()` function + `BEHAVIOR.md` §Buffer sync speed control |
-| StallGuard tuning or calibration | `BEHAVIOR.md` §StallGuard + §Tuning RELOAD StallGuard |
-| Add a new serial command | `main.c` command dispatch block |
+| Modify RELOAD approach or follow logic | `toolchange.c` around `TC_RELOAD_APPROACH` / `TC_RELOAD_FOLLOW` + `BEHAVIOR.md` §RELOAD contact and follow |
+| Modify buffer sync | `sync.c` `sync_tick()` + `BEHAVIOR.md` §Buffer sync speed control |
+| RELOAD tuning | `BEHAVIOR.md` §RELOAD contact and follow |
+| Add a new serial command | `protocol.c` command dispatch block |
 | Hardware pinout / sensor wiring | `HARDWARE.md` |
 | Klipper macros or shell helper | `KLIPPER.md` |
 | Full command / parameter reference | `MANUAL.md` |
-| Cutter / servo logic | `main.c` `cutter_tick()` + `BEHAVIOR.md` §Toolchange |
+| Cutter / servo logic | `toolchange.c` `cutter_tick()` + `BEHAVIOR.md` §Toolchange |

@@ -33,7 +33,6 @@ typedef enum {
 
 typedef enum {
     FAULT_NONE = 0,
-    FAULT_STALL,
     FAULT_TIMEOUT,
     FAULT_SENSOR,
     FAULT_BUF,
@@ -55,10 +54,6 @@ typedef struct lane_s {
     int current_sps;
     uint32_t ramp_last_tick_ms;
     tmc_t *tmc;
-    uint diag_pin;
-    bool stall_armed;
-    bool stall_recovery;
-    uint32_t stall_recovery_deadline_ms;
     bool unload_sensor_latch;
     bool unload_buf_recover_done;
     fault_t fault;
@@ -124,13 +119,7 @@ typedef struct {
     int from_lane;
     uint32_t phase_start_ms;
     uint32_t reload_tick_ms;
-    float sg_ma_buf[CONF_SG_MA_LEN];
-    uint8_t sg_ma_idx;
-    uint8_t sg_ma_fill;
-    float sg_ma_prev;
     int reload_current_sps;
-    int reload_stall_count;
-    uint32_t last_reload_stall_ms;
     uint32_t last_trailing_ms;
 } tc_ctx_t;
 
@@ -177,8 +166,6 @@ extern int TRAILING_SPS;
 extern int RELOAD_TOUCH_SETTLE_MS;
 extern int RELOAD_TOUCH_BOOST_MS;
 extern int RELOAD_TOUCH_FLOOR_PCT;
-extern int SG_DERIV[NUM_LANES];
-extern float SG_TARGET[NUM_LANES];
 extern int BUF_STAB_SPS;
 extern int FOLLOW_TIMEOUT_MS[NUM_LANES];
 extern int ZONE_BIAS_BASE_SPS;
@@ -193,8 +180,6 @@ extern int TMC_RUN_CURRENT_MA[NUM_LANES];
 extern int TMC_HOLD_CURRENT_MA[NUM_LANES];
 extern int TMC_MICROSTEPS[NUM_LANES];
 extern bool TMC_SPREADCYCLE[NUM_LANES];
-extern int TMC_SGTHRS[NUM_LANES];
-extern int TMC_TCOOLTHRS[NUM_LANES];
 extern float TMC_ROTATION_DISTANCE[NUM_LANES];
 extern float TMC_GEAR_RATIO[NUM_LANES];
 extern int TMC_FULL_STEPS[NUM_LANES];
@@ -203,9 +188,6 @@ extern int TMC_TOFF[NUM_LANES];
 extern int TMC_HSTRT[NUM_LANES];
 extern int TMC_HEND[NUM_LANES];
 extern bool TMC_INTERPOLATE[NUM_LANES];
-extern int SG_CURRENT_MA[NUM_LANES];
-extern float g_sg_load;
-extern int STALL_RECOVERY_MS;
 extern int BUF_SENSOR_TYPE;
 extern float BUF_NEUTRAL;
 extern float BUF_RANGE;
@@ -213,10 +195,7 @@ extern float BUF_THR;
 extern float BUF_ANALOG_ALPHA;
 extern int SYNC_KP_SPS;
 extern int SYNC_OVERSHOOT_PCT;
-extern int BUFFER_RECOVERY_THRESHOLD_MS;
 extern int TS_BUF_FALLBACK_MS;
-extern bool SYNC_SG_INTERP;
-extern bool RELOAD_SG_INTERP;
 extern int SERVO_OPEN_US;
 extern int SERVO_CLOSE_US;
 extern int SERVO_BLOCK_US;

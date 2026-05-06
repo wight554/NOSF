@@ -14,7 +14,7 @@
 
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4e4f5346u
-#define SETTINGS_VERSION 37u
+#define SETTINGS_VERSION 38u
 
 typedef struct {
     uint32_t magic;
@@ -38,9 +38,6 @@ typedef struct {
     int autoload_retract_mm;
 
     int motion_startup_ms;
-    int sgthrs[NUM_LANES];
-    int tcoolthrs[NUM_LANES];
-    int sg_current_ma[NUM_LANES];
 
     int servo_open_us, servo_close_us, servo_block_us;
     int servo_settle_ms;
@@ -53,7 +50,6 @@ typedef struct {
     int runout_cooldown_ms;
 
     int ramp_step_sps, ramp_tick_ms;
-    int stall_recovery_ms;
 
     int buf_sensor_type;
     float buf_neutral, buf_range, buf_thr, buf_analog_alpha;
@@ -65,8 +61,6 @@ typedef struct {
     int press_sps;
     int trailing_sps;
     int buf_stab_sps;
-    int sg_deriv[NUM_LANES];
-    float sg_target[NUM_LANES];
     int follow_timeout_ms[NUM_LANES];
 
     float est_alpha_min, est_alpha_max;
@@ -77,8 +71,6 @@ typedef struct {
     bool auto_preload;
     bool enable_cutter;
     bool reload_mode;
-    bool sync_sg_interp;
-    bool reload_sg_interp;
 
     float tmc_rotation_distance[NUM_LANES];
     float tmc_gear_ratio[NUM_LANES];
@@ -146,16 +138,10 @@ void settings_defaults(void) {
     AUTO_PRELOAD = true;
     AUTOLOAD_RETRACT_MM = 10;
     ENABLE_CUTTER = false;
-    STALL_RECOVERY_MS = CONF_STALL_RECOVERY_MS;
 
     MOTION_STARTUP_MS = CONF_MOTION_STARTUP_MS;
     for (int i = 0; i < NUM_LANES; i++) {
-        SG_DERIV[i] = (i == 0) ? CONF_L1_SG_DERIV : CONF_L2_SG_DERIV;
-        SG_TARGET[i] = (i == 0) ? CONF_L1_SG_TARGET : CONF_L2_SG_TARGET;
         FOLLOW_TIMEOUT_MS[i] = (i == 0) ? CONF_L1_FOLLOW_TIMEOUT_MS : CONF_L2_FOLLOW_TIMEOUT_MS;
-        TMC_SGTHRS[i] = (i == 0) ? CONF_L1_SGTHRS : CONF_L2_SGTHRS;
-        TMC_TCOOLTHRS[i] = (i == 0) ? CONF_L1_TCOOLTHRS : CONF_L2_TCOOLTHRS;
-        SG_CURRENT_MA[i] = (i == 0) ? CONF_L1_SG_CURRENT_MA : CONF_L2_SG_CURRENT_MA;
         TMC_RUN_CURRENT_MA[i] = (i == 0) ? CONF_L1_RUN_CURRENT_MA : CONF_L2_RUN_CURRENT_MA;
         TMC_HOLD_CURRENT_MA[i] = (i == 0) ? CONF_L1_HOLD_CURRENT_MA : CONF_L2_HOLD_CURRENT_MA;
         TMC_MICROSTEPS[i] = (i == 0) ? CONF_L1_MICROSTEPS : CONF_L2_MICROSTEPS;
@@ -191,17 +177,6 @@ void settings_defaults(void) {
 
     MM_PER_STEP[0] = CONF_L1_MM_PER_STEP;
     MM_PER_STEP[1] = CONF_L2_MM_PER_STEP;
-
-    for (int i = 0; i < NUM_LANES; i++) {
-        SG_DERIV[i] = (i == 0) ? CONF_L1_SG_DERIV : CONF_L2_SG_DERIV;
-        SG_TARGET[i] = (i == 0) ? CONF_L1_SG_TARGET : CONF_L2_SG_TARGET;
-        FOLLOW_TIMEOUT_MS[i] = (i == 0) ? CONF_L1_FOLLOW_TIMEOUT_MS : CONF_L2_FOLLOW_TIMEOUT_MS;
-        TMC_SGTHRS[i] = (i == 0) ? CONF_L1_SGTHRS : CONF_L2_SGTHRS;
-        TMC_TCOOLTHRS[i] = (i == 0) ? CONF_L1_TCOOLTHRS : CONF_L2_TCOOLTHRS;
-        SG_CURRENT_MA[i] = (i == 0) ? CONF_L1_SG_CURRENT_MA : CONF_L2_SG_CURRENT_MA;
-    }
-    SYNC_SG_INTERP = CONF_SYNC_SG_INTERP;
-    RELOAD_SG_INTERP = CONF_RELOAD_SG_INTERP;
 
     TMC_ROTATION_DISTANCE[0] = CONF_L1_ROTATION_DISTANCE;
     TMC_ROTATION_DISTANCE[1] = CONF_L2_ROTATION_DISTANCE;
@@ -275,12 +250,6 @@ void settings_save(void) {
     s.zone_bias_max_sps = ZONE_BIAS_MAX_SPS;
     s.reload_lean_factor = RELOAD_LEAN_FACTOR;
 
-    for (int i = 0; i < NUM_LANES; i++) {
-        s.sgthrs[i] = TMC_SGTHRS[i];
-        s.tcoolthrs[i] = TMC_TCOOLTHRS[i];
-        s.sg_current_ma[i] = SG_CURRENT_MA[i];
-    }
-
     s.servo_open_us = SERVO_OPEN_US;
     s.servo_close_us = SERVO_CLOSE_US;
     s.servo_block_us = SERVO_BLOCK_US;
@@ -297,7 +266,6 @@ void settings_save(void) {
 
     s.ramp_step_sps = RAMP_STEP_SPS;
     s.ramp_tick_ms = RAMP_TICK_MS;
-    s.stall_recovery_ms = STALL_RECOVERY_MS;
 
     s.buf_sensor_type = BUF_SENSOR_TYPE;
     s.buf_neutral = BUF_NEUTRAL;
@@ -311,17 +279,10 @@ void settings_save(void) {
     s.reload_mode = (bool)RELOAD_MODE;
     s.cutter_settle_ms = CUT_TIMEOUT_SETTLE_MS;
     for (int i = 0; i < NUM_LANES; i++) {
-        s.sg_deriv[i] = SG_DERIV[i];
-        s.sg_target[i] = SG_TARGET[i];
         s.follow_timeout_ms[i] = FOLLOW_TIMEOUT_MS[i];
-        s.sgthrs[i] = TMC_SGTHRS[i];
-        s.tcoolthrs[i] = TMC_TCOOLTHRS[i];
-        s.sg_current_ma[i] = SG_CURRENT_MA[i];
     }
 
     s.buf_stab_sps = BUF_STAB_SPS;
-    s.sync_sg_interp = SYNC_SG_INTERP;
-    s.reload_sg_interp = RELOAD_SG_INTERP;
 
     for (int i = 0; i < NUM_LANES; i++) {
         s.tmc_rotation_distance[i] = TMC_ROTATION_DISTANCE[i];
@@ -370,10 +331,6 @@ static void tmc_apply_all(void) {
     tmc_setup_chopconf(&g_tmc_l2, TMC_MICROSTEPS[1], TMC_TOFF[1], TMC_TBL[1], TMC_HSTRT[1], TMC_HEND[1], TMC_INTERPOLATE[1]);
     tmc_set_run_current_ma(&g_tmc_l1, TMC_RUN_CURRENT_MA[0], TMC_HOLD_CURRENT_MA[0]);
     tmc_set_run_current_ma(&g_tmc_l2, TMC_RUN_CURRENT_MA[1], TMC_HOLD_CURRENT_MA[1]);
-    tmc_set_tcoolthrs(&g_tmc_l1, (uint32_t)TMC_TCOOLTHRS[0]);
-    tmc_set_tcoolthrs(&g_tmc_l2, (uint32_t)TMC_TCOOLTHRS[1]);
-    tmc_set_sgthrs(&g_tmc_l1, (uint8_t)TMC_SGTHRS[0]);
-    tmc_set_sgthrs(&g_tmc_l2, (uint8_t)TMC_SGTHRS[1]);
 
     g_shadow_vsense[0] = true;
     g_shadow_vsense[1] = true;
@@ -438,13 +395,7 @@ void settings_load(void) {
     RELOAD_LEAN_FACTOR = s->reload_lean_factor;
 
     for (int i = 0; i < NUM_LANES; i++) {
-        SG_DERIV[i] = s->sg_deriv[i];
-        SG_TARGET[i] = s->sg_target[i];
         FOLLOW_TIMEOUT_MS[i] = s->follow_timeout_ms[i];
-        TMC_SGTHRS[i] = s->sgthrs[i];
-        TMC_TCOOLTHRS[i] = s->tcoolthrs[i];
-        SG_CURRENT_MA[i] = s->sg_current_ma[i];
-
         TMC_ROTATION_DISTANCE[i] = s->tmc_rotation_distance[i];
         TMC_GEAR_RATIO[i] = s->tmc_gear_ratio[i];
         TMC_FULL_STEPS[i] = s->tmc_full_steps[i];
@@ -476,7 +427,6 @@ void settings_load(void) {
 
     RAMP_STEP_SPS = s->ramp_step_sps;
     RAMP_TICK_MS = s->ramp_tick_ms;
-    STALL_RECOVERY_MS = s->stall_recovery_ms;
 
     BUF_SENSOR_TYPE = s->buf_sensor_type;
     BUF_NEUTRAL = s->buf_neutral;
@@ -493,16 +443,8 @@ void settings_load(void) {
     PRESS_SPS = s->press_sps;
     TRAILING_SPS = s->trailing_sps;
     BUF_STAB_SPS = s->buf_stab_sps;
-    SYNC_SG_INTERP = s->sync_sg_interp;
-    RELOAD_SG_INTERP = s->reload_sg_interp;
-
     for (int i = 0; i < NUM_LANES; i++) {
-        SG_DERIV[i] = s->sg_deriv[i];
-        SG_TARGET[i] = s->sg_target[i];
         FOLLOW_TIMEOUT_MS[i] = s->follow_timeout_ms[i];
-        TMC_SGTHRS[i] = s->sgthrs[i];
-        TMC_TCOOLTHRS[i] = s->tcoolthrs[i];
-        SG_CURRENT_MA[i] = s->sg_current_ma[i];
         TMC_ROTATION_DISTANCE[i] = s->tmc_rotation_distance[i];
         TMC_GEAR_RATIO[i] = s->tmc_gear_ratio[i];
         TMC_FULL_STEPS[i] = s->tmc_full_steps[i];

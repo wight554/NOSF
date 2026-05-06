@@ -22,7 +22,6 @@ uint32_t sync_fast_brake_until_ms = 0;
 buf_tracker_t g_buf = { .state = BUF_MID };
 
 uint32_t sync_last_tick_ms = 0;
-uint32_t sync_last_sg_ms = 0;
 uint32_t sync_last_evt_ms = 0;
 float extruder_est_sps = 0.0f;
 float extruder_est_prev_sps = 0.0f;
@@ -60,32 +59,13 @@ static lane_t *pick_boot_stabilize_lane(void) {
     return &g_lane_l1;
 }
 
-static void sg_ma_update(lane_t *A) {
-    if (!A || A->task != TASK_FEED) return;
-    uint16_t sg_raw;
-    if (tmc_read_sg_result(A->tmc, &sg_raw)) {
-        g_tc_ctx.sg_ma_buf[g_tc_ctx.sg_ma_idx] = (float)sg_raw;
-        g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_SG_MA_LEN;
-        if (g_tc_ctx.sg_ma_fill < CONF_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
-        float sum = 0.0f;
-        for (int i = 0; i < (int)g_tc_ctx.sg_ma_fill; i++) sum += g_tc_ctx.sg_ma_buf[i];
-        g_sg_load = sum / (float)g_tc_ctx.sg_ma_fill;
-    }
-}
-
-static int sync_apply_scaling(lane_t *L, int base_sps, bool use_sg) {
+static int sync_apply_scaling(int base_sps) {
     if (BUF_SENSOR_TYPE == 1) {
         float frac = clamp_f((g_buf_pos + 1.0f) * 0.5f, 0.0f, 1.0f);
         return (int)(TRAILING_SPS + (float)(base_sps - TRAILING_SPS) * frac);
     }
 
-    int idx = lane_to_idx(L->lane_id);
     int target = base_sps;
-
-    if (use_sg && SG_TARGET[idx] > 0.1f) {
-        float sg_frac = clamp_f(g_sg_load / SG_TARGET[idx], 0.0f, 1.5f);
-        target = (int)((float)base_sps * sg_frac);
-    }
 
     if (g_buf.state == BUF_ADVANCE) {
         if (target < base_sps) target = base_sps;
@@ -446,7 +426,7 @@ void sync_tick(uint32_t now_ms) {
         return;
     }
 
-    if (A && A->task == TASK_FEED && A->fault == FAULT_NONE && !A->stall_recovery && sync_current_sps > 0) {
+    if (A && A->task == TASK_FEED && A->fault == FAULT_NONE && sync_current_sps > 0) {
         g_buf.mmu_sps_dwell_sum += (uint32_t)lane_motion_sps(A);
         g_buf.mmu_sps_dwell_samples++;
     }
@@ -474,11 +454,7 @@ void sync_tick(uint32_t now_ms) {
     int target_sps = (int)extruder_est_sps + zone_bias + slope_bias;
     if (predict_advance_coming()) target_sps += PRE_RAMP_SPS;
 
-    if ((now_ms - sync_last_sg_ms) >= 100u) {
-        sync_last_sg_ms = now_ms;
-        sg_ma_update(A);
-    }
-    target_sps = sync_apply_scaling(A, target_sps, SYNC_SG_INTERP);
+    target_sps = sync_apply_scaling(target_sps);
 
     bool fast_brake_active = sync_fast_brake_until_ms != 0 && (int32_t)(sync_fast_brake_until_ms - now_ms) > 0;
     if (!fast_brake_active && sync_fast_brake_until_ms != 0 && (int32_t)(now_ms - sync_fast_brake_until_ms) >= 0)

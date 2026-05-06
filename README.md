@@ -108,12 +108,6 @@ python3 scripts/nosf_cmd.py "SV:"
 
 - `scripts/nosf_cmd.py`: Serial helper — send commands and dump live config
 - `scripts/gen_config.py`: Generate `tune.h` from `config.ini`
-- `scripts/gcode_marker.py`: Injects flow-aware sync markers into G-code
-- `scripts/sg_tuner.py`: ML-backed StallGuard auto-tuner
-- `scripts/tune_reload_sg.py`: RELOAD StallGuard tuning wizard
-- `scripts/sg_monitor.py`: Real-time StallGuard monitor
-- `STALLGUARD_TUNING.md`: Automated StallGuard/Flow tuning guide
-- `STALLGUARD.md`: Deep-dive guide on StallGuard & RELOAD tuning
 
 All scripts support `--port`; if omitted they auto-detect the serial device.
 
@@ -122,7 +116,7 @@ Examples:
 ```bash
 # Send commands
 python3 scripts/nosf_cmd.py "VR:" "?:"
-python3 scripts/nosf_cmd.py "SET:SGTHRS_L1:10" "SV:"
+python3 scripts/nosf_cmd.py "SET:JOIN_RATE:1600" "SV:"
 
 # Read all live parameters as config.ini (copy-paste ready)
 python3 scripts/nosf_cmd.py --dump

@@ -15,7 +15,6 @@
 #include "hardware/clocks.h"
 #include "hardware/flash.h"
 #include "hardware/gpio.h"
-#include "hardware/irq.h"
 #include "hardware/adc.h"
 #include "hardware/pwm.h"
 #include "hardware/sync.h"
@@ -47,8 +46,6 @@ int TRAILING_SPS = CONF_TRAILING_SPS;
 int RELOAD_TOUCH_SETTLE_MS = CONF_RELOAD_TOUCH_SETTLE_MS;
 int RELOAD_TOUCH_BOOST_MS = CONF_RELOAD_TOUCH_BOOST_MS;
 int RELOAD_TOUCH_FLOOR_PCT = CONF_RELOAD_TOUCH_FLOOR_PCT;
-int SG_DERIV[NUM_LANES] = {CONF_L1_SG_DERIV, CONF_L2_SG_DERIV};
-float SG_TARGET[NUM_LANES] = {CONF_L1_SG_TARGET, CONF_L2_SG_TARGET};
 int BUF_STAB_SPS = 0;
 int FOLLOW_TIMEOUT_MS[NUM_LANES] = {CONF_L1_FOLLOW_TIMEOUT_MS, CONF_L2_FOLLOW_TIMEOUT_MS};
 
@@ -66,8 +63,6 @@ int TMC_RUN_CURRENT_MA[NUM_LANES] = {CONF_L1_RUN_CURRENT_MA, CONF_L2_RUN_CURRENT
 int TMC_HOLD_CURRENT_MA[NUM_LANES] = {CONF_L1_HOLD_CURRENT_MA, CONF_L2_HOLD_CURRENT_MA};
 int TMC_MICROSTEPS[NUM_LANES] = {CONF_L1_MICROSTEPS, CONF_L2_MICROSTEPS};
 bool TMC_SPREADCYCLE[NUM_LANES] = {CONF_L1_SPREADCYCLE, CONF_L2_SPREADCYCLE};
-int TMC_SGTHRS[NUM_LANES] = {CONF_L1_SGTHRS, CONF_L2_SGTHRS};
-int TMC_TCOOLTHRS[NUM_LANES] = {CONF_L1_TCOOLTHRS, CONF_L2_TCOOLTHRS};
 float TMC_ROTATION_DISTANCE[NUM_LANES] = {CONF_L1_ROTATION_DISTANCE, CONF_L2_ROTATION_DISTANCE};
 float TMC_GEAR_RATIO[NUM_LANES] = {CONF_L1_GEAR_RATIO, CONF_L2_GEAR_RATIO};
 int TMC_FULL_STEPS[NUM_LANES] = {CONF_L1_FULL_STEPS, CONF_L2_FULL_STEPS};
@@ -76,10 +71,6 @@ int TMC_TOFF[NUM_LANES] = {CONF_L1_TOFF, CONF_L2_TOFF};
 int TMC_HSTRT[NUM_LANES] = {CONF_L1_HSTRT, CONF_L2_HSTRT};
 int TMC_HEND[NUM_LANES] = {CONF_L1_HEND, CONF_L2_HEND};
 bool TMC_INTERPOLATE[NUM_LANES] = {CONF_L1_INTPOL, CONF_L2_INTPOL};
-int SG_CURRENT_MA[NUM_LANES] = {CONF_L1_SG_CURRENT_MA, CONF_L2_SG_CURRENT_MA};
-
-float g_sg_load = 0.0f;   // MA-filtered SG_RESULT; updated only during RELOAD states
-int STALL_RECOVERY_MS = CONF_STALL_RECOVERY_MS;
 
 int BUF_SENSOR_TYPE = CONF_BUF_SENSOR_TYPE;
 float BUF_NEUTRAL = CONF_BUF_NEUTRAL;
@@ -88,10 +79,7 @@ float BUF_THR = CONF_BUF_THR;
 float BUF_ANALOG_ALPHA = CONF_BUF_ANALOG_ALPHA;
 int SYNC_KP_SPS = CONF_SYNC_KP_SPS;
 int SYNC_OVERSHOOT_PCT = CONF_SYNC_OVERSHOOT_PCT;
-int BUFFER_RECOVERY_THRESHOLD_MS = CONF_BUFFER_RECOVERY_THRESHOLD_MS;
 int TS_BUF_FALLBACK_MS = CONF_TS_BUF_FALLBACK_MS;
-bool SYNC_SG_INTERP = CONF_SYNC_SG_INTERP;
-bool RELOAD_SG_INTERP = CONF_RELOAD_SG_INTERP;
 
 int SERVO_OPEN_US = CONF_SERVO_OPEN_US;
 int SERVO_CLOSE_US = CONF_SERVO_CLOSE_US;
@@ -224,9 +212,6 @@ volatile uint32_t g_now_ms = 0;
 int active_lane = 0;
 bool toolhead_has_filament = false;
 
-static volatile bool stall_pending_l1 = false;
-static volatile bool stall_pending_l2 = false;
-
 bool prev_lane1_in_present = false;
 bool prev_lane2_in_present = false;
 
@@ -322,64 +307,6 @@ static void autopreload_tick(uint32_t now_ms) {
     prev_lane2_in_present = in2;
 }
 
-// ===================== Stall IRQ + pump =====================
-static void __not_in_flash_func(stall_irq)(uint gpio, uint32_t events) {
-    if (!(events & GPIO_IRQ_EDGE_RISE)) return;
-
-    if (gpio == PIN_L1_DIAG && g_lane_l1.stall_armed) {
-        motor_stop(&g_lane_l1.m);
-        stall_pending_l1 = true;
-    }
-    if (gpio == PIN_L2_DIAG && g_lane_l2.stall_armed) {
-        motor_stop(&g_lane_l2.m);
-        stall_pending_l2 = true;
-    }
-}
-
-static void stall_init(void) {
-    // Pins already configured by tmc_init (PIO RX). Just enable IRQ.
-    gpio_set_irq_enabled_with_callback(PIN_L1_DIAG, GPIO_IRQ_EDGE_RISE, true, &stall_irq);
-    gpio_set_irq_enabled(PIN_L2_DIAG, GPIO_IRQ_EDGE_RISE, true);
-}
-
-static void stall_handle(lane_t *L, const char *lane_s) {
-    bool normal_sync_recovery = sync_enabled && tc_state() == TC_IDLE && !L->stall_recovery && STALL_RECOVERY_MS > 0;
-    bool reload_phase = (tc_state() == TC_RELOAD_APPROACH || tc_state() == TC_RELOAD_FOLLOW);
-
-    if (normal_sync_recovery) {
-        // During sync a stall most likely means tension spike, not a jam.
-        // Let the motor stop briefly (already done in IRQ), then let sync_tick
-        // ramp back up.  If stall fires again within STALL_RECOVERY_MS it's a
-        // real jam and the else-branch below will hard-stop.
-        L->stall_recovery = true;
-        L->stall_recovery_deadline_ms = g_now_ms + (uint32_t)STALL_RECOVERY_MS;
-        sync_current_sps = 0;  // ramp from zero; sync_tick restarts the motor
-        cmd_event("STALL", lane_s);
-    } else if (reload_phase) {
-        L->fault = FAULT_STALL;
-        L->stall_armed = false;
-        L->stall_recovery = false;
-        L->stall_recovery_deadline_ms = 0;
-        L->current_sps = 0;
-        L->target_sps = 0;
-        cmd_event("STALL", lane_s);
-    } else {
-        lane_fault(L, FAULT_STALL);
-        cmd_event("STALL", lane_s);
-    }
-}
-
-static void stall_pump(void) {
-    if (stall_pending_l1) {
-        stall_pending_l1 = false;
-        stall_handle(&g_lane_l1, "1");
-    }
-    if (stall_pending_l2) {
-        stall_pending_l2 = false;
-        stall_handle(&g_lane_l2, "2");
-    }
-}
-
 // ===================== NeoPixel state =====================
 typedef enum {
     LED_IDLE,
@@ -441,8 +368,8 @@ int main(void) {
     tmc_init(&g_tmc_l1, PIN_L1_UART_TX, PIN_L1_UART_RX, 0);
     tmc_init(&g_tmc_l2, PIN_L2_UART_TX, PIN_L2_UART_RX, 0);
 
-    lane_setup(&g_lane_l1, PIN_L1_IN, PIN_L1_OUT, l1, 1, PIN_L1_DIAG, &g_tmc_l1);
-    lane_setup(&g_lane_l2, PIN_L2_IN, PIN_L2_OUT, l2, 2, PIN_L2_DIAG, &g_tmc_l2);
+    lane_setup(&g_lane_l1, PIN_L1_IN, PIN_L1_OUT, l1, 1, &g_tmc_l1);
+    lane_setup(&g_lane_l2, PIN_L2_IN, PIN_L2_OUT, l2, 2, &g_tmc_l2);
 
     din_init(&g_y_split, PIN_Y_SPLIT);
     din_init(&g_buf_adv_din, PIN_BUF_ADVANCE);
@@ -453,7 +380,6 @@ int main(void) {
     adc_init();
     adc_gpio_init(PIN_BUF_ANALOG);
 
-    stall_init();
     neopixel_init(PIN_NEOPIXEL);
 
     settings_load();
@@ -505,9 +431,6 @@ int main(void) {
 
         // Background boot-only buffer neutralization.
         boot_stabilize_tick(g_now_ms);
-
-        // Deferred IRQ events
-        stall_pump();
 
         // State machines (order matters)
         cutter_tick(g_now_ms);

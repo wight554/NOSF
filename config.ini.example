@@ -29,12 +29,6 @@ run_current:
 # driver_hstrt: 5
 # driver_hend: 0
 
-# ─── StallGuard / CoolStep (per-lane capable) ────────────────────────────────
-# sgthrs: 0                   # StallGuard threshold (0 to 255; 255 = most sensitive)
-# tcoolthrs: 0xFFFFF          # SG activation threshold (TSTEP); 0xFFFFF = always active
-# sg_current_ma: 800          # current when SG is active (RELOAD or SYNC_SG=1)
-
-
 # ─── Speeds (mm/min) ─────────────────────────────────────────────────────────
 # feed_rate: 2100
 # rev_rate: 2100
@@ -48,7 +42,6 @@ run_current:
 # motion_startup_ms: 1000
 # ramp_step_rate: 17
 # ramp_tick_ms: 5
-# stall_recovery_ms: 3000
 
 # ─── Buffer Sync ─────────────────────────────────────────────────────────────
 # buf_hyst_ms: 30
@@ -62,9 +55,7 @@ run_current:
 # sync_kp_rate: 1050
 # sync_overshoot_pct: 50         # ADVANCE-only extra push as % of KP correction (0..200)
 # sync_auto_stop_ms: 5000          # Auto-mode only: disable auto-started sync after buffer
-                                   # stays TRAILING this long. Independent from SG tuning recovery.
-# buffer_recovery_threshold_ms: 0    # StallGuard tuning aid (0=disabled, default).
-                                     # When >0, disable buffer; auto-enable if stuck that long to recover
+                                   # stays TRAILING this long.
 
 # ─── Smarter Sync (Estimator) ────────────────────────────────────────────────
 # est_alpha_min: 0.10          # Estimator responsiveness (slow drifts)
@@ -120,9 +111,7 @@ run_current:
 # reload_mode: 0              # Enable autonomous swap on runout
 # reload_y_timeout_ms: 10000  # max wait for Y to clear during RELOAD
 
-# ─── RELOAD StallGuard Tuning (per-lane capable) ──────────────────────────────
-# sg_target: 320.0            # target SG value for follow-sync
-# sg_deriv: 3                 # approach contact threshold
+# ─── RELOAD Tuning ───────────────────────────────────────────────────────────
 # trailing_rate: 90           # coasting speed when buffer is stalled
 # join_rate: 1600             # fast approach speed
 # press_rate: 1200            # top speed in follow-sync
@@ -130,5 +119,3 @@ run_current:
 # reload_touch_boost_ms: 900  # boosted push window after settle
 # reload_touch_floor_pct: 90  # min % of PRESS_RATE during boost window
 # follow_timeout_ms: 10000    # max time in follow before error
-# sync_sg_interp: False       # SG interpolation during normal sync
-# reload_sg_interp: False     # SG interpolation during RELOAD follow

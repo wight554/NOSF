@@ -51,7 +51,6 @@ static void cut_begin_feed(uint32_t now_ms, uint32_t window_ms) {
     motor_enable(&g_cut.lane->m, true);
     motor_set_dir(&g_cut.lane->m, true);
     motor_set_rate_sps(&g_cut.lane->m, REV_SPS);
-    g_cut.lane->stall_armed = false;
     g_cut.phase_start_ms = now_ms;
     g_cut.state = CUT_FEED_WAIT;
 }
@@ -227,7 +226,6 @@ void reload_trigger(int runout_lane, uint32_t now_ms) {
     g_tc_ctx.target_lane = other;
     g_tc_ctx.from_lane = runout_lane;
     g_tc_ctx.phase_start_ms = now_ms;
-    g_tc_ctx.reload_stall_count = 0;
     g_tc_ctx.state = TC_RELOAD_WAIT_Y;
 }
 
@@ -395,16 +393,9 @@ void tc_tick(uint32_t now_ms) {
                 int approach_sps = FEED_SPS;
                 if (approach_sps <= 0) approach_sps = JOIN_SPS;
                 lane_start(new_lane, TASK_FEED, approach_sps, true, now_ms, 2000.0f);
-                new_lane->stall_armed = true;
                 g_tc_ctx.reload_tick_ms = now_ms;
-                g_tc_ctx.sg_ma_idx = 0;
-                g_tc_ctx.sg_ma_fill = 0;
-                g_tc_ctx.sg_ma_prev = 0.0f;
                 g_tc_ctx.reload_current_sps = 0;
-                g_tc_ctx.reload_stall_count = 0;
-                g_tc_ctx.last_reload_stall_ms = 0;
                 g_tc_ctx.last_trailing_ms = 0;
-                for (int i = 0; i < CONF_SG_MA_LEN; i++) g_tc_ctx.sg_ma_buf[i] = 0.0f;
                 g_tc_ctx.phase_start_ms = now_ms;
                 g_tc_ctx.state = TC_RELOAD_APPROACH;
             } else if (age > (uint32_t)RELOAD_Y_TIMEOUT_MS) {
@@ -414,46 +405,12 @@ void tc_tick(uint32_t now_ms) {
         }
 
         case TC_RELOAD_APPROACH: {
-            if (A && A->task == TASK_IDLE && A->fault != FAULT_STALL) {
+            if (A && A->task == TASK_IDLE) {
                 tc_enter_error("RELOAD_APPROACH_FAULT");
                 break;
             }
 
-            bool contacted = false;
-            if (BUF_SENSOR_TYPE == 0 &&
-                (now_ms - g_tc_ctx.reload_tick_ms) >= (uint32_t)SYNC_TICK_MS) {
-                g_tc_ctx.reload_tick_ms = now_ms;
-
-                if (A && A->task == TASK_FEED) {
-                    uint16_t sg_raw;
-                    if (tmc_read_sg_result(A->tmc, &sg_raw)) {
-                        g_tc_ctx.sg_ma_buf[g_tc_ctx.sg_ma_idx] = (float)sg_raw;
-                        g_tc_ctx.sg_ma_idx = (g_tc_ctx.sg_ma_idx + 1) % CONF_SG_MA_LEN;
-                        if (g_tc_ctx.sg_ma_fill < CONF_SG_MA_LEN) g_tc_ctx.sg_ma_fill++;
-
-                        if (g_tc_ctx.sg_ma_fill == CONF_SG_MA_LEN) {
-                            float sum = 0.0f;
-                            for (int i = 0; i < CONF_SG_MA_LEN; i++) sum += g_tc_ctx.sg_ma_buf[i];
-                            float sg_ma = sum / (float)CONF_SG_MA_LEN;
-                            g_sg_load = sg_ma;
-
-                            float deriv = sg_ma - g_tc_ctx.sg_ma_prev;
-                            g_tc_ctx.sg_ma_prev = sg_ma;
-                            int idx = lane_to_idx(A->lane_id);
-                            if (SG_DERIV[idx] > 0 &&
-                                deriv < -(float)SG_DERIV[idx] &&
-                                sg_ma < (SG_TARGET[idx] * 0.5f)) {
-                                contacted = true;
-                            }
-                        } else {
-                            g_tc_ctx.sg_ma_prev = (float)sg_raw;
-                        }
-                    }
-                }
-            }
-
-            bool stalled = (A && A->fault == FAULT_STALL);
-            if (g_buf.state == BUF_TRAILING || stalled) contacted = true;
+            bool contacted = (g_buf.state == BUF_TRAILING);
 
             if (A && A->task_limit_mm > 0.0f && A->task_dist_mm >= A->task_limit_mm) {
                 lane_stop(A);
@@ -463,12 +420,9 @@ void tc_tick(uint32_t now_ms) {
 
             if (contacted) {
                 if (A) {
-                    if (stalled) A->fault = FAULT_NONE;
                     lane_stop(A);
                 }
                 g_tc_ctx.reload_current_sps = PRESS_SPS;
-                g_tc_ctx.reload_stall_count = 0;
-                g_tc_ctx.last_reload_stall_ms = 0;
                 g_tc_ctx.last_trailing_ms = (g_buf.state == BUF_TRAILING) ? now_ms : 0;
                 g_tc_ctx.reload_tick_ms = now_ms;
                 g_tc_ctx.phase_start_ms = now_ms;
@@ -538,23 +492,6 @@ void tc_tick(uint32_t now_ms) {
                     A->target_sps = 0;
                     tmc_set_spreadcycle(A->tmc, TMC_SPREADCYCLE[A->lane_id - 1]);
                 }
-
-                if (A->fault == FAULT_STALL) {
-                    A->fault = FAULT_NONE;
-                    if ((int32_t)(now_ms - g_tc_ctx.last_reload_stall_ms) > 2000) g_tc_ctx.reload_stall_count = 0;
-
-                    g_tc_ctx.reload_stall_count++;
-                    g_tc_ctx.last_reload_stall_ms = now_ms;
-                    g_tc_ctx.reload_current_sps = TRAILING_SPS;
-
-                    if (g_tc_ctx.reload_stall_count >= 10) {
-                        tc_enter_error("FOLLOW_JAM");
-                        lane_stop(A);
-                        break;
-                    }
-                    A->stall_armed = true;
-                    A->fault = FAULT_NONE;
-                }
             }
 
             if (g_buf.state == BUF_TRAILING) {
@@ -578,12 +515,10 @@ void tc_tick(uint32_t now_ms) {
             if ((now_ms - last_reload_report_ms) >= 500u) {
                 last_reload_report_ms = now_ms;
                 char ev[64];
-                int idx = lane_to_idx(A->lane_id);
-                float sg_report = (SG_TARGET[idx] > 0.1f) ? (g_sg_load / SG_TARGET[idx]) : 0.0f;
                 snprintf(ev, sizeof(ev), "%s,%.1f,%.2f",
                          buf_state_name(g_buf.state),
                          (double)sps_to_mm_per_min(g_tc_ctx.reload_current_sps),
-                         (double)sg_report);
+                         (double)g_buf_pos);
                 cmd_event("BS", ev);
             }
             break;

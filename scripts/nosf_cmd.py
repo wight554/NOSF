@@ -56,10 +56,6 @@ DUMP_PARAMS = [
     ("DRIVER_TOFF",       "driver_toff",             True),
     ("DRIVER_HSTRT",      "driver_hstrt",            True),
     ("DRIVER_HEND",       "driver_hend",             True),
-    # --- StallGuard ---
-    ("SGTHRS",               "sgthrs",                     True),
-    ("TCOOLTHRS",         "tcoolthrs",               True),
-    ("SG_CURRENT_MA",     "sg_current_ma",           True),
     # --- Speeds ---
     ("FEED_RATE",         "feed_rate",               False),
     ("REV_RATE",          "rev_rate",                False),
@@ -72,7 +68,6 @@ DUMP_PARAMS = [
     ("TRAILING_RATE",     "trailing_rate",           False),
     # --- Motion ---
     ("STARTUP_MS",        "motion_startup_ms",       False),
-    ("STALL_MS",          "stall_recovery_ms",       False),
     ("RAMP_STEP_RATE",    "ramp_step_rate",          False),
     ("FOLLOW_MS",         "follow_timeout_ms",       True),
     # --- Buffer sync ---
@@ -87,11 +82,6 @@ DUMP_PARAMS = [
     ("BUF_THR",           "buf_thr",                 False),
     ("BUF_ALPHA",         "buf_analog_alpha",        False),
     ("TS_BUF_MS",         "ts_buf_fallback_ms",      False),
-    # --- SG tuning ---
-    ("SG_TARGET",         "sg_target",               True),
-    ("SG_DERIV",          "sg_deriv",                True),
-    ("SYNC_SG_INTERP",    "sync_sg_interp",          False),
-    ("RELOAD_SG_INTERP",  "reload_sg_interp",        False),
     # --- Reload ---
     ("RELOAD_MODE",       "reload_mode",             False),
     ("RELOAD_Y_MS",       "reload_y_timeout_ms",     False),
@@ -118,11 +108,9 @@ DUMP_PARAMS = [
 SECTION_BREAKS = {
     "run_current_ma":      "# ─── Motor / TMC (per-lane) ────────────────────────────────────────────────",
     "driver_tbl":          "# ─── TMC Chopper (per-lane) ────────────────────────────────────────────────",
-    "sgthrs":                 "# ─── StallGuard / CoolStep (per-lane) ──────────────────────────────────────",
     "feed_rate":           "# ─── Speeds (mm/min) ───────────────────────────────────────────────────────",
     "motion_startup_ms":   "# ─── Motion / Ramp ─────────────────────────────────────────────────────────",
     "buf_half_travel_mm":  "# ─── Buffer Sync ───────────────────────────────────────────────────────────",
-    "sg_target":           "# ─── RELOAD StallGuard Tuning ──────────────────────────────────────────────",
     "reload_mode":         "# ─── Reload Mode ───────────────────────────────────────────────────────────",
     "auto_preload":        "# ─── Safety ────────────────────────────────────────────────────────────────",
     "tc_timeout_cut_ms":   "# ─── Toolchange Timeouts ───────────────────────────────────────────────────",

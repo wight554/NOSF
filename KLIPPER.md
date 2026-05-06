@@ -2,7 +2,7 @@
 
 This document covers connecting Klipper to the NOSF: serial
 setup, the shell command helper, toolhead sensor and toolchange macros, and the
-advanced profiling workflow for StallGuard tuning (see `STALLGUARD_TUNING.md`).
+advanced profiling workflow for buffer and sync tuning.
 
 For the NOSF command reference see `MANUAL.md`; for behavioral details see
 `BEHAVIOR.md`.
@@ -32,7 +32,7 @@ sudo usermod -a -G dialout pi   # substitute your username if not 'pi'
 ## Shell command helper — nosf_cmd.py
 
 `scripts/nosf_cmd.py` sends a single NOSF command and blocks until the
-response arrives. Simple commands (SET:, GET:, T:, SM:, TS:, SG:, FD:, ST:,
+response arrives. Simple commands (SET:, GET:, T:, SM:, TS:, FD:, ST:,
 …) return on the first `OK:`/`ER:`. Long-running commands (`TC:`, `FL:`,
 `UL:`, `UM:`) wait for their completion event (`EV:TC:DONE`, `EV:LOADED`,
 `EV:UNLOADED`, …) or the corresponding error/timeout event. Exit code is 0 on
@@ -240,6 +240,6 @@ oscillates.
 | `TS:1` not reaching NOSF | Sensor wiring or config | Test: `RUN_SHELL_COMMAND CMD=nosf PARAMS="TS:1"` |
 | `TC:` times out | Bowden too long / jam | Increase `TC_LOAD_MS` / `TC_UNLOAD_MS` |
 | Sync not enabling after load | No `TS:1` sent | Check sensor or enable `TS_BUF_MS` fallback |
-| RELOAD approach never detects contact | `SG_DERIV` too high or TCOOLTHRS too low | Run `tune_reload_sg_interp.py --lane N --contact`; verify `TCOOLTHRS` covers operating speed |
-| RELOAD approach fires immediately (false trigger) | `SG_DERIV` too low | Increase `SG_DERIV`; or increase `reload_sg_interp_ma_len` in config.ini |
-| RELOAD follow sync motor stops mid-bowden | SG dropping to 0 (hard friction) | Check PTFE routing; reduce `PRESS_RATE` |
+| RELOAD approach never detects contact | Buffer sensor never reaches `TRAILING` | Verify buffer wiring and travel; reduce `JOIN_RATE` if the path is too aggressive |
+| RELOAD approach exits too early | Buffer sensor chatter or preload already trailing | Verify hysteresis/sensor state and make sure the standby path starts with real slack |
+| RELOAD follow times out mid-bowden | Drag too high or follow speed too low | Check PTFE routing; reduce `PRESS_RATE` or increase `FOLLOW_TIMEOUT_MS` |

@@ -63,7 +63,6 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 |---------|----------|-------------|
 | `?:` | Status | **Full Status** — returns all sensors, tasks, and rates. |
 | `VR:` | Version| **Version** — returns firmware version. |
-| `SG:n` | SG Value| **StallGuard** — returns current load for lane `n`. |
 | `TS:<0\|1>`| OK | **Toolhead Sensor** — report toolhead filament status (sent by host). |
 | `SM:<0\|1>`| OK | **Sync Mode** — manually toggle buffer sync. |
 | `BI:<0\|1>`| OK | **Buffer Invert** — invert buffer endstop logic. |
@@ -115,7 +114,7 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 | `AUTO_PRELOAD`| `auto_preload` | Enable parking preload on insertion | 1 |
 | `RELOAD_MODE`| `reload_mode` | Enable autonomous RELOAD behavior (Auto-Swap) | 0 |
 | `SYNC_OVERSHOOT_PCT` | `sync_overshoot_pct` | ADVANCE-only extra push as percent of sync KP correction (0..200) | 50 |
-| `SYNC_AUTO_STOP` | `sync_auto_stop_ms` | Auto-mode only: disable auto-started sync after sustained `TRAILING` for X ms; independent from SG tuning recovery | 5000 |
+| `SYNC_AUTO_STOP` | `sync_auto_stop_ms` | Auto-mode only: disable auto-started sync after sustained `TRAILING` for X ms | 5000 |
 | `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |
 
 ---
@@ -128,10 +127,9 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 | `LOADED` | `lane` | Filament successfully reached the toolhead/gears. |
 | `UNLOADED`| `lane` | Filament successfully retracted past the OUT or IN sensor. |
 | `ACTIVE` | `lane\|NONE`| Reported when the active lane changes. |
-| `FAULT:STALL`| `lane` | Hard motor stall detected (StallGuard DIAG). |
 | `FAULT:DRY_SPIN`| `lane` | Motor spinning > 8s without filament (`IN` clear). |
 | `SYNC` | `AUTO_START\|AUTO_STOP` | Automatic sync state transitions. |
 
 ### Fault Recovery
-Most faults (`STALL`, `TIMEOUT`) are transient and reset on the next command.
+Most faults (`TIMEOUT`, sensor-related faults) are transient and reset on the next command.
 **`FAULT:DRY_SPIN`** is sticky: it blocks automatic background tasks (Sync, RELOAD follow) to prevent motor wear. It clears automatically when a new spool is inserted (`IN` sensor triggers) or when a manual load command (`LO:`, `FL:`, etc.) is issued.

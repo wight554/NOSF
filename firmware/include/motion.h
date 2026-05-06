@@ -11,7 +11,7 @@ void motor_set_dir(motor_t *m, bool forward);
 void motor_set_rate_sps(motor_t *m, int sps);
 void motor_stop(motor_t *m);
 
-void lane_setup(lane_t *L, uint pin_in, uint pin_out, motor_t m, int lane_id, uint diag_pin, tmc_t *tmc);
+void lane_setup(lane_t *L, uint pin_in, uint pin_out, motor_t m, int lane_id, tmc_t *tmc);
 void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_ms, float limit_mm);
 void lane_stop(lane_t *L);
 void lane_tick(lane_t *L, uint32_t now_ms);

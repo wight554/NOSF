@@ -30,8 +30,6 @@ DEFAULTS = {
     "driver_hend": "0",
     "stealthchop_threshold": "0",
     "dir_invert": "0",
-    "tcoolthrs": "0xFFFFF",
-    "sgthrs": "0",
 
     # Speeds (mm/min)
     "feed_rate": "2100",
@@ -47,7 +45,6 @@ DEFAULTS = {
     "motion_startup_ms": "1000",
     "ramp_step_rate": "17",
     "ramp_tick_ms": "5",
-    "stall_recovery_ms": "3000",
 
     # Buffer Sync
     "buf_half_travel_mm": "5.0",
@@ -61,7 +58,6 @@ DEFAULTS = {
     "sync_kp_rate": "1050",
     "sync_overshoot_pct": "50",
     "sync_auto_stop_ms": "5000",
-    "buffer_recovery_threshold_ms": "0",
     "est_alpha_min": "0.10",
     "est_alpha_max": "0.60",
     "zone_bias_base_rate": "100",
@@ -108,20 +104,13 @@ DEFAULTS = {
     # Reload Mode
     "reload_mode": "0",
     "reload_y_timeout_ms": "10000",
-    # Sync / StallGuard
-    "sg_target": "320.0",
-    "sg_deriv": "3",
-    "sg_current_ma": "800",
     "trailing_rate": "90",
     "join_rate": "1600",
     "press_rate": "1200",
     "reload_touch_settle_ms": "120",
     "reload_touch_boost_ms": "900",
     "reload_touch_floor_pct": "90",
-    "sg_ma_len": "5",
     "follow_timeout_ms": "10000",
-    "sync_sg_interp": "False",
-    "reload_sg_interp": "False",
     "dist_in_out": "150",
     "dist_out_y": "100",
     "dist_y_buf": "300",
@@ -224,13 +213,8 @@ def main():
         hend = int(gm("driver_hend", "0"))
         spreadcycle = (gm("stealthchop_threshold", "0") == "0")
         
-        # Direction / StallGuard / CoolStep
+        # Direction
         dir_invert = int(gm("dir_invert", "0"))
-        sgthrs = int(gm("sgthrs", "0"))
-        tcoolthrs = int(gm("tcoolthrs", "0xFFFFF"), 0)
-        sg_current_ma = int(gm("sg_current_ma", "800"))
-        sg_target = float(gm("sg_target", "320.0"))
-        sg_deriv = int(gm("sg_deriv", "3"))
         follow_timeout_ms = int(gm("follow_timeout_ms", "10000"))
 
         mm_per_step = rotation_distance / (full_steps * microsteps * gear_ratio) if rotation_distance > 0 else 0.0125
@@ -252,11 +236,6 @@ def main():
             "mm_per_step": mm_per_step,
             "spreadcycle": spreadcycle,
             "dir_invert": dir_invert,
-            "sgthrs": sgthrs,
-            "tcoolthrs": tcoolthrs,
-            "sg_current_ma": sg_current_ma,
-            "sg_target": sg_target,
-            "sg_deriv": sg_deriv,
             "follow_timeout_ms": follow_timeout_ms
         }
 
@@ -289,11 +268,6 @@ def main():
         f"#define CONF_L1_HEND               {l1['hend']}",
         f"#define CONF_L1_INTPOL             {'true' if l1['interpolate'] else 'false'}",
         f"#define CONF_L1_SPREADCYCLE        {'true' if l1['spreadcycle'] else 'false'}",
-        f"#define CONF_L1_SGTHRS                {l1['sgthrs']}",
-        f"#define CONF_L1_TCOOLTHRS          {l1['tcoolthrs']}",
-        f"#define CONF_L1_SG_CURRENT_MA      {l1['sg_current_ma']}",
-        f"#define CONF_L1_SG_TARGET          {l1['sg_target']:.1f}f",
-        f"#define CONF_L1_SG_DERIV           {l1['sg_deriv']}",
         f"#define CONF_L1_FOLLOW_TIMEOUT_MS  {l1['follow_timeout_ms']}",
         "",
         "// --- Lane 2 parameters ---",
@@ -310,11 +284,6 @@ def main():
         f"#define CONF_L2_HEND               {l2['hend']}",
         f"#define CONF_L2_INTPOL             {'true' if l2['interpolate'] else 'false'}",
         f"#define CONF_L2_SPREADCYCLE        {'true' if l2['spreadcycle'] else 'false'}",
-        f"#define CONF_L2_SGTHRS                {l2['sgthrs']}",
-        f"#define CONF_L2_TCOOLTHRS          {l2['tcoolthrs']}",
-        f"#define CONF_L2_SG_CURRENT_MA      {l2['sg_current_ma']}",
-        f"#define CONF_L2_SG_TARGET          {l2['sg_target']:.1f}f",
-        f"#define CONF_L2_SG_DERIV           {l2['sg_deriv']}",
         f"#define CONF_L2_FOLLOW_TIMEOUT_MS  {l2['follow_timeout_ms']}",
         "",
         "// --- Direction Inverts ---",
@@ -334,7 +303,6 @@ def main():
         f"#define CONF_MOTION_STARTUP_MS  {get('motion_startup_ms')}",
         f"#define CONF_RAMP_STEP_SPS      {mm_min_to_sps(get('ramp_step_rate'), l1)}",
         f"#define CONF_RAMP_TICK_MS       {get('ramp_tick_ms')}",
-        f"#define CONF_STALL_RECOVERY_MS  {get('stall_recovery_ms')}",
         "",
         "// --- Buffer Sync ---",
         f"#define CONF_BUF_HALF_TRAVEL_MM {get_float('buf_half_travel_mm')}f",
@@ -349,7 +317,6 @@ def main():
         f"#define CONF_SYNC_KP_SPS        {mm_min_to_sps(get('sync_kp_rate'), l1)}",
         f"#define CONF_SYNC_OVERSHOOT_PCT {get('sync_overshoot_pct')}",
         f"#define CONF_SYNC_AUTO_STOP_MS {get('sync_auto_stop_ms')}",
-        f"#define CONF_BUFFER_RECOVERY_THRESHOLD_MS {get('buffer_recovery_threshold_ms')}",
         f"#define CONF_EST_ALPHA_MIN        {get_float('est_alpha_min')}f",
         f"#define CONF_EST_ALPHA_MAX        {get_float('est_alpha_max')}f",
         f"#define CONF_ZONE_BIAS_BASE_SPS   {mm_min_to_sps(get('zone_bias_base_rate'), l1)}",
@@ -395,19 +362,13 @@ def main():
         "",
         "// --- Reload Mode ---",
         f"#define CONF_RELOAD_MODE           {get('reload_mode')}",
-        f"#define CONF_SG_CURRENT_MA     {get('sg_current_ma')}",
         f"#define CONF_JOIN_SPS           {mm_min_to_sps(get('join_rate'), l1)}",
         f"#define CONF_PRESS_SPS          {mm_min_to_sps(get('press_rate'), l1)}",
-        f"#define CONF_SG_TARGET          {get_float('sg_target'):.1f}f",
-        f"#define CONF_SG_DERIV           {get('sg_deriv')}",
         f"#define CONF_TRAILING_SPS       {mm_min_to_sps(get('trailing_rate'), l1)}",
         f"#define CONF_RELOAD_TOUCH_SETTLE_MS {get('reload_touch_settle_ms')}",
         f"#define CONF_RELOAD_TOUCH_BOOST_MS  {get('reload_touch_boost_ms')}",
         f"#define CONF_RELOAD_TOUCH_FLOOR_PCT {get('reload_touch_floor_pct')}",
-        f"#define CONF_SG_MA_LEN          {get('sg_ma_len')}",
         f"#define CONF_FOLLOW_TIMEOUT_MS  {get('follow_timeout_ms')}",
-        f"#define CONF_SYNC_SG_INTERP                {'true' if get_bool('sync_sg_interp') else 'false'}",
-        f"#define CONF_RELOAD_SG_INTERP              {'true' if get_bool('reload_sg_interp') else 'false'}",
         "",
         "// --- Physical Model ---",
         f"#define CONF_DIST_IN_OUT            {get('dist_in_out')}",

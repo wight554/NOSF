@@ -105,7 +105,7 @@ void motor_stop(motor_t *m) {
     motor_enable(m, false);
 }
 
-void lane_setup(lane_t *L, uint pin_in, uint pin_out, motor_t m, int lane_id, uint diag_pin, tmc_t *tmc) {
+void lane_setup(lane_t *L, uint pin_in, uint pin_out, motor_t m, int lane_id, tmc_t *tmc) {
     din_init(&L->in_sw, pin_in);
     din_init(&L->out_sw, pin_out);
     L->m = m;
@@ -116,11 +116,9 @@ void lane_setup(lane_t *L, uint pin_in, uint pin_out, motor_t m, int lane_id, ui
     L->ramp_last_tick_ms = 0;
     L->fault = FAULT_NONE;
     L->tmc = tmc;
-    L->diag_pin = diag_pin;
     L->motion_started_ms = 0;
     L->task_started_ms = 0;
     L->dry_spin_ms = 0;
-    L->stall_armed = false;
     L->fault = FAULT_NONE;
     L->lane_id = lane_id;
     L->runout_block_until_ms = 0;
@@ -136,9 +134,6 @@ void lane_stop(lane_t *L) {
     L->task = TASK_IDLE;
     L->task_started_ms = 0;
     L->dry_spin_ms = 0;
-    L->stall_armed = false;
-    L->stall_recovery = false;
-    L->stall_recovery_deadline_ms = 0;
     L->unload_sensor_latch = false;
     L->unload_buf_recover_done = false;
     L->retract_deadline_ms = 0;
@@ -156,7 +151,6 @@ void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_ms, flo
     L->last_dist_tick_ms = now_ms;
     L->task_dist_mm = 0.0f;
     L->dist_at_out_mm = 0.0f;
-    L->stall_armed = false;
     L->unload_sensor_latch = false;
     L->retract_deadline_ms = 0;
     L->dist_at_in_clear_mm = 0.0f;
@@ -172,21 +166,9 @@ void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_ms, flo
     motor_enable(&L->m, true);
     motor_set_dir(&L->m, forward);
     motor_set_rate_sps(&L->m, L->current_sps);
-
-    bool is_sync = (t == TASK_FEED);
-    bool is_reload_approach = (is_sync && g_tc_ctx.state == TC_RELOAD_APPROACH);
-    bool is_reload_follow = (is_sync && g_tc_ctx.state == TC_RELOAD_FOLLOW);
-    bool is_normal_sync = (is_sync && g_tc_ctx.state == TC_IDLE);
-
-    bool use_sg_interpolation = (is_reload_follow && RELOAD_SG_INTERP) || (is_normal_sync && SYNC_SG_INTERP);
-    bool use_stealth = is_reload_approach || use_sg_interpolation;
-
     int idx = L->lane_id - 1;
-    bool run_spreadcycle = TMC_SPREADCYCLE[idx] && !use_stealth;
-    int current_ma = use_stealth ? SG_CURRENT_MA[idx] : TMC_RUN_CURRENT_MA[idx];
-
-    tmc_set_spreadcycle(L->tmc, run_spreadcycle);
-    tmc_set_run_current_ma(L->tmc, current_ma, TMC_HOLD_CURRENT_MA[L->lane_id - 1]);
+    tmc_set_spreadcycle(L->tmc, TMC_SPREADCYCLE[idx]);
+    tmc_set_run_current_ma(L->tmc, TMC_RUN_CURRENT_MA[idx], TMC_HOLD_CURRENT_MA[idx]);
 }
 
 void lane_tick(lane_t *L, uint32_t now_ms) {
@@ -214,16 +196,6 @@ void lane_tick(lane_t *L, uint32_t now_ms) {
         L->last_dist_tick_ms = now_ms;
     }
 
-    if (!L->stall_armed && L->task != TASK_IDLE) {
-        if ((int32_t)(now_ms - L->motion_started_ms) >= MOTION_STARTUP_MS) {
-            L->stall_armed = true;
-        }
-    }
-
-    if (L->stall_recovery && (int32_t)(now_ms - L->stall_recovery_deadline_ms) >= 0) {
-        L->stall_recovery = false;
-    }
-
     if (L->task == TASK_AUTOLOAD) {
         if (lane_out_present(L)) {
             if (AUTOLOAD_RETRACT_MM > 0) {
@@ -231,7 +203,6 @@ void lane_tick(lane_t *L, uint32_t now_ms) {
                 if (secs < 0.05f) secs = 0.05f;
                 L->retract_deadline_ms = now_ms + (uint32_t)(secs * 1000.0f);
                 L->task = TASK_UNLOAD;
-                L->stall_armed = false;
                 motor_set_dir(&L->m, false);
                 L->target_sps = REV_SPS;
                 L->current_sps = RAMP_STEP_SPS;
@@ -429,7 +400,4 @@ void lane_fault(lane_t *L, fault_t f) {
     L->current_sps = 0;
     L->target_sps = 0;
     L->fault = f;
-    L->stall_armed = false;
-    L->stall_recovery = false;
-    L->stall_recovery_deadline_ms = 0;
 }

@@ -7,7 +7,7 @@ Schematic: ERB V2.0 Release SCH.pdf (in FYSETC-ERB/V2.0/hardware/)
 ---
 
 ## Tested Hardware Configuration
-*   **Motors**: [FYSETC G36HSY4405-6D-1200](https://github.com/FYSETC/FYSETC-MOTORS/blob/main/G36HSY4405-6D-1200/G36HSY4405-6D-1200.pdf). This motor is included in Fysetc NightOwl kits and has been verified to work well with StallGuard at 800mA.
+*   **Motors**: [FYSETC G36HSY4405-6D-1200](https://github.com/FYSETC/FYSETC-MOTORS/blob/main/G36HSY4405-6D-1200/G36HSY4405-6D-1200.pdf). This motor is included in Fysetc NightOwl kits and has been verified to work well with the default NOSF feed and retract profiles.
 *   **Buffer**: [QuattroSync](https://github.com/Batalhoti/QuattroSync). A dual-lane buffer that utilizes springs for tension management, offering more consistent performance for RELOAD than gravity-based designs like the TurtleNeck.
 
 ---
