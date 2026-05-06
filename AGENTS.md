@@ -98,10 +98,11 @@ the context budget for code reading instead.
    runtime tuning defaults only in firmware C headers. Add/update keys in
    `config.ini` / `config.ini.example`, wire them through `scripts/gen_config.py`
    into `firmware/include/tune.h`, then consume `CONF_*` in firmware.
-8. **MANDATORY: Always specify model when referencing tools or agents.** 
-   Any time you mention using a tool, agent, or list what you're doing, include the exact model name.
-   Examples: "I'll search the codebase (Claude Haiku 4.5)", commit message footer: `Generated-By: GitHub Copilot (Claude Haiku 4.5)`.
+8. **MANDATORY: Specify model in commit messages** — 
+   Always include the exact model name in the `Generated-By` footer of commit messages. 
+   Examples: `Generated-By: Antigravity (Gemini 3.1 Flash)`.
    This creates an audit trail and helps the user understand the capabilities and limitations of each decision.
+   You do **not** need to repeat the model name in the chat or when listing tools.
 
 ## Commit Format
 
