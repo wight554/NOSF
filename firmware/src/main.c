@@ -1711,7 +1711,7 @@ static void sync_tick(uint32_t now_ms) {
 
     // 2. Automated Stop (if auto-started)
     if (sync_auto_started) {
-        if (s == BUF_ADVANCE) {
+        if (s == BUF_ADVANCE || s == BUF_MID) {
             sync_idle_since_ms = 0;
         } else {
             if (sync_idle_since_ms == 0) sync_idle_since_ms = now_ms;
