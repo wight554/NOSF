@@ -29,7 +29,7 @@ run_current:
 # driver_hend: 0
 
 # ─── StallGuard / CoolStep (per-lane capable) ────────────────────────────────
-# sgt: 0                      # StallGuard threshold (-64 to 63)
+# sgthrs: 0                   # StallGuard threshold (0 to 255; 255 = most sensitive)
 # tcoolthrs: 0xFFFFF          # SG activation threshold (TSTEP); 0xFFFFF = always active
 # sg_current_ma: 800          # current when SG is active (RELOAD or SYNC_SG=1)
 

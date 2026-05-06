@@ -32,7 +32,7 @@ DEFAULTS = {
     "stealthchop_threshold": "0",
     "dir_invert": "0",
     "tcoolthrs": "0xFFFFF",
-    "sgt": "0",
+    "sgthrs": "0",
 
     # Speeds (mm/min)
     "feed_rate": "2100",
@@ -214,7 +214,7 @@ def main():
         
         # Direction / StallGuard / CoolStep
         dir_invert = int(gm("dir_invert", "0"))
-        sgt = int(gm("sgt", "0"))
+        sgt = int(gm("sgthrs", "0"))
         tcoolthrs = int(gm("tcoolthrs", "0xFFFFF"), 0)
         sg_current_ma = int(gm("sg_current_ma", "800"))
         sg_target = float(gm("sg_target", "320.0"))
@@ -240,7 +240,7 @@ def main():
             "mm_per_step": mm_per_step,
             "spreadcycle": spreadcycle,
             "dir_invert": dir_invert,
-            "sgt": sgt,
+            "sgthrs": sgt,
             "tcoolthrs": tcoolthrs,
             "sg_current_ma": sg_current_ma,
             "sg_target": sg_target,
@@ -277,7 +277,7 @@ def main():
         f"#define CONF_M1_HEND               {m1['hend']}",
         f"#define CONF_M1_INTPOL             {'true' if m1['interpolate'] else 'false'}",
         f"#define CONF_M1_SPREADCYCLE        {'true' if m1['spreadcycle'] else 'false'}",
-        f"#define CONF_M1_SGT                {m1['sgt']}",
+        f"#define CONF_M1_SGTHRS                {m1['sgthrs']}",
         f"#define CONF_M1_TCOOLTHRS          {m1['tcoolthrs']}",
         f"#define CONF_M1_SG_CURRENT_MA      {m1['sg_current_ma']}",
         f"#define CONF_M1_SG_TARGET          {m1['sg_target']:.1f}f",
@@ -298,7 +298,7 @@ def main():
         f"#define CONF_M2_HEND               {m2['hend']}",
         f"#define CONF_M2_INTPOL             {'true' if m2['interpolate'] else 'false'}",
         f"#define CONF_M2_SPREADCYCLE        {'true' if m2['spreadcycle'] else 'false'}",
-        f"#define CONF_M2_SGT                {m2['sgt']}",
+        f"#define CONF_M2_SGTHRS                {m2['sgthrs']}",
         f"#define CONF_M2_TCOOLTHRS          {m2['tcoolthrs']}",
         f"#define CONF_M2_SG_CURRENT_MA      {m2['sg_current_ma']}",
         f"#define CONF_M2_SG_TARGET          {m2['sg_target']:.1f}f",
