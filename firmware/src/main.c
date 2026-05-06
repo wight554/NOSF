@@ -110,6 +110,10 @@ static int DIST_Y_BUF  = CONF_DIST_Y_BUF;
 static int BUF_BODY_LEN = CONF_BUF_BODY_LEN;
 static int BUF_SIZE_MM = CONF_BUF_SIZE_MM;
 
+// Derived Physical Path Constants
+#define Y_TO_BUF_NEUTRAL      ((float)DIST_Y_BUF + (float)BUF_SIZE_MM / 2.0f)
+#define BUF_NEUTRAL_TO_EXIT   ((float)BUF_BODY_LEN - (float)Y_TO_BUF_NEUTRAL)
+
 static float MM_PER_STEP[NUM_LANES] = {CONF_M1_MM_PER_STEP, CONF_M2_MM_PER_STEP}; 
 
 static inline int mm_per_min_to_sps_idx(float mm_per_min, int idx) {
@@ -760,12 +764,11 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         // 2. Buffer Advance (Extruder is pulling)
         // 3. Buffer Trailing (Filament reached gears/blockage) AFTER passing OUT sensor
         // Sanity: Ignore buffer advance until tip has reached at least the buffer's neutral point.
-        // Threshold = DIST_OUT_Y + DIST_Y_BUF + (BUF_SIZE / 2).
         bool buf_advance_sane = (g_buf.state == BUF_ADVANCE);
         if (L->unload_sensor_latch) {
             float dist_since_out = L->task_dist_mm - L->dist_at_out_mm;
-            float buffer_neutral_mm = (float)(DIST_OUT_Y + DIST_Y_BUF) + ((float)BUF_SIZE_MM / 2.0f);
-            if (dist_since_out < buffer_neutral_mm * 0.8f) {
+            float threshold = (float)DIST_OUT_Y + Y_TO_BUF_NEUTRAL;
+            if (dist_since_out < threshold * 0.8f) {
                 buf_advance_sane = false; // Path Sanity: Tip hasn't reached buffer neutral yet.
             }
         } else {
