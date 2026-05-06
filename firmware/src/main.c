@@ -854,18 +854,23 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         // 3. Buffer Trailing (Filament reached gears/blockage) AFTER passing OUT sensor
         // Sanity: Ignore buffer advance until tip has reached at least the buffer's neutral point.
         bool buf_advance_sane = (g_buf.state == BUF_ADVANCE);
+        bool buf_trailing_sane = false;
         if (L->unload_sensor_latch) {
             float dist_since_out = L->task_dist_mm - L->dist_at_out_mm;
             float threshold = (float)DIST_OUT_Y + Y_TO_BUF_NEUTRAL;
             if (dist_since_out < threshold * 0.8f) {
                 buf_advance_sane = false; // Path Sanity: Tip hasn't reached buffer neutral yet.
+            } else if (g_buf.state == BUF_TRAILING) {
+                // Treat TRAILING as a load-complete signal only after we have
+                // pushed a sane post-OUT distance during this task.
+                buf_trailing_sane = true;
             }
         } else {
             buf_advance_sane = false; // Tip hasn't even reached OUT.
         }
 
         bool loaded = toolhead_has_filament || buf_advance_sane || 
-                     (L->unload_sensor_latch && g_buf.state == BUF_TRAILING);
+                     buf_trailing_sane;
 
         if (loaded) {
             lane_stop(L);
