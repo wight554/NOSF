@@ -1477,7 +1477,7 @@ static void autopreload_tick(uint32_t now_ms) {
     bool mmu_empty = !lane_out_present(&g_lane_l1) && !lane_out_present(&g_lane_l2);
 
     if (in1 && !prev_lane1_in_present) {
-        if (g_lane_l1.task == TASK_IDLE && tc_state() == TC_IDLE && !cutter_busy() && !lane_out_present(&g_lane_l1)) {
+        if (g_lane_l1.task == TASK_IDLE && (tc_state() == TC_IDLE || tc_state() == TC_RELOAD_FOLLOW) && !cutter_busy() && !lane_out_present(&g_lane_l1)) {
             if (AUTO_MODE && mmu_empty) {
                 // Completely empty MMU: auto-load all the way to toolhead.
                 lane_start(&g_lane_l1, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
@@ -1492,7 +1492,7 @@ static void autopreload_tick(uint32_t now_ms) {
     }
 
     if (in2 && !prev_lane2_in_present) {
-        if (g_lane_l2.task == TASK_IDLE && tc_state() == TC_IDLE && !cutter_busy() && !lane_out_present(&g_lane_l2)) {
+        if (g_lane_l2.task == TASK_IDLE && (tc_state() == TC_IDLE || tc_state() == TC_RELOAD_FOLLOW) && !cutter_busy() && !lane_out_present(&g_lane_l2)) {
             if (AUTO_MODE && mmu_empty) {
                 lane_start(&g_lane_l2, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
                 cmd_event("AUTO_LOAD", "2");
