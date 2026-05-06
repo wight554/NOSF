@@ -38,6 +38,7 @@ static int PRESS_SPS = CONF_PRESS_SPS;
 static int TRAILING_SPS = CONF_TRAILING_SPS;
 static int SG_DERIV[NUM_LANES] = {CONF_L1_SG_DERIV, CONF_L2_SG_DERIV};
 static float SG_TARGET[NUM_LANES] = {CONF_L1_SG_TARGET, CONF_L2_SG_TARGET};
+static int BUF_STAB_SPS = 0;
 static int FOLLOW_TIMEOUT_MS[NUM_LANES] = {CONF_L1_FOLLOW_TIMEOUT_MS, CONF_L2_FOLLOW_TIMEOUT_MS};
 
 static int RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
@@ -338,6 +339,7 @@ typedef struct lane_s {
     bool stall_recovery;              // true = first stall fired during sync; next stall = hard stop
     uint32_t stall_recovery_deadline_ms;
     bool unload_sensor_latch;
+    bool unload_buf_recover_done;
     fault_t fault;
     int lane_id;
     uint32_t runout_block_until_ms;
@@ -556,6 +558,7 @@ static void lane_stop(lane_t *L) {
     L->stall_recovery = false;
     L->stall_recovery_deadline_ms = 0;
     L->unload_sensor_latch = false;
+    L->unload_buf_recover_done = false;
     L->retract_deadline_ms = 0;
     L->buf_advance_since_ms = 0;
     L->reload_tail_ms = 0;
@@ -714,8 +717,40 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
 
     if (L->task == TASK_UNLOAD) {
         if (L->retract_deadline_ms == 0) {
+            if (L->unload_sensor_latch) {
+                // Buffer recovery phase: forward-feed ~half buffer at safe speed,
+                // then resume reverse unload.
+                float moved_mm = L->task_dist_mm - L->dist_at_out_mm;
+                if (moved_mm >= BUF_HALF_TRAVEL_MM) {
+                    // Ignore the recovery forward distance for unload distance limits.
+                    L->task_dist_mm = L->dist_at_out_mm;
+                    L->unload_sensor_latch = false;
+
+                    // Resume reverse unload at REV speed.
+                    motor_stop(&L->m);
+                    L->target_sps = REV_SPS;
+                    L->current_sps = REV_SPS;
+                    L->ramp_last_tick_ms = now_ms;
+                    motor_enable(&L->m, true);
+                    motor_set_dir(&L->m, false);
+                    motor_set_rate_sps(&L->m, L->current_sps);
+                }
+            // One-shot UL safeguard: if buffer enters ADVANCE while unloading,
+            // stop reverse and do a short gentle forward feed to release tension.
+            } else if (!L->unload_buf_recover_done && g_buf.state == BUF_ADVANCE) {
+                motor_stop(&L->m);
+                L->unload_buf_recover_done = true;
+                L->unload_sensor_latch = true;
+                L->dist_at_out_mm = L->task_dist_mm;
+
+                L->target_sps = BUF_STAB_SPS;
+                L->current_sps = BUF_STAB_SPS;
+                L->ramp_last_tick_ms = now_ms;
+                motor_enable(&L->m, true);
+                motor_set_dir(&L->m, true);
+                motor_set_rate_sps(&L->m, L->current_sps);
             // Stage 1: reverse until OUT sensor clears.
-            if (!lane_out_present(L)) {
+            } else if (!lane_out_present(L)) {
                 // Tip reached OUT. Back off Tip-to-Gears distance.
                 float secs = (float)AUTOLOAD_RETRACT_MM / ((float)REV_SPS * MM_PER_STEP[L->lane_id-1]);
                 if (secs < 0.2f) secs = 0.2f; 
@@ -1953,6 +1988,7 @@ typedef struct {
     int join_sps;
     int press_sps;
     int trailing_sps;
+    int buf_stab_sps;
     int sg_deriv[NUM_LANES];
     float sg_target[NUM_LANES];
     int follow_timeout_ms[NUM_LANES];
@@ -2064,6 +2100,7 @@ static void settings_defaults(void) {
     BUF_ANALOG_ALPHA = CONF_BUF_ANALOG_ALPHA;
     SYNC_KP_SPS = CONF_SYNC_KP_SPS;
     TS_BUF_FALLBACK_MS = CONF_TS_BUF_FALLBACK_MS;
+    BUF_STAB_SPS = clamp_i(mm_per_min_to_sps(CONF_BUF_STAB_RATE_MM_MIN), 10, 10000);
 
     MM_PER_STEP[0] = CONF_L1_MM_PER_STEP;
     MM_PER_STEP[1] = CONF_L2_MM_PER_STEP;
@@ -2188,6 +2225,7 @@ static void settings_save(void) {
         s.sg_current_ma[i] = SG_CURRENT_MA[i];
     }
 
+    s.buf_stab_sps = BUF_STAB_SPS;
     s.sync_sg_interp = SYNC_SG_INTERP;
     s.reload_sg_interp = RELOAD_SG_INTERP;
 
@@ -2356,6 +2394,7 @@ static void settings_load(void) {
     JOIN_SPS = s->join_sps;
     PRESS_SPS = s->press_sps;
     TRAILING_SPS = s->trailing_sps;
+    BUF_STAB_SPS = s->buf_stab_sps;
     SYNC_SG_INTERP = s->sync_sg_interp;
     RELOAD_SG_INTERP = s->reload_sg_interp;
 
@@ -2692,6 +2731,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "JOIN_RATE"))     JOIN_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "PRESS_RATE"))    PRESS_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "TRAILING_RATE")) TRAILING_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
+        else if (!strcmp(base_param, "BUF_STAB_RATE")) BUF_STAB_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
         else if (!strcmp(base_param, "RUN_CURRENT_MA")) { SET_LANE({ TMC_RUN_CURRENT_MA[idx] = clamp_i(iv, 0, 2000); }); }
         else if (!strcmp(base_param, "HOLD_CURRENT_MA")) { SET_LANE({ TMC_HOLD_CURRENT_MA[idx] = clamp_i(iv, 0, 2000); }); }
         else if (!strcmp(base_param, "MICROSTEPS")) { SET_LANE({ TMC_MICROSTEPS[idx] = clamp_i(iv, 1, 256); }); }
@@ -2782,6 +2822,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "JOIN_RATE"))     snprintf(out, sizeof(out), "JOIN_RATE:%.1f", (double)sps_to_mm_per_min_idx(JOIN_SPS, idx));
         else if (!strcmp(param, "PRESS_RATE"))    snprintf(out, sizeof(out), "PRESS_RATE:%.1f", (double)sps_to_mm_per_min_idx(PRESS_SPS, idx));
         else if (!strcmp(param, "TRAILING_RATE")) snprintf(out, sizeof(out), "TRAILING_RATE:%.1f", (double)sps_to_mm_per_min_idx(TRAILING_SPS, idx));
+        else if (!strcmp(param, "BUF_STAB_RATE")) snprintf(out, sizeof(out), "BUF_STAB_RATE:%.1f", (double)sps_to_mm_per_min_idx(BUF_STAB_SPS, idx));
         else if (!strcmp(param, "SG_DERIV"))     snprintf(out, sizeof(out), "SG_DERIV:%d", SG_DERIV[idx]);
         else if (!strcmp(param, "SG_TARGET"))    snprintf(out, sizeof(out), "SG_TARGET:%.1f", (double)SG_TARGET[idx]);
         else if (!strcmp(param, "FOLLOW_MS"))    snprintf(out, sizeof(out), "FOLLOW_MS:%d", FOLLOW_TIMEOUT_MS[idx]);
@@ -3068,7 +3109,8 @@ int main(void) {
             bool forward = (buf_state == BUF_ADVANCE);  // ADVANCE -> push forward, TRAILING -> pull backward (reverse)
             
             // Start motor at low speed to gently move buffer toward MID
-            lane_start(stab_lane, TASK_FEED, TRAILING_SPS, forward, boot_now_ms, 0);
+            // Start motor at low speed to gently move buffer toward MID
+            lane_start(stab_lane, TASK_FEED, BUF_STAB_SPS, forward, boot_now_ms, 0);
             // During boot there is no lane_tick ramp yet, so apply target speed immediately.
             stab_lane->current_sps = stab_lane->target_sps;
             motor_set_rate_sps(&stab_lane->m, stab_lane->current_sps);

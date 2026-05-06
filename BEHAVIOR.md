@@ -92,6 +92,11 @@ Runs reverse at `REV_RATE` until OUT clears.
 **Requires OUT to be triggered before starting** — returns `ER:NOT_LOADED` if
 OUT is already clear.
 
+If buffer enters `BUF_ADVANCE` during `UL:`, firmware performs a one-shot
+stabilization sequence: stop reverse, feed forward gently by ~half buffer
+travel (`BUF_TRAVEL`), then resume reverse unload. Recovery speed is controlled
+by `BUF_STAB_RATE` (default 600 mm/min).
+
 ### `UM:` — Unload from MMU
 
 Runs reverse at `REV_RATE` until IN clears.

@@ -48,7 +48,7 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 |---------|------|-------------|
 | `LO:` | Manual| **Preload** — runs forward until OUT sensor triggers. Limit: `AUTOLOAD_MAX`. |
 | `FL:` | Manual| **Full Load** — runs forward until toolhead sensor triggers (`TS:1`). Limit: `LOAD_MAX`. |
-| `UL:` | Both  | **Unload (Extruder)** — reverse until OUT sensor clears. Limit: `UNLOAD_MAX`. |
+| `UL:` | Both  | **Unload (Extruder)** — reverse until OUT sensor clears. If buffer enters `ADVANCE`, performs a one-shot gentle forward recovery move (~half buffer travel), then resumes reverse unload. Limit: `UNLOAD_MAX`. |
 | `UM:` | Both  | **Unload (MMU)** — reverse until IN sensor clears. Limit: `UNLOAD_MAX`. |
 | `TC:n` | Manual| **Toolchange** — Unload active lane and load lane `n`. |
 | `MV:mm:F[:D]`| Both | **Exact Move** — move `abs(mm)` at `F` mm/min. Direction from sign of `mm` or optional `D` (`F`/`R`/`B`, `+`/`-`). Disables sync. |
@@ -85,6 +85,7 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 | `FEED_RATE` | `feed_rate` | Standard feeding speed | 4000 |
 | `REV_RATE` | `rev_rate` | Standard retract speed | 4000 |
 | `AUTO_RATE` | `auto_rate` | Preload speed (`LO:`) | 2000 |
+| `BUF_STAB_RATE` | n/a | Buffer stabilization speed for boot neutralization and UL advance-recovery move | 600 |
 | `JOIN_RATE` | `join_rate` | RELOAD: Fast approach speed | 2000 |
 | `PRESS_RATE` | `press_rate` | RELOAD: Slow follow-sync speed | 1000 |
 | `SYNC_MAX_RATE` | `sync_max_rate` | Max speed allowed during sync | 20000 |
