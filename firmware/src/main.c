@@ -1732,10 +1732,10 @@ static int sync_bootstrap_sps(void) {
     return clamp_i(startup_sps, TRAILING_SPS, max_sps);
 }
 
-static int sync_effective_kp_sps(void) {
-    // Keep the configured ceiling, but scale down correction at low learned
-    // baseline speeds so slow extrusion stays smoother and less aggressive.
-    int baseline_limited_kp = g_baseline_sps / 3;
+static int sync_effective_kp_sps(buf_state_t s) {
+    // Keep correction conservative near MID/TRAILING, but allow much stronger
+    // catch-up authority in ADVANCE so high-flow bursts can be matched quickly.
+    int baseline_limited_kp = (s == BUF_ADVANCE) ? (g_baseline_sps * 2) : (g_baseline_sps / 3);
     if (baseline_limited_kp < TRAILING_SPS) baseline_limited_kp = TRAILING_SPS;
     return (SYNC_KP_SPS < baseline_limited_kp) ? SYNC_KP_SPS : baseline_limited_kp;
 }
@@ -1881,7 +1881,7 @@ static void sync_tick(uint32_t now_ms) {
     //            -1 = TRAILING (buffer filling, slow down MMU).
     // Both sensor modes produce the same [-1, +1] range via EMA in buf_sensor_tick.
     float buf_pos = g_buf_pos;
-    int kp_sps = sync_effective_kp_sps();
+    int kp_sps = sync_effective_kp_sps(s);
 
     if (s == BUF_TRAILING) {
         // Two behaviors based on context:
