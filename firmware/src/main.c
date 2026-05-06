@@ -485,7 +485,11 @@ static void reload_trigger(int runout_lane, uint32_t now_ms);
 static void set_toolhead_filament(bool present) {
     toolhead_has_filament = present;
     sync_enabled = present;
-    if (!present) sync_current_sps = 0;
+    if (!present) {
+        sync_current_sps = 0;
+        sync_auto_started = false;
+        sync_idle_since_ms = 0;
+    }
 }
 
 // ===================== Lane helpers =====================
@@ -1762,8 +1766,9 @@ static void sync_tick(uint32_t now_ms) {
     buf_state_t s = g_buf.state;
 
     // 1. Automated Start (RELOAD_MODE=1)
-    // Auto-enable sync if buffer is pulled and we are in AUTO_MODE
-    if (AUTO_MODE && !sync_enabled && s == BUF_ADVANCE) {
+    // Auto-enable sync if buffer is pulled, AUTO_MODE is on, and toolhead is loaded.
+    // This blocks unexpected restarts during unload/stop flows where TH is false.
+    if (AUTO_MODE && toolhead_has_filament && !sync_enabled && s == BUF_ADVANCE) {
         sync_enabled = true;
         sync_auto_started = true;
         sync_idle_since_ms = 0;
