@@ -19,6 +19,9 @@
 // ----- Firmware version -----
 #define CONF_FW_VERSION         "NOSF_0.2.0"
 
+// ----- Board Logic -----
+#define EN_ACTIVE_LOW           1
+
 // ----- Hardware pins (Board specific - ERB V2.0) -----
 #define PIN_L1_IN        2
 #define PIN_L1_OUT       3
@@ -46,3 +49,8 @@
 
 #define PIN_SERVO        23
 #define PIN_NEOPIXEL     21
+
+// ----- Static Timeouts -----
+#define CONF_CUT_SETTLE_MS      1500
+#define CONF_CUT_FEED_MS        5000
+#define CONF_SYNC_AUTO_STOP_MS  2000

@@ -23,7 +23,6 @@ DEFAULTS = {
     "full_steps_per_rotation": "200",
     "gear_ratio": "1:1",
     "hold_current": "",
-    "sense_resistor": "0.110",
     "interpolate": "True",
     "driver_tbl": "2",
     "driver_toff": "3",

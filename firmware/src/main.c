@@ -21,7 +21,7 @@
 #include "neopixel.h"
 #include "tmc2209.h"
 
-#define EN_ACTIVE_LOW    1
+
 
 // ===================== Tunables =====================
 static int FEED_SPS = CONF_FEED_SPS;
@@ -79,8 +79,8 @@ static int SERVO_SETTLE_MS = CONF_SERVO_SETTLE_MS;
 static int CUT_FEED_MM = CONF_CUT_FEED_MM;
 static int CUT_LENGTH_MM = CONF_CUT_LENGTH_MM;
 static int CUT_AMOUNT = CONF_CUT_AMOUNT;
-static int CUT_TIMEOUT_SETTLE_MS = 1500;
-static int CUT_TIMEOUT_FEED_MS = 5000;
+static int CUT_TIMEOUT_SETTLE_MS = CONF_CUT_SETTLE_MS;
+static int CUT_TIMEOUT_FEED_MS = CONF_CUT_FEED_MS;
 
 static int TC_TIMEOUT_CUT_MS = CONF_TC_TIMEOUT_CUT_MS;
 static int LOAD_MAX_MM = CONF_LOAD_MAX_MM;
@@ -97,7 +97,7 @@ static int PRE_RAMP_SPS = CONF_PRE_RAMP_SPS;
 static int BUF_HYST_MS = CONF_BUF_HYST_MS;
 static int BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
 static float BUF_HALF_TRAVEL_MM = CONF_BUF_HALF_TRAVEL_MM;
-static int SYNC_AUTO_STOP_MS = 2000;
+static int SYNC_AUTO_STOP_MS = CONF_SYNC_AUTO_STOP_MS;
 static int AUTOLOAD_MAX_MM = CONF_AUTOLOAD_MAX_MM;
 static bool BUF_INVERT = false;
 static int AUTO_MODE = 1; // 1=Automated flow, 0=Host-controlled flow
@@ -151,7 +151,7 @@ static int lane_to_idx(int ln) {
 }
 
 static int cs_to_ma(uint8_t cs, bool vsense) {
-    const float reff = 0.110f + 0.020f;
+    const float reff = CONF_RSENSE_OHM + 0.020f;
     const float vref = vsense ? 0.18f : 0.32f;
     const float sqrt2 = 1.41421356f;
     float irms = ((float)cs + 1.0f) * vref / (32.0f * reff * sqrt2);
@@ -161,7 +161,7 @@ static int cs_to_ma(uint8_t cs, bool vsense) {
 
 static uint8_t ma_to_cs(int ma, bool vsense) {
     if (ma <= 0) return 0;
-    const float reff = 0.110f + 0.020f;
+    const float reff = CONF_RSENSE_OHM + 0.020f;
     const float vref = vsense ? 0.18f : 0.32f;
     const float sqrt2 = 1.41421356f;
     float irms = (float)ma / 1000.0f;

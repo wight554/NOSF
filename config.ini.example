@@ -33,8 +33,6 @@ run_current:
 # tcoolthrs: 0xFFFFF          # SG activation threshold (TSTEP); 0xFFFFF = always active
 # sg_current_ma: 800          # current when SG is active (RELOAD or SYNC_SG=1)
 
-# ─── Hardware ────────────────────────────────────────────────────────────────
-# sense_resistor: 0.110
 
 # ─── Speeds (mm/min) ─────────────────────────────────────────────────────────
 # feed_rate: 2100
