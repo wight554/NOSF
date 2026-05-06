@@ -66,6 +66,14 @@ run_current:
 # buffer_recovery_threshold_ms: 0    # StallGuard tuning aid (0=disabled, default).
                                      # When >0, disable buffer; auto-enable if stuck that long to recover
 
+# ─── Smarter Sync (Estimator) ────────────────────────────────────────────────
+# est_alpha_min: 0.10          # Estimator responsiveness (slow drifts)
+# est_alpha_max: 0.60          # Estimator responsiveness (sharp jumps)
+# zone_bias_base_rate: 100     # Base centering pull (mm/min)
+# zone_bias_ramp_rate: 50      # Centering ramp (mm/min per second stuck in zone)
+# zone_bias_max_rate: 400      # Max centering correction (mm/min)
+# reload_lean_factor: 0.85     # RELOAD follow under-feed factor (0.0 to 1.0)
+
 # ─── Cutter / Servo ──────────────────────────────────────────────────────────
 # servo_open_us: 500
 # servo_close_us: 1400

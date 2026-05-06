@@ -20,6 +20,7 @@
 
 #include "neopixel.h"
 #include "tmc2209.h"
+#include <math.h>
 
 
 
@@ -43,6 +44,13 @@ static int SG_DERIV[NUM_LANES] = {CONF_L1_SG_DERIV, CONF_L2_SG_DERIV};
 static float SG_TARGET[NUM_LANES] = {CONF_L1_SG_TARGET, CONF_L2_SG_TARGET};
 static int BUF_STAB_SPS = 0;
 static int FOLLOW_TIMEOUT_MS[NUM_LANES] = {CONF_L1_FOLLOW_TIMEOUT_MS, CONF_L2_FOLLOW_TIMEOUT_MS};
+
+static int   ZONE_BIAS_BASE_SPS = CONF_ZONE_BIAS_BASE_SPS;
+static int   ZONE_BIAS_RAMP_SPS_S = CONF_ZONE_BIAS_RAMP_SPS_S;
+static int   ZONE_BIAS_MAX_SPS = CONF_ZONE_BIAS_MAX_SPS;
+static float EST_ALPHA_MIN = CONF_EST_ALPHA_MIN;
+static float EST_ALPHA_MAX = CONF_EST_ALPHA_MAX;
+static float RELOAD_LEAN_FACTOR = CONF_RELOAD_LEAN_FACTOR;
 
 static int RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
 static int RAMP_TICK_MS = CONF_RAMP_TICK_MS;
@@ -432,6 +440,12 @@ typedef struct {
     uint32_t entered_ms;
     uint32_t dwell_ms;
     float arm_vel_mm_s;
+
+    // Tracking for velocity estimator
+    int      lane_idx_at_entry;
+    int      mmu_sps_at_entry;
+    uint32_t mmu_sps_dwell_sum;
+    uint32_t mmu_sps_dwell_samples;
 } buf_tracker_t;
 
 #define HISTORY_LEN 16
@@ -478,6 +492,10 @@ static int g_hist_idx = 0;
 static uint32_t sync_last_tick_ms = 0;
 static uint32_t sync_last_sg_ms = 0;
 static uint32_t sync_last_evt_ms = 0;
+static float extruder_est_sps = 0.0f;
+static float extruder_est_prev_sps = 0.0f;
+static uint32_t extruder_est_last_update_ms = 0;
+static uint32_t last_slope_update_ms = 0;
 
 static volatile bool stall_pending_l1 = false;
 static volatile bool stall_pending_l2 = false;
@@ -486,6 +504,14 @@ static float g_buf_pos = 0.0f;  // normalised buffer position [-1, +1]; analog =
 
 static bool prev_lane1_in_present = false;
 static bool prev_lane2_in_present = false;
+
+static int lane_motion_sps(lane_t *L) {
+    if (!L) return 0;
+    if (L->current_sps > 0) return L->current_sps;
+    if (g_tc_ctx.state == TC_RELOAD_FOLLOW && g_tc_ctx.reload_current_sps > 0)
+        return g_tc_ctx.reload_current_sps;
+    return sync_current_sps;
+}
 
 // ===================== Forward declarations =====================
 static void cmd_event(const char *type, const char *data);
@@ -1350,7 +1376,7 @@ static void tc_tick(uint32_t now_ms) {
                 char lane_s[2] = { (char)('0' + g_tc_ctx.target_lane), 0 };
                 set_active_lane(g_tc_ctx.target_lane);
                 lane_t *NL = lane_ptr(active_lane);
-                if (FL) lane_stop(FL); // Ensure old lane is fully stopped
+                if (FL && FL->task != TASK_IDLE) lane_stop(FL);
                 cmd_event("RELOAD:JOINING", lane_s);
                 // State 1: approach at current FEED rate until contact.
                 // This keeps swap timing aligned with active print feed.
@@ -1363,6 +1389,10 @@ static void tc_tick(uint32_t now_ms) {
                 g_tc_ctx.sg_ma_idx   = 0;
                 g_tc_ctx.sg_ma_fill  = 0;
                 g_tc_ctx.sg_ma_prev  = 0.0f;
+                g_tc_ctx.reload_current_sps = 0;
+                g_tc_ctx.reload_stall_count = 0;
+                g_tc_ctx.last_reload_stall_ms = 0;
+                g_tc_ctx.last_trailing_ms = 0;
                 for (int i = 0; i < CONF_SG_MA_LEN; i++) g_tc_ctx.sg_ma_buf[i] = 0.0f;
                 g_tc_ctx.phase_start_ms = now_ms;
                 g_tc_ctx.state = TC_RELOAD_APPROACH;
@@ -1431,7 +1461,7 @@ static void tc_tick(uint32_t now_ms) {
             }
 
             // Buffer/stall fallbacks — always active regardless of sensor type.
-            bool stalled = (A && A->task == TASK_IDLE && A->fault == FAULT_STALL);
+            bool stalled = (A && A->fault == FAULT_STALL);
             if (g_buf.state == BUF_TRAILING || stalled)
                 contacted = true;
 
@@ -1443,6 +1473,9 @@ static void tc_tick(uint32_t now_ms) {
                 // Initialise State 2 at PRESS_SPS so follow sync starts
                 // immediately without a ramp-up delay.
                 g_tc_ctx.reload_current_sps = PRESS_SPS;
+                g_tc_ctx.reload_stall_count = 0;
+                g_tc_ctx.last_reload_stall_ms = 0;
+                g_tc_ctx.last_trailing_ms = (g_buf.state == BUF_TRAILING) ? now_ms : 0;
                 g_tc_ctx.reload_tick_ms     = now_ms;
                 g_tc_ctx.phase_start_ms  = now_ms;
                 g_tc_ctx.state = TC_RELOAD_FOLLOW;
@@ -1497,35 +1530,14 @@ static void tc_tick(uint32_t now_ms) {
 
             uint32_t follow_age_ms = now_ms - g_tc_ctx.phase_start_ms;
 
-            // Follow target logic:
-            // - SG path (optional): keep SG interpolation behavior.
-            // - Non-SG path (default): "inverted" trailing/mid balancing.
-            //   TRAILING gradually slows down; MID recovers a little.
-            int target_sps = g_tc_ctx.reload_current_sps;
-            if (RELOAD_SG_INTERP) {
-                sg_ma_update(A);
-                target_sps = sync_apply_scaling(A, PRESS_SPS, true);
-            } else {
-                if (BUF_SENSOR_TYPE == 1) {
-                    // Analog: piecewise map for gentle trailing slow-down and mild MID recovery.
-                    float pos = clamp_f(g_buf_pos, -1.0f, 1.0f);
-                    int mid_sps = TRAILING_SPS + (PRESS_SPS - TRAILING_SPS) / 2;
-                    int top_mid_sps = mid_sps + (PRESS_SPS - mid_sps) / 3;
-                    if (pos <= 0.0f) {
-                        float frac = pos + 1.0f; // [-1..0] -> [0..1]
-                        target_sps = TRAILING_SPS + (int)((float)(mid_sps - TRAILING_SPS) * frac);
-                    } else {
-                        target_sps = mid_sps + (int)((float)(top_mid_sps - mid_sps) * pos);
-                    }
-                } else {
-                    // Dual-endstop: discrete state controller.
-                    if (g_buf.state == BUF_TRAILING) {
-                        target_sps = TRAILING_SPS;
-                    } else {
-                        target_sps = JOIN_SPS;
-                    }
-                }
-                target_sps = clamp_i(target_sps, TRAILING_SPS, JOIN_SPS);
+            int target_sps = (int)(extruder_est_sps * RELOAD_LEAN_FACTOR);
+            if (g_buf.state == BUF_TRAILING) {
+                target_sps = TRAILING_SPS;
+            } else if (g_buf.state == BUF_ADVANCE) {
+                // Handover signal: extruder pulled despite our lean.
+                target_sps = JOIN_SPS; 
+            }
+            target_sps = clamp_i(target_sps, TRAILING_SPS, JOIN_SPS);
 
                 // Optional early post-touch floor to avoid immediate under-speed.
                 if (follow_age_ms < (uint32_t)(RELOAD_TOUCH_SETTLE_MS + RELOAD_TOUCH_BOOST_MS)) {
@@ -1533,7 +1545,6 @@ static void tc_tick(uint32_t now_ms) {
                     if (floor_sps < TRAILING_SPS) floor_sps = TRAILING_SPS;
                     if (target_sps < floor_sps) target_sps = floor_sps;
                 }
-            }
 
             // Ramp toward target.
             if (g_tc_ctx.reload_current_sps > target_sps)
@@ -1545,10 +1556,15 @@ static void tc_tick(uint32_t now_ms) {
             // Drive motor.
             if (A) {
                 if (g_tc_ctx.reload_current_sps > 0) {
-                    if (A->task != TASK_FEED && A->fault != FAULT_DRY_SPIN)
+                    if (A->task != TASK_FEED && A->fault == FAULT_NONE)
                         lane_start(A, TASK_FEED, g_tc_ctx.reload_current_sps, true, now_ms, 0);
-                    else
+                    else if (A->task == TASK_FEED) {
+                        A->current_sps = g_tc_ctx.reload_current_sps;
+                        A->target_sps = g_tc_ctx.reload_current_sps;
+                        motor_enable(&A->m, true);
+                        motor_set_dir(&A->m, true);
                         motor_set_rate_sps(&A->m, g_tc_ctx.reload_current_sps);
+                    }
                 } else if (A->task == TASK_FEED) {
                     motor_stop(&A->m);
                     A->current_sps = 0;
@@ -1571,7 +1587,7 @@ static void tc_tick(uint32_t now_ms) {
                         lane_stop(A);
                         break;
                     }
-                    // Reset fault so sync_tick or tc_tick can restart it next loop
+                    A->stall_armed = true;
                     A->fault = FAULT_NONE;
                 }
             }
@@ -1768,14 +1784,67 @@ static void buf_update(buf_state_t new_state, uint32_t now_ms) {
 
     uint32_t prev_dwell = now_ms - g_buf.entered_ms;
     g_buf.dwell_ms = prev_dwell;
+    lane_t *A = lane_ptr(active_lane);
+    int mmu_now_sps = lane_motion_sps(A);
+    
+    // Average MMU speed during this dwell.
+    float mmu_avg_sps = 0.0f;
+    if (g_buf.mmu_sps_dwell_samples > 0) {
+        mmu_avg_sps = (float)g_buf.mmu_sps_dwell_sum / (float)g_buf.mmu_sps_dwell_samples;
+    } else {
+        mmu_avg_sps = (float)(g_buf.mmu_sps_at_entry + mmu_now_sps) / 2.0f;
+    }
 
-    if (g_buf.state == BUF_MID && (new_state == BUF_ADVANCE || new_state == BUF_TRAILING) && prev_dwell > 0) {
-        g_buf.arm_vel_mm_s = BUF_HALF_TRAVEL_MM / ((float)prev_dwell / 1000.0f);
+    float travel_mm = 0.0f;
+    buf_state_t old = g_buf.state;
+    if (old == BUF_MID) {
+        if (new_state == BUF_ADVANCE) travel_mm = BUF_HALF_TRAVEL_MM;
+        else if (new_state == BUF_TRAILING) travel_mm = -BUF_HALF_TRAVEL_MM;
+    } else if (old == BUF_ADVANCE) {
+        if (new_state == BUF_MID) travel_mm = -BUF_HALF_TRAVEL_MM;
+        else if (new_state == BUF_TRAILING) travel_mm = -(BUF_HALF_TRAVEL_MM * 2.0f);
+    } else if (old == BUF_TRAILING) {
+        if (new_state == BUF_MID) travel_mm = BUF_HALF_TRAVEL_MM;
+        else if (new_state == BUF_ADVANCE) travel_mm = (BUF_HALF_TRAVEL_MM * 2.0f);
+    }
+
+    if (fabsf(travel_mm) > 0.001f && prev_dwell > (uint32_t)BUF_HYST_MS) {
+        // Adjust for hysteresis: transition fires ~15ms late.
+        uint32_t effective_dwell = prev_dwell - (uint32_t)(BUF_HYST_MS / 2);
+        if (effective_dwell < 5) effective_dwell = 5;
+        g_buf.arm_vel_mm_s = travel_mm / ((float)effective_dwell / 1000.0f);
+        
+        // Update estimator (mm/s to sps)
+        int idx = g_buf.lane_idx_at_entry;
+        if (idx < 0 || idx >= NUM_LANES) idx = 0;
+        float mmu_mm_s = mmu_avg_sps * MM_PER_STEP[idx];
+        float extruder_mm_s = mmu_mm_s + g_buf.arm_vel_mm_s;
+        float est_sps = extruder_mm_s / MM_PER_STEP[idx];
+        float max_est_sps = (float)SYNC_HARD_MAX_SPS;
+        if (est_sps < 0.0f) est_sps = 0.0f;
+        if (est_sps > max_est_sps) est_sps = max_est_sps;
+        
+        // EMA update
+        const float estimator_norm_mm_s = 30.0f;
+        float alpha = clamp_f(fabsf(g_buf.arm_vel_mm_s) / estimator_norm_mm_s, EST_ALPHA_MIN, EST_ALPHA_MAX);
+        if (old == BUF_ADVANCE && new_state == BUF_TRAILING) {
+            // Fast drop detection: direct overwrite
+            extruder_est_sps = est_sps;
+        } else {
+            extruder_est_sps = alpha * est_sps + (1.0f - alpha) * extruder_est_sps;
+        }
+        extruder_est_last_update_ms = now_ms;
     }
 
     history_push(g_buf.state, prev_dwell);
     g_buf.state = new_state;
     g_buf.entered_ms = now_ms;
+
+    // Reset dwell tracking for new zone.
+    g_buf.lane_idx_at_entry = (active_lane == 2) ? 1 : 0;
+    g_buf.mmu_sps_at_entry = mmu_now_sps;
+    g_buf.mmu_sps_dwell_sum = 0;
+    g_buf.mmu_sps_dwell_samples = 0;
 }
 
 static void baseline_update_on_settle(uint32_t mid_dwell_ms) {
@@ -1796,7 +1865,12 @@ static int sync_clamp_max_sps(int requested_sps) {
 static int sync_bootstrap_sps(void) {
     int startup_sps = (g_baseline_sps < BUF_STAB_SPS) ? g_baseline_sps : BUF_STAB_SPS;
     int max_sps = sync_clamp_max_sps(SYNC_MAX_SPS);
-    return clamp_i(startup_sps, TRAILING_SPS, max_sps);
+    int res = clamp_i(startup_sps, TRAILING_SPS, max_sps);
+    extruder_est_sps = (float)res;
+    extruder_est_prev_sps = (float)res;
+    extruder_est_last_update_ms = g_now_ms;
+    sync_fast_brake_until_ms = 0;
+    return res;
 }
 
 static int sync_effective_kp_sps(buf_state_t s) {
@@ -1826,7 +1900,7 @@ static void sync_apply_to_active(void) {
             A->target_sps = sync_current_sps;
             motor_set_rate_sps(&A->m, sync_current_sps);
             motor_enable(&A->m, true);
-        } else if (A->task != TASK_FEED && A->fault != FAULT_DRY_SPIN) {
+        } else if (A->task != TASK_FEED && A->fault == FAULT_NONE) {
             lane_start(A, TASK_FEED, sync_current_sps, true, g_now_ms, 0);
         } else {
             A->current_sps = sync_current_sps;
@@ -1929,6 +2003,10 @@ static void sync_tick(uint32_t now_ms) {
                 sync_enabled = false;
                 sync_auto_started = false;
                 sync_current_sps = 0;
+                extruder_est_sps = 0.0f; // Reset estimator on auto-stop
+                extruder_est_prev_sps = 0.0f;
+                extruder_est_last_update_ms = now_ms;
+                sync_fast_brake_until_ms = 0;
                 sync_apply_to_active();
                 cmd_event("SYNC", "AUTO_STOP");
                 return;
@@ -1947,71 +2025,68 @@ static void sync_tick(uint32_t now_ms) {
         return;
     }
 
-    // Proportional speed control.
-    // g_buf_pos: +1 = ADVANCE (extruder pulling ahead, speed up MMU),
-    //            -1 = TRAILING (buffer filling, slow down MMU).
-    // Both sensor modes produce the same [-1, +1] range via EMA in buf_sensor_tick.
-    float buf_pos = g_buf_pos;
-    // Trailing bias: keep steady-state a bit behind neutral to reduce
-    // repeated ADVANCE triggers at higher flow rates.
-    float biased_buf_pos = clamp_f(buf_pos - 0.20f, -1.0f, 1.0f);
-    int kp_sps = sync_effective_kp_sps(s);
-
-    if (s == BUF_TRAILING) {
-        // Two behaviors based on context:
-        // - RELOAD follow: hard stop for filament tip contact (bang-bang)
-        // - Normal sync: gentle proportional recovery toward MID (continuous motion)
-        bool is_reload_mode = (g_tc_ctx.state == TC_RELOAD_FOLLOW);
-        if (is_reload_mode) {
-            // RELOAD: follow the tc_tick speed ramp (which might be 0 if TRAILING)
-            sync_current_sps = g_tc_ctx.reload_current_sps;
-        } else if (sync_fast_brake_until_ms != 0 && now_ms < sync_fast_brake_until_ms) {
-            // Brief hard brake after ADVANCE->TRAILING to react to sudden flow drops.
-            sync_current_sps = 0;
-        } else {
-            // Normal sync: don't fully stop; use proportional feedback with floor at TRAILING_SPS.
-            // AUTO_MODE shutdown is handled separately by SYNC_AUTO_STOP_MS above.
-            float correction = (float)kp_sps * biased_buf_pos;
-            if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
-
-            int base_target = clamp_i(g_baseline_sps + (int)correction, TRAILING_SPS, sync_clamp_max_sps(SYNC_MAX_SPS));
-
-            // Common scaling (Analog or SG)
-            // StallGuard sync doesn't need 50Hz updates. 10Hz (100ms) is plenty.
-            if ((now_ms - sync_last_sg_ms) >= 100u) {
-                sync_last_sg_ms = now_ms;
-                sg_ma_update(A);
-            }
-            int target = sync_apply_scaling(A, base_target, SYNC_SG_INTERP);
-
-            if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
-            else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
-            sync_current_sps = clamp_i(sync_current_sps, TRAILING_SPS, sync_clamp_max_sps(SYNC_MAX_SPS));
-        }
-    } else {
-        if (sync_fast_brake_until_ms != 0 && now_ms >= sync_fast_brake_until_ms) sync_fast_brake_until_ms = 0;
-        float correction = (float)kp_sps * biased_buf_pos;
-        if (s == BUF_ADVANCE) {
-            // ADVANCE overshoot: intentionally push beyond neutral so the buffer
-            // is replenished toward TRAILING and does not chatter around ADVANCE.
-            correction += (float)((kp_sps * SYNC_OVERSHOOT_PCT) / 100);
-        }
-        if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
-
-        int base_target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, sync_clamp_max_sps(SYNC_MAX_SPS));
-
-        // Common scaling (Analog or SG)
-        // StallGuard sync doesn't need 50Hz updates. 10Hz (100ms) is plenty.
-        if ((now_ms - sync_last_sg_ms) >= 100u) {
-            sync_last_sg_ms = now_ms;
-            sg_ma_update(A);
-        }
-        int target = sync_apply_scaling(A, base_target, SYNC_SG_INTERP);
-
-        if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
-        else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
-        sync_current_sps = clamp_i(sync_current_sps, SYNC_MIN_SPS, sync_clamp_max_sps(SYNC_MAX_SPS));
+    // Smarter sync: sample MMU speed for the current dwell.
+    // Freeze sampling if motor is stalled or not actually commanded to move.
+    if (A && A->task == TASK_FEED && A->fault == FAULT_NONE && !A->stall_recovery && sync_current_sps > 0) {
+        g_buf.mmu_sps_dwell_sum += (uint32_t)lane_motion_sps(A);
+        g_buf.mmu_sps_dwell_samples++;
     }
+
+    // 1. Velocity Estimator (Feedforward)
+    // Slowly decay toward current speed if stuck in MID for > 2s
+    if (s == BUF_MID && (now_ms - g_buf.entered_ms) > 2000u && A->task == TASK_FEED && A->fault == FAULT_NONE) {
+        extruder_est_sps += 0.05f * ((float)lane_motion_sps(A) - extruder_est_sps);
+    }
+
+    // 2. Zone Bias (Centering Pull)
+    int zone_bias = 0;
+    uint32_t dwell_s = (now_ms - g_buf.entered_ms) / 1000u;
+    if (s == BUF_ADVANCE) {
+        zone_bias = ZONE_BIAS_BASE_SPS + (int)(dwell_s * ZONE_BIAS_RAMP_SPS_S);
+    } else if (s == BUF_TRAILING) {
+        zone_bias = -ZONE_BIAS_BASE_SPS - (int)(dwell_s * ZONE_BIAS_RAMP_SPS_S);
+    }
+    zone_bias = clamp_i(zone_bias, -ZONE_BIAS_MAX_SPS, ZONE_BIAS_MAX_SPS);
+
+    // 3. Slope Bias (Trend Anticipation)
+    if ((now_ms - last_slope_update_ms) >= 500u) {
+        extruder_est_prev_sps = extruder_est_sps;
+        last_slope_update_ms = now_ms;
+    }
+    float slope_gain = 0.5f; // Anticipate 50% of the recent trend
+    int slope_bias = (int)(slope_gain * (extruder_est_sps - extruder_est_prev_sps));
+
+    // Combine targets
+    int target_sps = (int)extruder_est_sps + zone_bias + slope_bias;
+    
+    // Safety Net: predict_advance_coming still adds a nudge if configured
+    if (predict_advance_coming()) target_sps += PRE_RAMP_SPS;
+
+    // Apply scaling (StallGuard / Analog)
+    if ((now_ms - sync_last_sg_ms) >= 100u) {
+        sync_last_sg_ms = now_ms;
+        sg_ma_update(A);
+    }
+    target_sps = sync_apply_scaling(A, target_sps, SYNC_SG_INTERP);
+    
+    bool fast_brake_active = sync_fast_brake_until_ms != 0 && (int32_t)(sync_fast_brake_until_ms - now_ms) > 0;
+    if (!fast_brake_active && sync_fast_brake_until_ms != 0 && (int32_t)(now_ms - sync_fast_brake_until_ms) >= 0)
+        sync_fast_brake_until_ms = 0;
+
+    // Bounds and ramps
+    int max_sps = sync_clamp_max_sps(SYNC_MAX_SPS);
+    if (fast_brake_active) target_sps = 0;
+    else target_sps = clamp_i(target_sps, SYNC_MIN_SPS, max_sps);
+
+    if (fast_brake_active) sync_current_sps = 0;
+    else if (sync_current_sps > target_sps) sync_current_sps -= SYNC_RAMP_DN_SPS;
+    else if (sync_current_sps < target_sps) sync_current_sps += SYNC_RAMP_UP_SPS;
+    
+    // Absolute floor
+    if (!fast_brake_active && s == BUF_TRAILING && sync_current_sps < TRAILING_SPS)
+        sync_current_sps = TRAILING_SPS;
+
+    sync_current_sps = clamp_i(sync_current_sps, 0, max_sps);
 
     sync_apply_to_active();
 
@@ -2021,7 +2096,7 @@ static void sync_tick(uint32_t now_ms) {
         snprintf(ev, sizeof(ev), "%s,%.1f,%.2f",
                  buf_state_name(s),
                  (double)sps_to_mm_per_min(sync_current_sps),
-                 (double)buf_pos);
+                 (double)g_buf_pos);
         cmd_event("BS", ev);
     }
 }
@@ -2030,8 +2105,12 @@ static void sync_tick(uint32_t now_ms) {
 static void lane_fault(lane_t *L, fault_t f) {
     motor_stop(&L->m);
     L->task = TASK_IDLE;
+    L->current_sps = 0;
+    L->target_sps = 0;
     L->fault = f;
     L->stall_armed = false;
+    L->stall_recovery = false;
+    L->stall_recovery_deadline_ms = 0;
 }
 
 static void __not_in_flash_func(stall_irq)(uint gpio, uint32_t events) {
@@ -2054,7 +2133,10 @@ static void stall_init(void) {
 }
 
 static void stall_handle(lane_t *L, const char *lane_s) {
-    if (sync_enabled && !L->stall_recovery && STALL_RECOVERY_MS > 0) {
+    bool normal_sync_recovery = sync_enabled && tc_state() == TC_IDLE && !L->stall_recovery && STALL_RECOVERY_MS > 0;
+    bool reload_phase = (tc_state() == TC_RELOAD_APPROACH || tc_state() == TC_RELOAD_FOLLOW);
+
+    if (normal_sync_recovery) {
         // During sync a stall most likely means tension spike, not a jam.
         // Let the motor stop briefly (already done in IRQ), then let sync_tick
         // ramp back up.  If stall fires again within STALL_RECOVERY_MS it's a
@@ -2062,6 +2144,14 @@ static void stall_handle(lane_t *L, const char *lane_s) {
         L->stall_recovery = true;
         L->stall_recovery_deadline_ms = g_now_ms + (uint32_t)STALL_RECOVERY_MS;
         sync_current_sps = 0;  // ramp from zero; sync_tick restarts the motor
+        cmd_event("STALL", lane_s);
+    } else if (reload_phase) {
+        L->fault = FAULT_STALL;
+        L->stall_armed = false;
+        L->stall_recovery = false;
+        L->stall_recovery_deadline_ms = 0;
+        L->current_sps = 0;
+        L->target_sps = 0;
         cmd_event("STALL", lane_s);
     } else {
         lane_fault(L, FAULT_STALL);
@@ -2082,8 +2172,8 @@ static void stall_pump(void) {
 
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
-#define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 36u
+#define SETTINGS_MAGIC 0x4e4f5346u
+#define SETTINGS_VERSION 37u
 
 typedef struct {
     uint32_t magic;
@@ -2137,6 +2227,10 @@ typedef struct {
     int sg_deriv[NUM_LANES];
     float sg_target[NUM_LANES];
     int follow_timeout_ms[NUM_LANES];
+
+    float est_alpha_min, est_alpha_max;
+    int   zone_bias_base_sps, zone_bias_ramp_sps_s, zone_bias_max_sps;
+    float reload_lean_factor;
 
     // Grouped booleans — packed together to avoid per-field padding.
     bool buf_invert;
@@ -2198,6 +2292,12 @@ static void settings_defaults(void) {
     BUF_SIZE_MM = CONF_BUF_SIZE_MM;
     BUF_HALF_TRAVEL_MM = (float)BUF_SIZE_MM / 2.0f;
     BUF_HYST_MS = CONF_BUF_HYST_MS;
+    EST_ALPHA_MIN = CONF_EST_ALPHA_MIN;
+    EST_ALPHA_MAX = CONF_EST_ALPHA_MAX;
+    ZONE_BIAS_BASE_SPS = CONF_ZONE_BIAS_BASE_SPS;
+    ZONE_BIAS_RAMP_SPS_S = CONF_ZONE_BIAS_RAMP_SPS_S;
+    ZONE_BIAS_MAX_SPS = CONF_ZONE_BIAS_MAX_SPS;
+    RELOAD_LEAN_FACTOR = CONF_RELOAD_LEAN_FACTOR;
     BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
     g_baseline_sps   = CONF_BASELINE_SPS;
     g_baseline_alpha = CONF_BASELINE_ALPHA;
@@ -2328,6 +2428,12 @@ static void settings_save(void) {
     s.auto_preload = AUTO_PRELOAD;
     s.autoload_retract_mm = AUTOLOAD_RETRACT_MM;
     s.enable_cutter = ENABLE_CUTTER;
+    s.est_alpha_min = EST_ALPHA_MIN;
+    s.est_alpha_max = EST_ALPHA_MAX;
+    s.zone_bias_base_sps = ZONE_BIAS_BASE_SPS;
+    s.zone_bias_ramp_sps_s = ZONE_BIAS_RAMP_SPS_S;
+    s.zone_bias_max_sps = ZONE_BIAS_MAX_SPS;
+    s.reload_lean_factor = RELOAD_LEAN_FACTOR;
 
     for (int i = 0; i < NUM_LANES; i++) {
         s.sgthrs[i] = TMC_SGTHRS[i];
@@ -2488,6 +2594,12 @@ static void settings_load(void) {
     AUTO_PRELOAD = s->auto_preload;
     AUTOLOAD_RETRACT_MM = s->autoload_retract_mm;
     ENABLE_CUTTER = s->enable_cutter;
+    EST_ALPHA_MIN = s->est_alpha_min;
+    EST_ALPHA_MAX = s->est_alpha_max;
+    ZONE_BIAS_BASE_SPS = s->zone_bias_base_sps;
+    ZONE_BIAS_RAMP_SPS_S = s->zone_bias_ramp_sps_s;
+    ZONE_BIAS_MAX_SPS = s->zone_bias_max_sps;
+    RELOAD_LEAN_FACTOR = s->reload_lean_factor;
 
     for (int i = 0; i < NUM_LANES; i++) {
         SG_DERIV[i] = s->sg_deriv[i];
@@ -2884,6 +2996,12 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "PRESS_RATE"))    PRESS_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "TRAILING_RATE")) TRAILING_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
         else if (!strcmp(base_param, "BUF_STAB_RATE")) BUF_STAB_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
+        else if (!strcmp(base_param, "EST_ALPHA_MIN")) EST_ALPHA_MIN = clamp_f(fv, 0.01f, 1.0f);
+        else if (!strcmp(base_param, "EST_ALPHA_MAX")) EST_ALPHA_MAX = clamp_f(fv, 0.01f, 1.0f);
+        else if (!strcmp(base_param, "ZONE_BIAS_BASE")) ZONE_BIAS_BASE_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 5000);
+        else if (!strcmp(base_param, "ZONE_BIAS_RAMP")) ZONE_BIAS_RAMP_SPS_S = clamp_i(mm_per_min_to_sps(fv), 0, 5000);
+        else if (!strcmp(base_param, "ZONE_BIAS_MAX"))  ZONE_BIAS_MAX_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 5000);
+        else if (!strcmp(base_param, "RELOAD_LEAN"))    RELOAD_LEAN_FACTOR = clamp_f(fv, 0.0f, 1.0f);
         else if (!strcmp(base_param, "RUN_CURRENT_MA")) { SET_LANE({ TMC_RUN_CURRENT_MA[idx] = clamp_i(iv, 0, 2000); }); }
         else if (!strcmp(base_param, "HOLD_CURRENT_MA")) { SET_LANE({ TMC_HOLD_CURRENT_MA[idx] = clamp_i(iv, 0, 2000); }); }
         else if (!strcmp(base_param, "MICROSTEPS")) { SET_LANE({ TMC_MICROSTEPS[idx] = clamp_i(iv, 1, 256); }); }
@@ -3002,6 +3120,12 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "STALL_MS"))     snprintf(out, sizeof(out), "STALL_MS:%d", STALL_RECOVERY_MS);
         else if (!strcmp(param, "SYNC_SG_INTERP")) snprintf(out, sizeof(out), "SYNC_SG_INTERP:%d", SYNC_SG_INTERP ? 1 : 0);
         else if (!strcmp(param, "RELOAD_SG_INTERP")) snprintf(out, sizeof(out), "RELOAD_SG_INTERP:%d", RELOAD_SG_INTERP ? 1 : 0);
+        else if (!strcmp(param, "EST_ALPHA_MIN")) snprintf(out, sizeof(out), "EST_ALPHA_MIN:%.3f", (double)EST_ALPHA_MIN);
+        else if (!strcmp(param, "EST_ALPHA_MAX")) snprintf(out, sizeof(out), "EST_ALPHA_MAX:%.3f", (double)EST_ALPHA_MAX);
+        else if (!strcmp(param, "ZONE_BIAS_BASE")) snprintf(out, sizeof(out), "ZONE_BIAS_BASE:%.1f", (double)sps_to_mm_per_min(ZONE_BIAS_BASE_SPS));
+        else if (!strcmp(param, "ZONE_BIAS_RAMP")) snprintf(out, sizeof(out), "ZONE_BIAS_RAMP:%.1f", (double)sps_to_mm_per_min(ZONE_BIAS_RAMP_SPS_S));
+        else if (!strcmp(param, "ZONE_BIAS_MAX")) snprintf(out, sizeof(out), "ZONE_BIAS_MAX:%.1f", (double)sps_to_mm_per_min(ZONE_BIAS_MAX_SPS));
+        else if (!strcmp(param, "RELOAD_LEAN"))    snprintf(out, sizeof(out), "RELOAD_LEAN:%.2f", (double)RELOAD_LEAN_FACTOR);
         else if (!strcmp(param, "SGTHRS")) snprintf(out, sizeof(out), "SGTHRS:%d", TMC_SGTHRS[idx]);
         else if (!strcmp(param, "TCOOLTHRS"))    snprintf(out, sizeof(out), "TCOOLTHRS:%d", TMC_TCOOLTHRS[idx]);
         else if (!strcmp(param, "SG_CURRENT_MA")) snprintf(out, sizeof(out), "SG_CURRENT_MA:%d", SG_CURRENT_MA[idx]);

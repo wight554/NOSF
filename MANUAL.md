@@ -91,6 +91,16 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 | `SYNC_HARD_MAX_RATE` | `sync_hard_max_rate` | Absolute sync speed ceiling (independent of `SYNC_MAX_RATE`) | 2500 |
 | `SYNC_MAX_RATE` | `sync_max_rate` | Max speed allowed during sync | 20000 |
 
+### Smarter Sync (Estimator)
+| Parameter | `config.ini` Key | Description | Default |
+|-----------|------------------|-------------|---------|
+| `EST_ALPHA_MIN`| `est_alpha_min` | Estimator responsiveness for slow drifts | 0.10 |
+| `EST_ALPHA_MAX`| `est_alpha_max` | Estimator responsiveness for sharp jumps | 0.60 |
+| `ZONE_BIAS_BASE`| `zone_bias_base_rate`| Base centering pull (mm/min) | 100 |
+| `ZONE_BIAS_RAMP`| `zone_bias_ramp_rate`| Centering ramp (mm/min per second stuck in zone) | 50 |
+| `ZONE_BIAS_MAX` | `zone_bias_max_rate` | Max centering correction (mm/min) | 400 |
+| `RELOAD_LEAN`  | `reload_lean_factor` | RELOAD follow under-feed factor (0.0 to 1.0) | 0.85 |
+
 ### Safety & Timeouts
 | Parameter | `config.ini` Key | Description | Default |
 |-----------|------------------|-------------|---------|

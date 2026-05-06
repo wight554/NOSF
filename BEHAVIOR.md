@@ -157,33 +157,79 @@ The chip asserts the DIAG pin (triggering `EV:STALL`) when
 
 ### Buffer sync speed control
 
-The sync speed controller runs every `SYNC_TICK_MS` (20 ms). Each tick
-computes a target speed from the buffer arm position and rate-limits the motor
-toward it.
+The sync controller runs every `SYNC_TICK_MS` (20 ms). In dual-endstop mode it
+is no longer a simple proportional controller on `g_buf_pos`; it is now driven
+primarily by an extruder-rate estimator and uses the buffer state as bounded
+correction.
 
 ```
-correction = SYNC_KP_RATE × g_buf_pos
-           + PRE_RAMP_RATE  (if predict_advance_coming)
+target = extruder_est_sps
+       + zone_bias_sps
+       + slope_bias_sps
+       + PRE_RAMP_RATE  (if predict_advance_coming)
 
-target = clamp(baseline + correction, SYNC_MIN_RATE, SYNC_MAX_RATE)
+target = sync_apply_scaling(...)
+target = clamp(target, SYNC_MIN_RATE, SYNC_MAX_RATE)
 ```
 
-#### Baseline adaptation
+#### Velocity estimator
 
-When the buffer stays in MID for > 500 ms, `g_baseline_sps` (internal baseline)
-drifts slowly toward the current speed, automatically tracking the
-printer's long-term average feed rate. `SET:BASELINE_RATE` overrides this.
+Whenever the buffer changes zone, firmware measures the dwell time in the old
+zone and converts the arm travel into an estimated arm velocity. Combined with
+the MMU speed averaged during that dwell, this yields an instantaneous
+extruder-rate estimate.
 
-#### TRAILING — motor stops
+- `MID→ADVANCE`, `ADVANCE→MID`, `MID→TRAILING`, `TRAILING→MID` use half-buffer
+  travel.
+- `ADVANCE→TRAILING` and `TRAILING→ADVANCE` use full-buffer travel.
+- Half the hysteresis window is subtracted from dwell time before computing arm
+  velocity so the estimate is not biased late.
+- The instantaneous estimate is clamped to `SYNC_HARD_MAX_RATE` and merged into
+  `extruder_est_sps` with an adaptive EMA bounded by `EST_ALPHA_MIN` and
+  `EST_ALPHA_MAX`.
+- A fast `ADVANCE→TRAILING` transition overwrites the estimator directly so a
+  sudden demand collapse is reflected immediately.
 
-When the buffer is in TRAILING, the motor stops until the extruder draws down
-the buffer surplus.
+If the buffer stays in MID for > 2 s, the estimator decays gently toward the
+current MMU speed. This keeps the feed-forward term sane during long steady
+sections where no new transitions arrive.
+
+#### Zone bias and recovery behavior
+
+`ZONE_BIAS_BASE` and `ZONE_BIAS_RAMP` provide a bounded centering pull:
+
+- `BUF_ADVANCE` adds a positive bias, growing with time stuck in ADVANCE.
+- `BUF_TRAILING` adds a negative bias, growing with time stuck in TRAILING.
+- The total bias is capped by `ZONE_BIAS_MAX`.
+
+This bias keeps the arm near MID when the estimator is slightly wrong, while
+the estimator remains the dominant term.
+
+#### Scaling, brake, and baseline adaptation
+
+`sync_apply_scaling()` is a limiter on top of the estimator target:
+
+- In analog-buffer mode, `g_buf_pos` scales the target between
+  `TRAILING_RATE` and the requested target.
+- In endstop mode, optional `SYNC_SG_INTERP=1` scales the target from
+  StallGuard load, but the buffer still has priority: ADVANCE enforces a floor
+  and TRAILING enforces a ceiling.
+
+On a direct `ADVANCE→TRAILING` transition, firmware arms a short fast-brake
+window. During that window the sync target is forced to 0 before normal
+TRAILING low-speed recovery resumes.
+
+When the buffer returns to MID after a non-MID dwell and settles there for
+> 500 ms, `g_baseline_sps` drifts toward the current speed. This baseline is
+still used for bootstrapping and conservative limits, but it is no longer the
+primary sync controller.
 
 ### StallGuard in Sync modes
 
-StallGuard provides tension-based speed feedback. It can be used in two ways:
-1. **Normal Sync (`SYNC_SG_INTERP=1`)**: Interpolates speed based on `SG_TARGET` even before the buffer arm moves significantly.
-2. **RELOAD Mode**: Uses both soft-contact detection and speed interpolation.
+StallGuard is used in three distinct ways:
+1. **Normal Sync (`SYNC_SG_INTERP=1`)**: optional target scaling on top of the estimator-driven controller.
+2. **RELOAD approach**: soft-contact detection before the buffer arm has time to move.
+3. **RELOAD follow**: hard-contact / jam detection via DIAG, not primary speed control.
 
 | Layer | Mechanism | What it catches |
 |-------|-----------|-----------------|
@@ -197,45 +243,55 @@ The motor runs at `JOIN_RATE`. The per-tick MA derivative is compared to
 triggers handoff to follow sync. This ensures that minor path friction does not
 cause premature triggering.
 
+`BUF_TRAILING` and a DIAG stall remain valid fallback contact signals.
+
 **`TC_RELOAD_FOLLOW` — pressure maintenance during bowden journey**
 
-Speed is interpolated linearly from the filtered SG:
+RELOAD follow no longer derives speed directly from filtered StallGuard load.
+Instead it reuses the normal sync estimator and deliberately under-feeds:
 
 ```
-sg_frac   = clamp(SG_RESULT / SG_TARGET,  0, 1)
-target    = PRESS_RATE × sg_frac
+target = extruder_est_sps × RELOAD_LEAN
 ```
 
-- `SG ≥ SG_TARGET` → full `PRESS_RATE`
-- `SG = 0` → 0 mm/min
-- `BUF_TRAILING` caps speed to `TRAILING_RATE`
-- `BUF_ADVANCE` (extruder pulling faster than we push) → handover detected, exit
+- Target is clamped between `TRAILING_RATE` and `JOIN_RATE`.
+- For the brief post-touch boost window, firmware enforces a floor derived from
+  `PRESS_RATE × RELOAD_TOUCH_FLOOR_PCT`.
+- `BUF_TRAILING` keeps the motor at the low trailing push rate.
+- `BUF_ADVANCE` or `TS:1` means the extruder has taken over, so follow exits.
 
-A stall during follow (DIAG fires) drops speed to `TRAILING_RATE`.
+A DIAG stall during follow no longer relies on normal sync recovery. Instead,
+the follow state machine drops its ramped speed back to `TRAILING_RATE`, counts
+the event, and treats repeated close-together stalls as `FOLLOW_JAM`.
 
-### Trailing state — motor stop and recovery
+### Trailing behavior and auto-stop
 
-When the buffer enters the TRAILING zone, the motor stops.
+`BUF_TRAILING` is now a low-speed recovery state, not an immediate hard stop.
+Normal sync clamps toward `TRAILING_RATE`, and AUTO mode disables sync only if
+TRAILING persists for `SYNC_AUTO_STOP_MS`.
 
-**Recovery sequence:**
+**AUTO sync sequence:**
 
-1. TRAILING declared — motor stops.
-2. Motor stays stopped; extruder draws down the surplus.
-3. Buffer arm returns to MID — motor begins ramping from 0 toward the
-   proportional target at `SYNC_UP_RATE` mm/min per tick.
+1. `BUF_ADVANCE` auto-starts sync in `AUTO_MODE` and seeds the estimator from
+  the current baseline.
+2. Normal sync runs from the estimator, bounded by buffer state and optional SG
+  scaling.
+3. Sustained `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` disables sync and resets the
+  estimator to 0.
+4. The next `BUF_ADVANCE` event bootstraps sync again.
 
 ---
 
 ## Sync mode auto-toggle
 
-Buffer sync is managed automatically based on toolhead filament state.
+In `AUTO_MODE`, buffer state is the primary sync toggle. `TS:` still matters for
+load completion and RELOAD handover, but it is not the main sync controller.
 
 | Event | Sync state |
 |-------|-----------|
-| `TS:1` received | enabled |
-| `FL:`/`TC:` load completes | enabled |
+| `BUF_ADVANCE` while sync is off | enabled and bootstrapped |
 | `UL:`, `UM:`, or `TC:` unload starts | disabled |
-| `FL:` command reloadued | disabled |
+| sustained `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` | disabled and estimator reset |
 | `ST:` command | disabled |
 ---
 
