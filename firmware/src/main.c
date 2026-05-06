@@ -424,6 +424,9 @@ typedef struct {
 
 static const char *buf_state_name(buf_state_t s);
 
+static void tc_enter_error(const char *reason);
+static void lane_stop(lane_t *L);
+
 // ===================== Globals =====================
 static lane_t g_lane1;
 static lane_t g_lane2;
@@ -680,6 +683,10 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
             } else {
                 lane_stop(L);
             }
+        } else if (L->task_dist_mm > (float)DIST_IN_OUT * 1.5f) {
+            // Jam detection: traveled 50% more than physical distance without hitting OUT.
+            lane_stop(L);
+            tc_enter_error("PRELOAD_JAM");
         } else if (L->task_limit_mm > 0 && L->task_dist_mm >= L->task_limit_mm) {
             lane_stop(L);
         }
@@ -716,6 +723,10 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
             lane_stop(L);
             char lane_s[2] = { (char)('0' + L->lane_id), 0 };
             cmd_event("UNLOADED", lane_s);
+        } else if (L->task_dist_mm > (float)DIST_IN_OUT * 1.5f) {
+            // Jam detection: retracted 50% more than physical distance without clearing IN.
+            lane_stop(L);
+            tc_enter_error("UNLOAD_JAM");
         } else if (L->task_limit_mm > 0 && L->task_dist_mm >= L->task_limit_mm) {
             lane_stop(L);
             cmd_event("UNLOAD_TIMEOUT", NULL);
@@ -744,7 +755,13 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         // 1. Host reported TS:1
         // 2. Buffer Advance (Extruder is pulling)
         // 3. Buffer Trailing (Filament reached gears/blockage) AFTER passing OUT sensor
-        bool loaded = toolhead_has_filament || (g_buf.state == BUF_ADVANCE) || 
+        // Sanity: Ignore buffer advance until we've traveled at least DIST_OUT_Y mm after OUT sensor.
+        bool buf_advance_sane = (g_buf.state == BUF_ADVANCE);
+        if (L->unload_sensor_latch && L->task_dist_mm < (float)DIST_OUT_Y * 0.8f) {
+            buf_advance_sane = false; // Ghost trigger or birdnesting before Y
+        }
+
+        bool loaded = toolhead_has_filament || buf_advance_sane || 
                      (L->unload_sensor_latch && g_buf.state == BUF_TRAILING);
 
         if (loaded) {
@@ -1890,12 +1907,12 @@ static void settings_defaults(void) {
     LOAD_MAX_MM = CONF_LOAD_MAX_MM;
     UNLOAD_MAX_MM = CONF_UNLOAD_MAX_MM;
     RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
-    BUF_HALF_TRAVEL_MM = CONF_BUF_HALF_TRAVEL_MM;
     DIST_IN_OUT = CONF_DIST_IN_OUT;
     DIST_OUT_Y  = CONF_DIST_OUT_Y;
     DIST_Y_BUF  = CONF_DIST_Y_BUF;
     BUF_BODY_LEN = CONF_BUF_BODY_LEN;
     BUF_SIZE_MM = CONF_BUF_SIZE_MM;
+    BUF_HALF_TRAVEL_MM = (float)BUF_SIZE_MM / 2.0f;
     BUF_HYST_MS = CONF_BUF_HYST_MS;
     BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
     g_baseline_sps   = CONF_BASELINE_SPS;
@@ -2545,7 +2562,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "DIST_OUT_Y"))   DIST_OUT_Y = clamp_i(iv, 0, 5000);
         else if (!strcmp(base_param, "DIST_Y_BUF"))   DIST_Y_BUF = clamp_i(iv, 0, 5000);
         else if (!strcmp(base_param, "BUF_BODY_LEN")) BUF_BODY_LEN = clamp_i(iv, 0, 5000);
-        else if (!strcmp(base_param, "BUF_SIZE"))     BUF_SIZE_MM = clamp_i(iv, 5, 1000);
+        else if (!strcmp(base_param, "BUF_SIZE"))     { BUF_SIZE_MM = clamp_i(iv, 5, 1000); BUF_HALF_TRAVEL_MM = (float)BUF_SIZE_MM / 2.0f; }
         else if (!strcmp(base_param, "JOIN_RATE"))     JOIN_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "PRESS_RATE"))    PRESS_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "TRAILING_RATE")) TRAILING_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
