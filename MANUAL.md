@@ -98,6 +98,7 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 | `AUTO_MODE` | `auto_mode` | Enable autonomous Flow (Auto-Sync, Toolhead load) | 1 |
 | `AUTO_PRELOAD`| `auto_preload` | Enable parking preload on insertion | 1 |
 | `RELOAD_MODE`| `reload_mode` | Enable autonomous RELOAD behavior (Auto-Swap) | 0 |
+| `SYNC_OVERSHOOT_PCT` | `sync_overshoot_pct` | ADVANCE-only extra push as percent of sync KP correction (0..200) | 50 |
 | `SYNC_AUTO_STOP` | `sync_auto_stop_ms` | Auto-mode only: disable auto-started sync after sustained `TRAILING` for X ms; independent from SG tuning recovery | 5000 |
 | `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |
 

@@ -58,6 +58,7 @@ DEFAULTS = {
     "baseline_alpha": "0.15",
     "buf_predict_thr_ms": "250",
     "sync_kp_rate": "850",
+    "sync_overshoot_pct": "50",
     "sync_auto_stop_ms": "5000",
     "buffer_recovery_threshold_ms": "0",
 
@@ -335,6 +336,7 @@ def main():
         f"#define CONF_BASELINE_ALPHA     {get_float('baseline_alpha')}f",
         f"#define CONF_BUF_PREDICT_THR_MS {get('buf_predict_thr_ms')}",
         f"#define CONF_SYNC_KP_SPS        {mm_min_to_sps(get('sync_kp_rate'), l1)}",
+        f"#define CONF_SYNC_OVERSHOOT_PCT {get('sync_overshoot_pct')}",
         f"#define CONF_SYNC_AUTO_STOP_MS {get('sync_auto_stop_ms')}",
         f"#define CONF_BUFFER_RECOVERY_THRESHOLD_MS {get('buffer_recovery_threshold_ms')}",
         "",

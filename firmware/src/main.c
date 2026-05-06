@@ -69,6 +69,7 @@ static float BUF_RANGE = CONF_BUF_RANGE;
 static float BUF_THR = CONF_BUF_THR;
 static float BUF_ANALOG_ALPHA = CONF_BUF_ANALOG_ALPHA;
 static int SYNC_KP_SPS = CONF_SYNC_KP_SPS;
+static int SYNC_OVERSHOOT_PCT = CONF_SYNC_OVERSHOOT_PCT;
 static int BUFFER_RECOVERY_THRESHOLD_MS = CONF_BUFFER_RECOVERY_THRESHOLD_MS;
 static int TS_BUF_FALLBACK_MS = CONF_TS_BUF_FALLBACK_MS;
 static bool SYNC_SG_INTERP = CONF_SYNC_SG_INTERP;
@@ -1928,7 +1929,7 @@ static void sync_tick(uint32_t now_ms) {
         if (s == BUF_ADVANCE) {
             // ADVANCE overshoot: intentionally push beyond neutral so the buffer
             // is replenished toward TRAILING and does not chatter around ADVANCE.
-            correction += (float)(kp_sps / 2);
+            correction += (float)((kp_sps * SYNC_OVERSHOOT_PCT) / 100);
         }
         if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
 
@@ -2017,7 +2018,7 @@ static void stall_pump(void) {
 // ===================== Settings persistence =====================
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4E314F57u // 'N1OW' - NOSF settings sentinel.
-#define SETTINGS_VERSION 34u
+#define SETTINGS_VERSION 35u
 
 typedef struct {
     uint32_t magic;
@@ -2061,6 +2062,7 @@ typedef struct {
     int buf_sensor_type;
     float buf_neutral, buf_range, buf_thr, buf_analog_alpha;
     int sync_kp_sps;
+    int sync_overshoot_pct;
     int ts_buf_fallback_ms;
 
     int join_sps;
@@ -2177,6 +2179,7 @@ static void settings_defaults(void) {
     BUF_THR = CONF_BUF_THR;
     BUF_ANALOG_ALPHA = CONF_BUF_ANALOG_ALPHA;
     SYNC_KP_SPS = CONF_SYNC_KP_SPS;
+    SYNC_OVERSHOOT_PCT = clamp_i(CONF_SYNC_OVERSHOOT_PCT, 0, 200);
     TS_BUF_FALLBACK_MS = CONF_TS_BUF_FALLBACK_MS;
     BUF_STAB_SPS = clamp_i(CONF_BUF_STAB_SPS, 10, 10000);
 
@@ -2290,6 +2293,7 @@ static void settings_save(void) {
     s.buf_thr = BUF_THR;
     s.buf_analog_alpha = BUF_ANALOG_ALPHA;
     s.sync_kp_sps = SYNC_KP_SPS;
+    s.sync_overshoot_pct = SYNC_OVERSHOOT_PCT;
     s.ts_buf_fallback_ms = TS_BUF_FALLBACK_MS;
 
     s.reload_mode = (bool)RELOAD_MODE;
@@ -2465,6 +2469,7 @@ static void settings_load(void) {
     BUF_THR = s->buf_thr;
     BUF_ANALOG_ALPHA = s->buf_analog_alpha;
     SYNC_KP_SPS = s->sync_kp_sps;
+    SYNC_OVERSHOOT_PCT = clamp_i(s->sync_overshoot_pct, 0, 200);
     TS_BUF_FALLBACK_MS = s->ts_buf_fallback_ms;
 
     RELOAD_MODE = s->reload_mode ? 1 : 0;
@@ -2835,6 +2840,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "LOAD_MAX"))     LOAD_MAX_MM = clamp_i(iv, 100, 10000);
         else if (!strcmp(base_param, "UNLOAD_MAX"))   UNLOAD_MAX_MM = clamp_i(iv, 100, 10000);
         else if (!strcmp(base_param, "SYNC_KP_RATE")) SYNC_KP_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
+        else if (!strcmp(base_param, "SYNC_OVERSHOOT_PCT")) SYNC_OVERSHOOT_PCT = clamp_i(iv, 0, 200);
         else if (!strcmp(base_param, "SYNC_AUTO_STOP"))   SYNC_AUTO_STOP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "TS_BUF_MS"))    TS_BUF_FALLBACK_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "STARTUP_MS"))   MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
@@ -2919,6 +2925,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "TC_TH_MS"))     snprintf(out, sizeof(out), "TC_TH_MS:%d", TC_TIMEOUT_TH_MS);
         else if (!strcmp(param, "TC_Y_MS"))      snprintf(out, sizeof(out), "TC_Y_MS:%d", TC_TIMEOUT_Y_MS);
         else if (!strcmp(param, "SYNC_KP_RATE"))     snprintf(out, sizeof(out), "SYNC_KP_RATE:%.1f", (double)sps_to_mm_per_min(SYNC_KP_SPS));
+        else if (!strcmp(param, "SYNC_OVERSHOOT_PCT")) snprintf(out, sizeof(out), "SYNC_OVERSHOOT_PCT:%d", SYNC_OVERSHOOT_PCT);
         else if (!strcmp(param, "SYNC_AUTO_STOP"))   snprintf(out, sizeof(out), "SYNC_AUTO_STOP:%d", SYNC_AUTO_STOP_MS);
         else if (!strcmp(param, "TS_BUF_MS"))    snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
         else if (!strcmp(param, "STARTUP_MS"))   snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
