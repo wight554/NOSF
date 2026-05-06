@@ -1511,6 +1511,7 @@ static void autopreload_tick(uint32_t now_ms) {
 
     if (in1 && !prev_lane1_in_present) {
         if (g_lane_l1.fault == FAULT_DRY_SPIN) g_lane_l1.fault = FAULT_NONE;
+        if (g_tc_ctx.state == TC_ERROR) tc_abort();
         if (g_lane_l1.task == TASK_IDLE && (tc_state() == TC_IDLE || tc_state() == TC_RELOAD_FOLLOW) && !cutter_busy() && !lane_out_present(&g_lane_l1)) {
             if (AUTO_MODE && mmu_empty) {
                 // Completely empty MMU: auto-load all the way to toolhead.
@@ -1527,6 +1528,7 @@ static void autopreload_tick(uint32_t now_ms) {
 
     if (in2 && !prev_lane2_in_present) {
         if (g_lane_l2.fault == FAULT_DRY_SPIN) g_lane_l2.fault = FAULT_NONE;
+        if (g_tc_ctx.state == TC_ERROR) tc_abort();
         if (g_lane_l2.task == TASK_IDLE && (tc_state() == TC_IDLE || tc_state() == TC_RELOAD_FOLLOW) && !cutter_busy() && !lane_out_present(&g_lane_l2)) {
             if (AUTO_MODE && mmu_empty) {
                 lane_start(&g_lane_l2, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
@@ -2434,11 +2436,13 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             cmd_reply("ER", "ARG");
         }
     } else if (!strcmp(cmd, "LO")) {
+        if (g_tc_ctx.state == TC_ERROR) tc_abort();
         lane_t *A = lane_ptr(active_lane);
         if (!A) { cmd_reply("ER", "NO_ACTIVE_LANE"); return; }
         lane_start(A, TASK_AUTOLOAD, AUTO_SPS, true, now_ms, (float)AUTOLOAD_MAX_MM);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "UL")) {
+        if (g_tc_ctx.state == TC_ERROR) tc_abort();
         lane_t *A = lane_ptr(active_lane);
         if (!A) { cmd_reply("ER", "NO_ACTIVE_LANE"); return; }
         if (!lane_out_present(A)) { cmd_reply("ER", "NOT_LOADED"); return; }
@@ -2446,6 +2450,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         lane_start(A, TASK_UNLOAD, REV_SPS, false, now_ms, (float)UNLOAD_MAX_MM);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "UM")) {
+        if (g_tc_ctx.state == TC_ERROR) tc_abort();
         lane_t *A = lane_ptr(active_lane);
         if (!A) { cmd_reply("ER", "NO_ACTIVE_LANE"); return; }
         if (!lane_in_present(A)) { cmd_reply("ER", "NOT_LOADED"); return; }
@@ -2453,6 +2458,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         lane_start(A, TASK_UNLOAD_MMU, REV_SPS, false, now_ms, (float)UNLOAD_MAX_MM);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "FL")) {
+        if (g_tc_ctx.state == TC_ERROR) tc_abort();
         lane_t *A = lane_ptr(active_lane);
         if (!A) { cmd_reply("ER", "NO_ACTIVE_LANE"); return; }
         if (!lane_in_present(A)) { cmd_reply("ER", "NO_FILAMENT"); return; }
@@ -2465,6 +2471,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         lane_start(A, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "FD")) {
+        if (g_tc_ctx.state == TC_ERROR) tc_abort();
         lane_t *A = lane_ptr(active_lane);
         if (!A) {
             cmd_reply("ER", "NO_ACTIVE_LANE");
@@ -2485,6 +2492,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         cutter_start(A, now_ms);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "MV")) {
+        if (g_tc_ctx.state == TC_ERROR) tc_abort();
         lane_t *A = lane_ptr(active_lane);
         if (!A) {
             cmd_reply("ER", "NO_ACTIVE_LANE");
