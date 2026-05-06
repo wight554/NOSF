@@ -32,6 +32,7 @@ static int MOTION_STARTUP_MS = CONF_MOTION_STARTUP_MS;
 
 static int RUNOUT_COOLDOWN_MS = CONF_RUNOUT_COOLDOWN_MS;
 static int RELOAD_MODE = CONF_RELOAD_MODE;
+static int RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
 static int JOIN_SPS = CONF_JOIN_SPS;
 static int PRESS_SPS = CONF_PRESS_SPS;
 static int TRAILING_SPS = CONF_TRAILING_SPS;
@@ -85,7 +86,6 @@ static int TC_TIMEOUT_CUT_MS = CONF_TC_TIMEOUT_CUT_MS;
 static int LOAD_MAX_MM = CONF_LOAD_MAX_MM;
 static int UNLOAD_MAX_MM = CONF_UNLOAD_MAX_MM;
 static int TC_TIMEOUT_TH_MS = CONF_TC_TIMEOUT_TH_MS;
-static int APPROACH_MAX_MM = CONF_APPROACH_MAX_MM;
 static int TC_TIMEOUT_Y_MS = CONF_TC_TIMEOUT_Y_MS;
 
 static int SYNC_MAX_SPS = CONF_SYNC_MAX_SPS;
@@ -1194,13 +1194,13 @@ static void tc_tick(uint32_t now_ms) {
         case TC_RELOAD_WAIT_Y:
             // Old filament tail exited OUT; wait for it to clear the Y-splitter
             // before starting the standby lane.
-            if (!on_al(&g_y_split) || APPROACH_MAX_MM == 0) {
+            if (!on_al(&g_y_split) || RELOAD_Y_TIMEOUT_MS == 0) {
                 char lane_s[2] = { (char)('0' + g_tc_ctx.target_lane), 0 };
                 set_active_lane(g_tc_ctx.target_lane);
                 lane_t *NL = lane_ptr(active_lane);
                 cmd_event("RELOAD:JOINING", lane_s);
                 // State 1: fast approach — contact detected by SG derivative.
-                lane_start(NL, TASK_FEED, JOIN_SPS, true, now_ms, (float)APPROACH_MAX_MM);
+                lane_start(NL, TASK_FEED, JOIN_SPS, true, now_ms, 2000.0f); // Default 2m approach
                 // Arm stall immediately — STARTUP_MS warmup is for sync mode.
                 NL->stall_armed = true;
                 // Zero RELOAD ctx fields for fresh approach.
@@ -1211,7 +1211,7 @@ static void tc_tick(uint32_t now_ms) {
                 for (int i = 0; i < CONF_SG_MA_LEN; i++) g_tc_ctx.sg_ma_buf[i] = 0.0f;
                 g_tc_ctx.phase_start_ms = now_ms;
                 g_tc_ctx.state = TC_RELOAD_APPROACH;
-            } else if (A->task == TASK_IDLE) {
+            } else if (age > (uint32_t)RELOAD_Y_TIMEOUT_MS) {
                 tc_enter_error("RELOAD_Y_TIMEOUT");
             }
             break;
@@ -1795,7 +1795,7 @@ typedef struct {
     int sync_auto_stop_ms;
     int load_max_mm;
     int unload_max_mm;
-    int approach_max_mm;
+    int reload_y_timeout_ms;
     int autoload_max_mm;
     int cutter_settle_ms;
     float buf_half_travel_mm;
@@ -1882,7 +1882,7 @@ static void settings_defaults(void) {
     AUTOLOAD_MAX_MM = CONF_AUTOLOAD_MAX_MM;
     LOAD_MAX_MM = CONF_LOAD_MAX_MM;
     UNLOAD_MAX_MM = CONF_UNLOAD_MAX_MM;
-    APPROACH_MAX_MM = CONF_APPROACH_MAX_MM;
+    RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
     BUF_HALF_TRAVEL_MM = CONF_BUF_HALF_TRAVEL_MM;
     BUF_HYST_MS = CONF_BUF_HYST_MS;
     BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
@@ -1996,7 +1996,7 @@ static void settings_save(void) {
     s.autoload_max_mm = AUTOLOAD_MAX_MM;
     s.load_max_mm = LOAD_MAX_MM;
     s.unload_max_mm = UNLOAD_MAX_MM;
-    s.approach_max_mm = APPROACH_MAX_MM;
+    s.reload_y_timeout_ms = RELOAD_Y_TIMEOUT_MS;
     s.buf_half_travel_mm = BUF_HALF_TRAVEL_MM;
     s.buf_hyst_ms = BUF_HYST_MS;
     s.buf_predict_thr_ms = BUF_PREDICT_THR_MS;
@@ -2146,7 +2146,7 @@ static void settings_load(void) {
     AUTOLOAD_MAX_MM = s->autoload_max_mm;
     LOAD_MAX_MM = s->load_max_mm;
     UNLOAD_MAX_MM = s->unload_max_mm;
-    APPROACH_MAX_MM = s->approach_max_mm;
+    RELOAD_Y_TIMEOUT_MS = s->reload_y_timeout_ms;
     BUF_HALF_TRAVEL_MM = s->buf_half_travel_mm;
     BUF_HYST_MS = s->buf_hyst_ms;
     BUF_PREDICT_THR_MS = s->buf_predict_thr_ms;
@@ -2518,7 +2518,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "RETRACT_MM"))   AUTOLOAD_RETRACT_MM = clamp_i(iv, 0, 50);
         else if (!strcmp(base_param, "CUTTER"))       ENABLE_CUTTER = (iv != 0);
         else if (!strcmp(base_param, "RELOAD_MODE"))     RELOAD_MODE = (iv != 0) ? 1 : 0;
-        else if (!strcmp(base_param, "RELOAD_Y_MS"))      APPROACH_MAX_MM = clamp_i(iv, 100, 10000);
+        else if (!strcmp(base_param, "RELOAD_Y_MS"))      RELOAD_Y_TIMEOUT_MS = clamp_i(iv, 100, 30000);
         else if (!strcmp(base_param, "JOIN_RATE"))     JOIN_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "PRESS_RATE"))    PRESS_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "TRAILING_RATE")) TRAILING_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
@@ -2546,7 +2546,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "AUTOLOAD_MAX")) AUTOLOAD_MAX_MM = clamp_i(iv, 10, 10000);
         else if (!strcmp(base_param, "LOAD_MAX"))     LOAD_MAX_MM = clamp_i(iv, 100, 10000);
         else if (!strcmp(base_param, "UNLOAD_MAX"))   UNLOAD_MAX_MM = clamp_i(iv, 100, 10000);
-        else if (!strcmp(base_param, "APPROACH_MAX")) APPROACH_MAX_MM = clamp_i(iv, 100, 10000);
         else if (!strcmp(base_param, "SYNC_KP_RATE")) SYNC_KP_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
         else if (!strcmp(base_param, "SYNC_AUTO_STOP"))   SYNC_AUTO_STOP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "TS_BUF_MS"))    TS_BUF_FALLBACK_MS = clamp_i(iv, 0, 30000);
@@ -2566,9 +2565,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "TC_CUT_MS"))    TC_TIMEOUT_CUT_MS = clamp_i(iv, 1000, 30000);
         else if (!strcmp(base_param, "TC_TH_MS"))     TC_TIMEOUT_TH_MS = clamp_i(iv, 0, 10000);
         else if (!strcmp(base_param, "TC_Y_MS"))      TC_TIMEOUT_Y_MS = clamp_i(iv, 0, 30000);
-        else if (!strcmp(base_param, "TC_UNLOAD_MS")) UNLOAD_MAX_MM = clamp_i(iv, 100, 10000);
-        else if (!strcmp(base_param, "TC_LOAD_MS"))   LOAD_MAX_MM = clamp_i(iv, 100, 10000);
-        else if (!strcmp(base_param, "RELOAD_Y_MS"))  APPROACH_MAX_MM = clamp_i(iv, 100, 10000);
         else handled = false;
 
         if (handled) cmd_reply("OK", NULL);
@@ -2604,6 +2600,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "RETRACT_MM"))    snprintf(out, sizeof(out), "RETRACT_MM:%d", AUTOLOAD_RETRACT_MM);
         else if (!strcmp(param, "CUTTER"))       snprintf(out, sizeof(out), "CUTTER:%d", ENABLE_CUTTER ? 1 : 0);
         else if (!strcmp(param, "RELOAD_MODE"))     snprintf(out, sizeof(out), "RELOAD_MODE:%d", RELOAD_MODE);
+        else if (!strcmp(param, "RELOAD_Y_MS"))     snprintf(out, sizeof(out), "RELOAD_Y_MS:%d", RELOAD_Y_TIMEOUT_MS);
         else if (!strcmp(param, "JOIN_RATE"))     snprintf(out, sizeof(out), "JOIN_RATE:%.1f", (double)sps_to_mm_per_min_idx(JOIN_SPS, idx));
         else if (!strcmp(param, "PRESS_RATE"))    snprintf(out, sizeof(out), "PRESS_RATE:%.1f", (double)sps_to_mm_per_min_idx(PRESS_SPS, idx));
         else if (!strcmp(param, "TRAILING_RATE")) snprintf(out, sizeof(out), "TRAILING_RATE:%.1f", (double)sps_to_mm_per_min_idx(TRAILING_SPS, idx));
@@ -2619,7 +2616,6 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "AUTOLOAD_MAX")) snprintf(out, sizeof(out), "AUTOLOAD_MAX:%d", AUTOLOAD_MAX_MM);
         else if (!strcmp(param, "LOAD_MAX"))     snprintf(out, sizeof(out), "LOAD_MAX:%d", LOAD_MAX_MM);
         else if (!strcmp(param, "UNLOAD_MAX"))   snprintf(out, sizeof(out), "UNLOAD_MAX:%d", UNLOAD_MAX_MM);
-        else if (!strcmp(param, "APPROACH_MAX")) snprintf(out, sizeof(out), "APPROACH_MAX:%d", APPROACH_MAX_MM);
         else if (!strcmp(param, "SYNC_KP_RATE"))     snprintf(out, sizeof(out), "SYNC_KP_RATE:%.1f", (double)sps_to_mm_per_min(SYNC_KP_SPS));
         else if (!strcmp(param, "SYNC_AUTO_STOP"))   snprintf(out, sizeof(out), "SYNC_AUTO_STOP:%d", SYNC_AUTO_STOP_MS);
         else if (!strcmp(param, "TS_BUF_MS"))    snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);

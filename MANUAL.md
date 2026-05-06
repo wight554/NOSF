@@ -89,7 +89,6 @@ Parameters are categorized by function. All speeds are in **mm/min** (Klipper `F
 | `LOAD_MAX` | `load_max_mm` | Max distance for standard `FL:`, `TC:LOAD`, or **Auto-Load** | 3000 |
 | `UNLOAD_MAX` | `unload_max_mm` | Max distance for `UL:`, `UM:`, or `TC:UNLOAD` | 3000 |
 | `AUTOLOAD_MAX` | `autoload_max_mm` | Max distance for `LO:` (Preload to Y) | 600 |
-| `APPROACH_MAX` | `approach_max_mm` | Max distance to search for Y-splitter during RELOAD | 2000 |
 | `STALL_MS` | `stall_recovery_ms` | Hard-stall recovery time (ms) | 200 |
 
 ### Toolchange & Hardware
@@ -98,6 +97,7 @@ Parameters are categorized by function. All speeds are in **mm/min** (Klipper `F
 | `TC_CUT_MS` | `tc_timeout_cut_ms` | Time to wait for cutter to cycle | 2000 |
 | `TC_TH_MS` | `tc_timeout_th_ms` | Time to wait for toolhead sensor (TS:1) after load start | 2000 |
 | `TC_Y_MS` | `tc_timeout_y_ms` | Time to wait for tail to clear Y during unload | 1000 |
+| `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |
 | `SERVO_SETTLE` | `servo_settle_ms` | Time for servo to reach target position | 500 |
 | `RELOAD_MODE` | `reload_mode` | Enable autonomous RELOAD behavior | 0 |
 | `RETRACT_MM` | `autoload_retract_mm` | Retract distance after reaching OUT during preload | 5 |

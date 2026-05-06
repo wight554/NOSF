@@ -81,7 +81,7 @@ DEFAULTS = {
     "load_max_mm": "3000",
     "unload_max_mm": "3000",
     "autoload_max_mm": "600",
-    "approach_max_mm": "2000",
+    "reload_y_timeout_ms": "10000",
 
     # Analog Buffer Sensor
     "buf_sensor_type": "0",
@@ -343,7 +343,7 @@ def main():
         f"#define CONF_LOAD_MAX_MM            {get('load_max_mm')}",
         f"#define CONF_UNLOAD_MAX_MM          {get('unload_max_mm')}",
         f"#define CONF_AUTOLOAD_MAX_MM        {get('autoload_max_mm')}",
-        f"#define CONF_APPROACH_MAX_MM        {get('approach_max_mm')}",
+        f"#define CONF_RELOAD_Y_TIMEOUT_MS   {get('reload_y_timeout_ms')}",
         "",
         "// --- Safety / Swap ---",
         f"#define CONF_LOW_DELAY_MS           {get('low_delay_ms')}",
