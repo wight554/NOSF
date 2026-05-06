@@ -2526,15 +2526,35 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         }
         float mm = 0.0f;
         float feed_mm_min = 0.0f;
-        if (sscanf(p, "%f:%f", &mm, &feed_mm_min) != 2 || feed_mm_min <= 0.0f) {
+        char dir_tok[8] = {0};
+        int n = sscanf(p, "%f:%f:%7s", &mm, &feed_mm_min, dir_tok);
+        if ((n != 2 && n != 3) || feed_mm_min <= 0.0f) {
             cmd_reply("ER", "ARG");
             return;
         }
         int idx = lane_to_idx(active_lane);
         int sps = (int)(feed_mm_min / 60.0f / MM_PER_STEP[idx] + 0.5f);
         sps = clamp_i(sps, 200, 50000);
+
         bool forward = (mm >= 0.0f);
+        if (n == 3) {
+            if (!strcmp(dir_tok, "F") || !strcmp(dir_tok, "f") || !strcmp(dir_tok, "+")) {
+                forward = true;
+            } else if (!strcmp(dir_tok, "R") || !strcmp(dir_tok, "r") ||
+                       !strcmp(dir_tok, "B") || !strcmp(dir_tok, "b") ||
+                       !strcmp(dir_tok, "-") ) {
+                forward = false;
+            } else {
+                cmd_reply("ER", "ARG");
+                return;
+            }
+        }
+
         float limit = mm < 0.0f ? -mm : mm;
+        if (limit <= 0.0f) {
+            cmd_reply("ER", "ARG");
+            return;
+        }
         sync_enabled = false;
         lane_start(A, TASK_MOVE, sps, forward, now_ms, limit);
         cmd_reply("OK", NULL);

@@ -51,7 +51,7 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 | `UL:` | Both  | **Unload (Extruder)** — reverse until OUT sensor clears. Limit: `UNLOAD_MAX`. |
 | `UM:` | Both  | **Unload (MMU)** — reverse until IN sensor clears. Limit: `UNLOAD_MAX`. |
 | `TC:n` | Manual| **Toolchange** — Unload active lane and load lane `n`. |
-| `MV:mm:F`| Both | **Exact Move** — move `mm` distance at `F` mm/min. Disables sync. |
+| `MV:mm:F[:D]`| Both | **Exact Move** — move `abs(mm)` at `F` mm/min. Direction from sign of `mm` or optional `D` (`F`/`R`/`B`, `+`/`-`). Disables sync. |
 | `FD:` | Both  | **Continuous Feed** — runs forward until `ST:`. |
 | `ST:` | Both  | **Stop** — aborts all motion and resets toolchange state. |
 | `CU:` | Both  | **Cut** — performs the cutter sequence on the active lane. |
