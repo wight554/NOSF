@@ -462,6 +462,7 @@ static zone_event_t g_history[HISTORY_LEN] = {0};
 static int g_hist_idx = 0;
 
 static uint32_t sync_last_tick_ms = 0;
+static uint32_t sync_last_sg_ms = 0;
 static uint32_t sync_last_evt_ms = 0;
 
 static volatile bool stall_pending_l1 = false;
@@ -1743,7 +1744,11 @@ static void sync_tick(uint32_t now_ms) {
         int base_target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, SYNC_MAX_SPS);
 
         // Common scaling (Analog or SG)
-        sg_ma_update(A);
+        // StallGuard sync doesn't need 50Hz updates. 10Hz (100ms) is plenty.
+        if ((now_ms - sync_last_sg_ms) >= 100u) {
+            sync_last_sg_ms = now_ms;
+            sg_ma_update(A);
+        }
         int target = sync_apply_scaling(A, base_target, SYNC_SG_INTERP);
 
         if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
@@ -2320,10 +2325,17 @@ static void cmd_event(const char *type, const char *data) {
 }
 
 static void status_dump(void) {
-    uint16_t sg1 = 0;
-    uint16_t sg2 = 0;
-    (void)tmc_read_sg_result(&g_tmc_l1, &sg1);
-    (void)tmc_read_sg_result(&g_tmc_l2, &sg2);
+    static uint16_t last_sg1 = 0, last_sg2 = 0;
+    static uint32_t last_sg_read_ms = 0;
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+
+    if ((now - last_sg_read_ms) >= 100u) {
+        last_sg_read_ms = now;
+        (void)tmc_read_sg_result(&g_tmc_l1, &last_sg1);
+        (void)tmc_read_sg_result(&g_tmc_l2, &last_sg2);
+    }
+    uint16_t sg1 = last_sg1;
+    uint16_t sg2 = last_sg2;
 
     char b[256];
     snprintf(b, sizeof(b),
