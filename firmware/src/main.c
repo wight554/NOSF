@@ -3028,7 +3028,7 @@ int main(void) {
 
     // Stabilize buffer arm to MID position if not already there.
     // TRAILING: retract (pull backward). ADVANCE: push (extend forward).
-    // This ensures the buffer starts in a neutral state.
+    // Stop once buffer settles within ±25% of neutral, or timeout after 10 seconds.
     if (BUF_SENSOR_TYPE == 0) {  // Only for dual-endstop buffer
         buf_state_t buf_state = buf_read();
         if (buf_state == BUF_TRAILING || buf_state == BUF_ADVANCE) {
@@ -3036,11 +3036,25 @@ int main(void) {
             lane_t *stab_lane = (active_lane == 1) ? &g_lane_l2 : &g_lane_l1;
             bool forward = (buf_state == BUF_ADVANCE);  // ADVANCE -> push forward, TRAILING -> pull backward (reverse)
             
-            // Start motor at neutral speed
+            // Start motor at low speed to gently move buffer toward MID
             lane_start(stab_lane, TASK_FEED, TRAILING_SPS, forward, boot_now_ms, 0);
             
-            // Run for 2 seconds to allow arm to settle to MID
-            sleep_ms(2000);
+            // Run until buffer settles to ±25% of center, or 10 second timeout
+            uint32_t stab_deadline = boot_now_ms + 10000;
+            uint32_t last_check_ms = boot_now_ms;
+            while ((int32_t)(to_ms_since_boot(get_absolute_time()) - stab_deadline) < 0) {
+                // Check buffer position every 100ms
+                uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+                if ((int32_t)(now_ms - last_check_ms) >= 100) {
+                    last_check_ms = now_ms;
+                    buf_state_t current_state = buf_read();
+                    if (current_state == BUF_MID) {
+                        // Buffer settled to neutral — done
+                        break;
+                    }
+                }
+                sleep_us(100);
+            }
             
             motor_stop(&stab_lane->m);
             stab_lane->task = TASK_IDLE;
