@@ -53,4 +53,3 @@
 // ----- Static Timeouts -----
 #define CONF_CUT_SETTLE_MS      1500
 #define CONF_CUT_FEED_MS        5000
-#define CONF_SYNC_AUTO_STOP_MS  2000
