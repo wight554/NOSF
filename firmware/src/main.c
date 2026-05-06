@@ -1717,6 +1717,21 @@ static void baseline_update_on_settle(uint32_t mid_dwell_ms) {
     }
 }
 
+static int sync_hard_max_sps(void) {
+    return mm_per_min_to_sps(2500.0f);
+}
+
+static int sync_clamp_max_sps(int requested_sps) {
+    int hard_max = sync_hard_max_sps();
+    return (requested_sps < hard_max) ? requested_sps : hard_max;
+}
+
+static int sync_bootstrap_sps(void) {
+    int startup_sps = (g_baseline_sps < BUF_STAB_SPS) ? g_baseline_sps : BUF_STAB_SPS;
+    int max_sps = sync_clamp_max_sps(SYNC_MAX_SPS);
+    return clamp_i(startup_sps, TRAILING_SPS, max_sps);
+}
+
 static int sync_effective_kp_sps(void) {
     // Keep the configured ceiling, but scale down correction at low learned
     // baseline speeds so slow extrusion stays smoother and less aggressive.
@@ -1818,6 +1833,9 @@ static void sync_tick(uint32_t now_ms) {
     // Fallback to buffer state if TS sensor not available or not reporting.
     // Blocks unexpected restarts during unload/stop flows where buffer is not ADVANCE.
     if (AUTO_MODE && !sync_enabled && s == BUF_ADVANCE) {
+        int startup_sps = sync_bootstrap_sps();
+        g_baseline_sps = startup_sps;
+        sync_current_sps = startup_sps;
         sync_enabled = true;
         sync_auto_started = true;
         sync_idle_since_ms = 0;
@@ -1879,7 +1897,7 @@ static void sync_tick(uint32_t now_ms) {
             float correction = (float)kp_sps * buf_pos;  // buf_pos = -1.0 in TRAILING
             if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
 
-            int base_target = clamp_i(g_baseline_sps + (int)correction, TRAILING_SPS, SYNC_MAX_SPS);
+            int base_target = clamp_i(g_baseline_sps + (int)correction, TRAILING_SPS, sync_clamp_max_sps(SYNC_MAX_SPS));
 
             // Common scaling (Analog or SG)
             // StallGuard sync doesn't need 50Hz updates. 10Hz (100ms) is plenty.
@@ -1891,13 +1909,13 @@ static void sync_tick(uint32_t now_ms) {
 
             if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
             else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
-            sync_current_sps = clamp_i(sync_current_sps, TRAILING_SPS, SYNC_MAX_SPS);
+            sync_current_sps = clamp_i(sync_current_sps, TRAILING_SPS, sync_clamp_max_sps(SYNC_MAX_SPS));
         }
     } else {
         float correction = (float)kp_sps * buf_pos;
         if (predict_advance_coming()) correction += (float)PRE_RAMP_SPS;
 
-        int base_target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, SYNC_MAX_SPS);
+        int base_target = clamp_i(g_baseline_sps + (int)correction, SYNC_MIN_SPS, sync_clamp_max_sps(SYNC_MAX_SPS));
 
         // Common scaling (Analog or SG)
         // StallGuard sync doesn't need 50Hz updates. 10Hz (100ms) is plenty.
@@ -1909,7 +1927,7 @@ static void sync_tick(uint32_t now_ms) {
 
         if (sync_current_sps > target) sync_current_sps -= SYNC_RAMP_DN_SPS;
         else if (sync_current_sps < target) sync_current_sps += SYNC_RAMP_UP_SPS;
-        sync_current_sps = clamp_i(sync_current_sps, SYNC_MIN_SPS, SYNC_MAX_SPS);
+        sync_current_sps = clamp_i(sync_current_sps, SYNC_MIN_SPS, sync_clamp_max_sps(SYNC_MAX_SPS));
     }
 
     sync_apply_to_active();
@@ -2075,7 +2093,7 @@ static void settings_defaults(void) {
     REV_SPS = CONF_REV_SPS;
     AUTO_SPS = CONF_AUTO_SPS;
 
-    SYNC_MAX_SPS = CONF_SYNC_MAX_SPS;
+    SYNC_MAX_SPS = sync_clamp_max_sps(CONF_SYNC_MAX_SPS);
     SYNC_MIN_SPS = CONF_SYNC_MIN_SPS;
     SYNC_RAMP_UP_SPS = CONF_SYNC_RAMP_UP_SPS;
     SYNC_RAMP_DN_SPS = CONF_SYNC_RAMP_DN_SPS;
@@ -2355,7 +2373,7 @@ static void settings_load(void) {
     REV_SPS = s->rev_sps;
     AUTO_SPS = s->auto_sps;
 
-    SYNC_MAX_SPS = s->sync_max_sps;
+    SYNC_MAX_SPS = sync_clamp_max_sps(s->sync_max_sps);
     SYNC_MIN_SPS = s->sync_min_sps;
     SYNC_RAMP_UP_SPS = s->sync_ramp_up;
     SYNC_RAMP_DN_SPS = s->sync_ramp_dn;
@@ -2752,7 +2770,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         if (!strcmp(base_param, "FEED_RATE"))    FEED_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "REV_RATE"))     REV_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "AUTO_RATE"))    AUTO_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
-        else if (!strcmp(base_param, "SYNC_MAX_RATE")) SYNC_MAX_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
+        else if (!strcmp(base_param, "SYNC_MAX_RATE")) SYNC_MAX_SPS = sync_clamp_max_sps(clamp_i(mm_per_min_to_sps(fv), 200, 50000));
         else if (!strcmp(base_param, "SYNC_MIN_RATE")) SYNC_MIN_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
         else if (!strcmp(base_param, "SYNC_UP_RATE"))   SYNC_RAMP_UP_SPS = clamp_i(mm_per_min_to_sps(fv), 1, 50000);
         else if (!strcmp(base_param, "SYNC_DN_RATE"))   SYNC_RAMP_DN_SPS = clamp_i(mm_per_min_to_sps(fv), 1, 50000);
