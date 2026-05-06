@@ -1681,8 +1681,18 @@ static void sync_apply_to_active(void) {
     }
     if (A->task == TASK_MOVE) return;  // don't clobber an in-progress timed move
 
+    // Prevent sync from overriding direction during unload/autoload tasks.
+    // These tasks have specific directions (reverse for unload) that must be preserved.
+    bool is_protected_task = (A->task == TASK_UNLOAD || A->task == TASK_UNLOAD_MMU || A->task == TASK_AUTOLOAD);
+
     if (sync_current_sps > 0) {
-        if (A->task != TASK_FEED && A->fault != FAULT_DRY_SPIN) {
+        if (is_protected_task) {
+            // For unload/autoload: update speed only, preserve motor direction.
+            A->current_sps = sync_current_sps;
+            A->target_sps = sync_current_sps;
+            motor_set_rate_sps(&A->m, sync_current_sps);
+            motor_enable(&A->m, true);
+        } else if (A->task != TASK_FEED && A->fault != FAULT_DRY_SPIN) {
             lane_start(A, TASK_FEED, sync_current_sps, true, g_now_ms, 0);
         } else {
             A->current_sps = sync_current_sps;
@@ -3013,6 +3023,26 @@ int main(void) {
     }
     prev_lane1_in_present = lane_in_present(&g_lane_l1);
     prev_lane2_in_present = lane_in_present(&g_lane_l2);
+
+    // Stabilize buffer arm to MID position if not already there.
+    // TRAILING: retract (pull backward). ADVANCE: push (extend forward).
+    // This ensures the buffer starts in a neutral state.
+    if (BUF_SENSOR_TYPE == 0) {  // Only for dual-endstop buffer
+        buf_state_t buf_state = buf_read();
+        if (buf_state == BUF_TRAILING || buf_state == BUF_ADVANCE) {
+            lane_t *stab_lane = (active_lane == 1) ? &g_lane_l2 : &g_lane_l1;
+            bool forward = (buf_state == BUF_ADVANCE);  // ADVANCE -> push forward, TRAILING -> pull backward (reverse)
+            
+            // Start motor at neutral speed
+            lane_start(stab_lane, TASK_FEED, TRAILING_SPS, forward, 0, 0);
+            
+            // Run for 2 seconds to allow arm to settle to MID
+            sleep_ms(2000);
+            
+            motor_stop(&stab_lane->m);
+            stab_lane->task = TASK_IDLE;
+        }
+    }
 
     while (true) {
         g_now_ms = to_ms_since_boot(get_absolute_time());
