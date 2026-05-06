@@ -3009,6 +3009,8 @@ int main(void) {
         din_update(&g_lane_l2.in_sw);
         din_update(&g_lane_l2.out_sw);
         din_update(&g_y_split);
+        din_update(&g_buf_adv_din);
+        din_update(&g_buf_trl_din);
         sleep_ms(1);
     }
 
@@ -3030,11 +3032,12 @@ int main(void) {
     if (BUF_SENSOR_TYPE == 0) {  // Only for dual-endstop buffer
         buf_state_t buf_state = buf_read();
         if (buf_state == BUF_TRAILING || buf_state == BUF_ADVANCE) {
+            uint32_t boot_now_ms = to_ms_since_boot(get_absolute_time());
             lane_t *stab_lane = (active_lane == 1) ? &g_lane_l2 : &g_lane_l1;
             bool forward = (buf_state == BUF_ADVANCE);  // ADVANCE -> push forward, TRAILING -> pull backward (reverse)
             
             // Start motor at neutral speed
-            lane_start(stab_lane, TASK_FEED, TRAILING_SPS, forward, 0, 0);
+            lane_start(stab_lane, TASK_FEED, TRAILING_SPS, forward, boot_now_ms, 0);
             
             // Run for 2 seconds to allow arm to settle to MID
             sleep_ms(2000);
