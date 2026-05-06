@@ -325,7 +325,7 @@ def run_collection(args, ser, baseline=None):
                                 print(f"\n[!] DIVERGENCE DETECTED: buffer in {buf_state} for {stuck_duration_ms:.0f}ms (SGTHRS={current_sgthrs})")
                                 
                                 # If auto-recovery enabled, start buffer stabilization
-                                if args.disable_buffer_threshold_ms > 0:
+                                if args.buffer_recovery_threshold_ms > 0:
                                     print("[*] Enabling buffer feedback for stabilization...")
                                     send_wait(ser, "SET:SYNC_SG_INTERP:0")  # Disable SG-only, enable normal buffer sync
                                     divergence_state['recovery_active'] = True
@@ -394,7 +394,7 @@ def main():
       python3 scripts/sg_tuner.py --baseline=e3d_revo --buffer-stuck-ms=5000 --on-divergence=pause
       
       # Tuning with auto-recovery (enable buffer sync when stuck, stabilize, resume SG tuning)
-      python3 scripts/sg_tuner.py --baseline=e3d_revo --disable-buffer-threshold-ms=5000
+      python3 scripts/sg_tuner.py --baseline=e3d_revo --buffer-recovery-threshold-ms=5000
       
       # Tuning with auto-stop on divergence (exit immediately if buffer gets stuck)
       python3 scripts/sg_tuner.py --baseline=e3d_revo --buffer-stuck-ms=5000 --on-divergence=stop
@@ -426,7 +426,7 @@ def main():
                         help="Divergence timeout (ms). 0=disabled, 5000=5s (default: 0 - disabled)")
     parser.add_argument("--on-divergence", choices=['warn', 'pause', 'stop'], default='warn',
                         help="Action on divergence: warn (print only), pause (stop sweep, keep recording), stop (exit). Default: warn")
-    parser.add_argument("--disable-buffer-threshold-ms", type=int, default=0,
+    parser.add_argument("--buffer-recovery-threshold-ms", type=int, default=0,
                         help="Auto-recovery threshold (ms). When buffer stuck >this long, enable buffer sync to stabilize, then resume SG tuning. 0=disabled (default), 5000=5s")
     parser.add_argument("--klipper-log", 
                         default=os.path.expanduser("~/printer_data/logs/klippy.log"),
