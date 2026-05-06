@@ -84,6 +84,7 @@ divergence_state = {
     'last_mid_time': 0,        # Timestamp when buffer was last in MID
     'buf_state_count': 0,      # Samples in current non-MID state
     'swept_paused': False,     # True if sweep was paused due to divergence
+    'recovery_active': False,  # True when buffer recovery in progress (buffer sync enabled)
     'lock': threading.Lock()
 }
 
@@ -307,22 +308,38 @@ def run_collection(args, ser, baseline=None):
                 if args.buffer_stuck_ms > 0:
                     with divergence_state['lock']:
                         if buf_state == 'MID':
+                            # Buffer returned to MID — recovery successful
+                            if divergence_state['recovery_active']:
+                                print("[*] Buffer stabilized in MID. Resuming SG tuning.")
+                                send_wait(ser, "SET:SYNC_SG_INTERP:1")  # Re-enable SG-only mode
+                                divergence_state['recovery_active'] = False
+                                divergence_state['swept_paused'] = False
                             divergence_state['last_mid_time'] = now
                             divergence_state['buf_state_count'] = 0
                         else:
                             divergence_state['buf_state_count'] += 1
                             stuck_duration_ms = (now - divergence_state['last_mid_time']) * 1000
                             
-                            if stuck_duration_ms > args.buffer_stuck_ms and not divergence_state['swept_paused']:
+                            # Divergence detected: buffer stuck too long
+                            if stuck_duration_ms > args.buffer_stuck_ms and not divergence_state['swept_paused'] and not divergence_state['recovery_active']:
                                 print(f"\n[!] DIVERGENCE DETECTED: buffer in {buf_state} for {stuck_duration_ms:.0f}ms (SGTHRS={current_sgthrs})")
-                                divergence_state['swept_paused'] = True
                                 
-                                if args.on_divergence == 'stop':
-                                    sync_context['stop_requested'] = True
-                                    print("[*] Auto-stopping tuning.")
-                                elif args.on_divergence == 'pause':
-                                    print("[*] Pausing SGTHRS sweep (will continue recording).")
-                                # 'warn' just prints and continues
+                                # If auto-recovery enabled, start buffer stabilization
+                                if args.disable_buffer_threshold_ms > 0:
+                                    print("[*] Enabling buffer feedback for stabilization...")
+                                    send_wait(ser, "SET:SYNC_SG_INTERP:0")  # Disable SG-only, enable normal buffer sync
+                                    divergence_state['recovery_active'] = True
+                                    divergence_state['swept_paused'] = True
+                                else:
+                                    # No auto-recovery; handle as regular divergence
+                                    divergence_state['swept_paused'] = True
+                                    
+                                    if args.on_divergence == 'stop':
+                                        sync_context['stop_requested'] = True
+                                        print("[*] Auto-stopping tuning.")
+                                    elif args.on_divergence == 'pause':
+                                        print("[*] Pausing SGTHRS sweep (will continue recording).")
+                                    # 'warn' just prints and continues
                 
                 # Sweep control: every step_interval seconds, change SGTHRS if motor is actively feeding
                 # Only sweep during active feed (task==FEED and speed>100) to collect meaningful SG data
@@ -376,8 +393,17 @@ def main():
       # Tuning with auto-pause on divergence (keep recording, stop SGTHRS changes)
       python3 scripts/sg_tuner.py --baseline=e3d_revo --buffer-stuck-ms=5000 --on-divergence=pause
       
+      # Tuning with auto-recovery (enable buffer sync when stuck, stabilize, resume SG tuning)
+      python3 scripts/sg_tuner.py --baseline=e3d_revo --disable-buffer-threshold-ms=5000
+      
       # Tuning with auto-stop on divergence (exit immediately if buffer gets stuck)
       python3 scripts/sg_tuner.py --baseline=e3d_revo --buffer-stuck-ms=5000 --on-divergence=stop
+      
+      # Tune Lane 2, no Klipper log tailing
+      python3 scripts/sg_tuner.py --lane=2 --klipper-log=\"\"
+      
+      # Tune with wider sweep range
+      python3 scripts/sg_tuner.py --baseline=my_motor --sgthrs-offset-min=-20 --sgthrs-offset-max=20
       
       # Tune Lane 2, no Klipper log tailing
       python3 scripts/sg_tuner.py --lane=2 --klipper-log=""
@@ -400,6 +426,8 @@ def main():
                         help="Divergence timeout (ms). 0=disabled, 5000=5s (default: 0 - disabled)")
     parser.add_argument("--on-divergence", choices=['warn', 'pause', 'stop'], default='warn',
                         help="Action on divergence: warn (print only), pause (stop sweep, keep recording), stop (exit). Default: warn")
+    parser.add_argument("--disable-buffer-threshold-ms", type=int, default=0,
+                        help="Auto-recovery threshold (ms). When buffer stuck >this long, enable buffer sync to stabilize, then resume SG tuning. 0=disabled (default), 5000=5s")
     parser.add_argument("--klipper-log", 
                         default=os.path.expanduser("~/printer_data/logs/klippy.log"),
                         help="Klipper log path for NOSF_TUNE markers. Default: ~/printer_data/logs/klippy.log")
