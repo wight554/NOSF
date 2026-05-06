@@ -99,3 +99,21 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 | `RELOAD_MODE`| `reload_mode` | Enable autonomous RELOAD behavior (Auto-Swap) | 0 |
 | `SYNC_AUTO_STOP` | `sync_auto_stop` | Disable sync if idle for X ms | 2000 |
 | `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |
+
+---
+
+## Events (`EV:`)
+
+| Event | Data | Description |
+|-------|------|-------------|
+| `RUNOUT` | `lane` | Filament runout detected on specified lane. |
+| `LOADED` | `lane` | Filament successfully reached the toolhead/gears. |
+| `UNLOADED`| `lane` | Filament successfully retracted past the OUT or IN sensor. |
+| `ACTIVE` | `lane\|NONE`| Reported when the active lane changes. |
+| `FAULT:STALL`| `lane` | Hard motor stall detected (StallGuard DIAG). |
+| `FAULT:DRY_SPIN`| `lane` | Motor spinning > 8s without filament (`IN` clear). |
+| `SYNC` | `AUTO_START\|AUTO_STOP` | Automatic sync state transitions. |
+
+### Fault Recovery
+Most faults (`STALL`, `TIMEOUT`) are transient and reset on the next command.
+**`FAULT:DRY_SPIN`** is sticky: it blocks automatic background tasks (Sync, RELOAD follow) to prevent motor wear. It clears automatically when a new spool is inserted (`IN` sensor triggers) or when a manual load command (`LO:`, `FL:`, etc.) is issued.

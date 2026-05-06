@@ -231,3 +231,28 @@ Buffer sync is managed automatically based on toolhead filament state.
 | `UL:`, `UM:`, or `TC:` unload starts | disabled |
 | `FL:` command reloadued | disabled |
 | `ST:` command | disabled |
+---
+
+## Dry Spin Protection
+
+To prevent indefinite motor wear if filament is lost or snapped mid-task, the firmware implements a global "Dry Spin" watchdog.
+
+**Conditions for `FAULT:DRY_SPIN`:**
+- Motor is spinning (`task != TASK_IDLE`).
+- `IN` sensor is clear (no filament present at intake).
+- Buffer is **not** in `BUF_ADVANCE` (the printer is not successfully pulling a remaining tail).
+- This state persists for > 8 seconds.
+
+**Effects:**
+- Motor stops immediately.
+- `EV:FAULT:DRY_SPIN` is emitted.
+- The lane enters a sticky fault state.
+
+**Interlocks:**
+While in `FAULT_DRY_SPIN`, automatic background tasks are blocked:
+- **Sync Mode**: `sync_apply_to_active` will not restart the motor if it is faulted.
+- **RELOAD Follow**: `TC_RELOAD_FOLLOW` will not restart the motor if it is faulted.
+
+**Clearing the Fault:**
+- **Manual Override**: Any manual motion command (`LO:`, `FL:`, `FD:`, etc.) automatically clears the fault and starts the requested task.
+- **Auto-Reset**: Inserting new filament (`IN` sensor trigger) clears the fault, allowing `AUTO_PRELOAD` or `AUTO_LOAD` to proceed.

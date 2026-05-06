@@ -313,7 +313,8 @@ typedef enum {
     FAULT_TIMEOUT,
     FAULT_SENSOR,
     FAULT_BUF,
-    FAULT_CUT
+    FAULT_CUT,
+    FAULT_DRY_SPIN
 } fault_t;
 
 typedef struct lane_s {
@@ -843,11 +844,13 @@ static void lane_tick(lane_t *L, uint32_t now_ms) {
         }
     }
 
-    // Global Dry Spin Protection: if motor is spinning but IN is clear for > 20s, stop.
-    if (L->task != TASK_IDLE && !lane_in_present(L)) {
+    // Global Dry Spin Protection: if motor is spinning but IN is clear for > 8s, stop.
+    // Suppress if buffer is in ADVANCE (printer is successfully pulling the tail).
+    if (L->task != TASK_IDLE && !lane_in_present(L) && g_buf.state != BUF_ADVANCE) {
         if (L->dry_spin_ms == 0) L->dry_spin_ms = now_ms;
-        if ((int32_t)(now_ms - L->dry_spin_ms) > 20000) {
+        if ((int32_t)(now_ms - L->dry_spin_ms) > 8000) {
             lane_stop(L);
+            L->fault = FAULT_DRY_SPIN;
             cmd_event("FAULT:DRY_SPIN", lane_s);
         }
     } else {
@@ -1248,17 +1251,24 @@ static void tc_tick(uint32_t now_ms) {
             }
             break;
 
-        case TC_RELOAD_WAIT_Y:
-            // Old filament tail exited OUT; wait for it to clear the Y-splitter
-            // before starting the standby lane.
-            if (!on_al(&g_y_split) || RELOAD_Y_TIMEOUT_MS == 0) {
+        case TC_RELOAD_WAIT_Y: {
+            // Old filament tail might still be in the MMU gears. 
+            // Keep pushing at a safe speed until it clears the mechanism.
+            lane_t *FL = lane_ptr(g_tc_ctx.from_lane);
+            if (FL && lane_out_present(FL)) {
+                if (FL->task != TASK_FEED) lane_start(FL, TASK_FEED, TRAILING_SPS, true, now_ms, 0);
+            } else if (FL && FL->task == TASK_FEED) {
+                lane_stop(FL);
+            }
+
+            // Once the MMU mechanism is clear, wait for the tail to clear the Y-splitter.
+            if ((!FL || !lane_out_present(FL)) && (!on_al(&g_y_split) || RELOAD_Y_TIMEOUT_MS == 0)) {
                 char lane_s[2] = { (char)('0' + g_tc_ctx.target_lane), 0 };
                 set_active_lane(g_tc_ctx.target_lane);
                 lane_t *NL = lane_ptr(active_lane);
                 cmd_event("RELOAD:JOINING", lane_s);
                 // State 1: fast approach — contact detected by SG derivative.
                 lane_start(NL, TASK_FEED, JOIN_SPS, true, now_ms, 2000.0f); // Default 2m approach
-                // Arm stall immediately — STARTUP_MS warmup is for sync mode.
                 NL->stall_armed = true;
                 // Zero RELOAD ctx fields for fresh approach.
                 g_tc_ctx.reload_tick_ms = now_ms;
@@ -1272,6 +1282,7 @@ static void tc_tick(uint32_t now_ms) {
                 tc_enter_error("RELOAD_Y_TIMEOUT");
             }
             break;
+        }
 
         case TC_RELOAD_APPROACH: {
             // State 1: Fast Approach & Soft Crash Detection.
@@ -1412,12 +1423,15 @@ static void tc_tick(uint32_t now_ms) {
             // Drive motor.
             if (A) {
                 if (g_tc_ctx.reload_current_sps > 0) {
-                    if (A->task != TASK_FEED)
+                    if (A->task != TASK_FEED && A->fault != FAULT_DRY_SPIN)
                         lane_start(A, TASK_FEED, g_tc_ctx.reload_current_sps, true, now_ms, 0);
                     else
                         motor_set_rate_sps(&A->m, g_tc_ctx.reload_current_sps);
                 } else if (A->task == TASK_FEED) {
-                    lane_stop(A);
+                    motor_stop(&A->m);
+                    A->current_sps = 0;
+                    A->target_sps = 0;
+                    tmc_set_spreadcycle(A->tmc, TMC_SPREADCYCLE[A->lane_id - 1]);
                 }
                 // Stall during follow: contact spike or hard obstruction.
                 if (A->fault == FAULT_STALL) {
@@ -1491,6 +1505,7 @@ static void autopreload_tick(uint32_t now_ms) {
     bool mmu_empty = !lane_out_present(&g_lane_l1) && !lane_out_present(&g_lane_l2);
 
     if (in1 && !prev_lane1_in_present) {
+        if (g_lane_l1.fault == FAULT_DRY_SPIN) g_lane_l1.fault = FAULT_NONE;
         if (g_lane_l1.task == TASK_IDLE && (tc_state() == TC_IDLE || tc_state() == TC_RELOAD_FOLLOW) && !cutter_busy() && !lane_out_present(&g_lane_l1)) {
             if (AUTO_MODE && mmu_empty) {
                 // Completely empty MMU: auto-load all the way to toolhead.
@@ -1506,6 +1521,7 @@ static void autopreload_tick(uint32_t now_ms) {
     }
 
     if (in2 && !prev_lane2_in_present) {
+        if (g_lane_l2.fault == FAULT_DRY_SPIN) g_lane_l2.fault = FAULT_NONE;
         if (g_lane_l2.task == TASK_IDLE && (tc_state() == TC_IDLE || tc_state() == TC_RELOAD_FOLLOW) && !cutter_busy() && !lane_out_present(&g_lane_l2)) {
             if (AUTO_MODE && mmu_empty) {
                 lane_start(&g_lane_l2, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
@@ -1643,7 +1659,7 @@ static void sync_apply_to_active(void) {
     if (A->task == TASK_MOVE) return;  // don't clobber an in-progress timed move
 
     if (sync_current_sps > 0) {
-        if (A->task != TASK_FEED) {
+        if (A->task != TASK_FEED && A->fault != FAULT_DRY_SPIN) {
             lane_start(A, TASK_FEED, sync_current_sps, true, g_now_ms, 0);
         } else {
             A->current_sps = sync_current_sps;
