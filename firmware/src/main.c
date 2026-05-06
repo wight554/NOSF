@@ -42,7 +42,7 @@ static int RELOAD_TOUCH_FLOOR_PCT = CONF_RELOAD_TOUCH_FLOOR_PCT;
 static int SG_DERIV[NUM_LANES] = {CONF_L1_SG_DERIV, CONF_L2_SG_DERIV};
 static float SG_TARGET[NUM_LANES] = {CONF_L1_SG_TARGET, CONF_L2_SG_TARGET};
 static int BUF_STAB_SPS = 0;
-static int FOLLOW_TIMEOUT_MS[NUM_LANES] = {CONF_L1_FOLLOW_TIMEOUT_MS, CONF_L2_FOLLOW_TIMEOUT_MS};
+static int FOLLOW_TIMEOUT_MS[NUM_LANES] = {30000, 30000};
 
 static int RAMP_STEP_SPS = CONF_RAMP_STEP_SPS;
 static int RAMP_TICK_MS = CONF_RAMP_TICK_MS;
@@ -1350,6 +1350,7 @@ static void tc_tick(uint32_t now_ms) {
                 char lane_s[2] = { (char)('0' + g_tc_ctx.target_lane), 0 };
                 set_active_lane(g_tc_ctx.target_lane);
                 lane_t *NL = lane_ptr(active_lane);
+                if (FL) lane_stop(FL); // Ensure old lane is fully stopped
                 cmd_event("RELOAD:JOINING", lane_s);
                 // State 1: approach at current FEED rate until contact.
                 // This keeps swap timing aligned with active print feed.
@@ -1570,11 +1571,13 @@ static void tc_tick(uint32_t now_ms) {
                     g_tc_ctx.last_reload_stall_ms = now_ms;
                     g_tc_ctx.reload_current_sps = TRAILING_SPS;
 
-                    if (g_tc_ctx.reload_stall_count >= 3) {
+                    if (g_tc_ctx.reload_stall_count >= 10) {
                         tc_enter_error("FOLLOW_JAM");
                         lane_stop(A);
                         break;
                     }
+                    // Reset fault so sync_tick or tc_tick can restart it next loop
+                    A->fault = FAULT_NONE;
                 }
             }
 
@@ -1958,8 +1961,8 @@ static void sync_tick(uint32_t now_ms) {
         // - Normal sync: gentle proportional recovery toward MID (continuous motion)
         bool is_reload_mode = (g_tc_ctx.state == TC_RELOAD_FOLLOW);
         if (is_reload_mode) {
-            // RELOAD: bang-bang — hard stop maintains filament tip against previous tail
-            sync_current_sps = 0;
+            // RELOAD: follow the tc_tick speed ramp (which might be 0 if TRAILING)
+            sync_current_sps = g_tc_ctx.reload_current_sps;
         } else if (sync_fast_brake_until_ms != 0 && now_ms < sync_fast_brake_until_ms) {
             // Brief hard brake after ADVANCE->TRAILING to react to sudden flow drops.
             sync_current_sps = 0;
