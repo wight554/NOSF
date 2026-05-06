@@ -122,7 +122,7 @@ static inline int mm_per_min_to_sps(float mm_per_min) {
     return mm_per_min_to_sps_idx(mm_per_min, 0);
 }
 static inline float sps_to_mm_per_min_idx(int sps, int idx) {
-    return (float)sps * MM_PER_STEP[idx] * 60.0f;
+    return (float)sps * MM_PER_STEP[idx] * 60.0f + 0.05f; // Small offset for display rounding
 }
 static inline float sps_to_mm_per_min(int sps) {
     return sps_to_mm_per_min_idx(sps, 0);
@@ -2678,6 +2678,11 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "AUTOLOAD_MAX")) snprintf(out, sizeof(out), "AUTOLOAD_MAX:%d", AUTOLOAD_MAX_MM);
         else if (!strcmp(param, "LOAD_MAX"))     snprintf(out, sizeof(out), "LOAD_MAX:%d", LOAD_MAX_MM);
         else if (!strcmp(param, "UNLOAD_MAX"))   snprintf(out, sizeof(out), "UNLOAD_MAX:%d", UNLOAD_MAX_MM);
+        else if (!strcmp(param, "TC_LOAD_MS"))   snprintf(out, sizeof(out), "TC_LOAD_MS:%d", LOAD_MAX_MM);
+        else if (!strcmp(param, "TC_UNLOAD_MS")) snprintf(out, sizeof(out), "TC_UNLOAD_MS:%d", UNLOAD_MAX_MM);
+        else if (!strcmp(param, "TC_CUT_MS"))    snprintf(out, sizeof(out), "TC_CUT_MS:%d", TC_TIMEOUT_CUT_MS);
+        else if (!strcmp(param, "TC_TH_MS"))     snprintf(out, sizeof(out), "TC_TH_MS:%d", TC_TIMEOUT_TH_MS);
+        else if (!strcmp(param, "TC_Y_MS"))      snprintf(out, sizeof(out), "TC_Y_MS:%d", TC_TIMEOUT_Y_MS);
         else if (!strcmp(param, "SYNC_KP_RATE"))     snprintf(out, sizeof(out), "SYNC_KP_RATE:%.1f", (double)sps_to_mm_per_min(SYNC_KP_SPS));
         else if (!strcmp(param, "SYNC_AUTO_STOP"))   snprintf(out, sizeof(out), "SYNC_AUTO_STOP:%d", SYNC_AUTO_STOP_MS);
         else if (!strcmp(param, "TS_BUF_MS"))    snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
