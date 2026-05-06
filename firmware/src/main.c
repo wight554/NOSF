@@ -3053,16 +3053,28 @@ int main(void) {
         buf_state_t buf_state = buf_read();
         if (buf_state == BUF_TRAILING || buf_state == BUF_ADVANCE) {
             uint32_t boot_now_ms = to_ms_since_boot(get_absolute_time());
-            lane_t *stab_lane = (active_lane == 1) ? &g_lane_l2 : &g_lane_l1;
+            lane_t *stab_lane = lane_ptr(active_lane);
+            if (!stab_lane) {
+                // Prefer lane that already has filament past OUT; it is physically on the buffer path.
+                if (lane_out_present(&g_lane_l1) && !lane_out_present(&g_lane_l2)) stab_lane = &g_lane_l1;
+                else if (lane_out_present(&g_lane_l2) && !lane_out_present(&g_lane_l1)) stab_lane = &g_lane_l2;
+                else stab_lane = &g_lane_l1;
+            }
             bool forward = (buf_state == BUF_ADVANCE);  // ADVANCE -> push forward, TRAILING -> pull backward (reverse)
             
             // Start motor at low speed to gently move buffer toward MID
             lane_start(stab_lane, TASK_FEED, TRAILING_SPS, forward, boot_now_ms, 0);
+            // During boot there is no lane_tick ramp yet, so apply target speed immediately.
+            stab_lane->current_sps = stab_lane->target_sps;
+            motor_set_rate_sps(&stab_lane->m, stab_lane->current_sps);
             
             // Run until buffer settles to ±25% of center, or 10 second timeout
             uint32_t stab_deadline = boot_now_ms + 10000;
             uint32_t last_check_ms = boot_now_ms;
             while ((int32_t)(to_ms_since_boot(get_absolute_time()) - stab_deadline) < 0) {
+                // Keep debounced buffer inputs live during pre-main-loop stabilization.
+                din_update(&g_buf_adv_din);
+                din_update(&g_buf_trl_din);
                 // Check buffer position every 100ms
                 uint32_t now_ms = to_ms_since_boot(get_absolute_time());
                 if ((int32_t)(now_ms - last_check_ms) >= 100) {
