@@ -39,6 +39,7 @@ run_current:
 # feed_rate: 2100
 # rev_rate: 2100
 # auto_rate: 2100
+# buf_stab_rate: 600         # stabilization speed (boot + UL advance recovery)
 # sync_max_rate: 2500
 # sync_min_rate: 0
 # pre_ramp_rate: 35

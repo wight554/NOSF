@@ -106,17 +106,19 @@ Every runtime parameter that must survive reboot goes through `settings_t`.
 
 **To add a new runtime parameter — complete checklist:**
 
-1. Add `CONF_` constant to `firmware/include/config.h`
-2. Add `static` runtime var to `main.c` top: `static int MY_PARAM = CONF_MY_PARAM;`
-3. Add field to `settings_t` struct (around line 1660)
-4. Add to `settings_defaults()`: `MY_PARAM = CONF_MY_PARAM;`
-5. Add to `settings_save()`: `s.my_param = MY_PARAM;`
-6. Add to `settings_load()`: `MY_PARAM = s->my_param;`
-7. If the value must be written to hardware on load, add to the hardware-apply
+1. Add key to `config.ini.example` (and `config.ini` when needed).
+2. Add default key to `scripts/gen_config.py` `DEFAULTS` and emit `CONF_*` in generated output.
+3. Regenerate `firmware/include/tune.h` with `python3 scripts/gen_config.py`.
+4. Add `static` runtime var to `main.c` top: `static int MY_PARAM = CONF_MY_PARAM;`
+5. Add field to `settings_t` struct (around line 1660)
+6. Add to `settings_defaults()`: `MY_PARAM = CONF_MY_PARAM;`
+7. Add to `settings_save()`: `s.my_param = MY_PARAM;`
+8. Add to `settings_load()`: `MY_PARAM = s->my_param;`
+9. If the value must be written to hardware on load, add to the hardware-apply
    block after `settings_load()` (search for `tmc_set_sgthrs` for an example)
-8. Add `SET:` handler (search for `!strcmp(param, "STARTUP_MS")` for location)
-9. Add `GET:` handler (search for `snprintf(out` block)
-10. **Bump `SETTINGS_VERSION`** at line ~1659
+10. Add `SET:` handler (search for `!strcmp(param, "STARTUP_MS")` for location)
+11. Add `GET:` handler (search for `snprintf(out` block)
+12. **Bump `SETTINGS_VERSION`** at line ~1659
 
 Current `SETTINGS_VERSION`: **21** (grep `main.c` to confirm before bumping)
 

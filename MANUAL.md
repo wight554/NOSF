@@ -85,7 +85,7 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 | `FEED_RATE` | `feed_rate` | Standard feeding speed | 4000 |
 | `REV_RATE` | `rev_rate` | Standard retract speed | 4000 |
 | `AUTO_RATE` | `auto_rate` | Preload speed (`LO:`) | 2000 |
-| `BUF_STAB_RATE` | n/a | Buffer stabilization speed for boot neutralization and UL advance-recovery move | 600 |
+| `BUF_STAB_RATE` | `buf_stab_rate` | Buffer stabilization speed for boot neutralization and UL advance-recovery move | 600 |
 | `JOIN_RATE` | `join_rate` | RELOAD: Fast approach speed | 2000 |
 | `PRESS_RATE` | `press_rate` | RELOAD: Slow follow-sync speed | 1000 |
 | `SYNC_MAX_RATE` | `sync_max_rate` | Max speed allowed during sync | 20000 |

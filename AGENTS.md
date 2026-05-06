@@ -94,7 +94,11 @@ the context budget for code reading instead.
    ensure that parameter names, units, and command formats remain perfectly
    synchronized. If you change a parameter name in code, you MUST update it
    everywhere in the docs.
-7. **MANDATORY: Always specify model when referencing tools or agents.** 
+7. **MANDATORY: Runtime tunables live in `config.ini`** — Do not introduce
+   runtime tuning defaults only in firmware C headers. Add/update keys in
+   `config.ini` / `config.ini.example`, wire them through `scripts/gen_config.py`
+   into `firmware/include/tune.h`, then consume `CONF_*` in firmware.
+8. **MANDATORY: Always specify model when referencing tools or agents.** 
    Any time you mention using a tool, agent, or list what you're doing, include the exact model name.
    Examples: "I'll search the codebase (Claude Haiku 4.5)", commit message footer: `Generated-By: GitHub Copilot (Claude Haiku 4.5)`.
    This creates an audit trail and helps the user understand the capabilities and limitations of each decision.
