@@ -119,7 +119,7 @@ Examples:
 python3 scripts/nosf_cmd.py "VR:" "?:"
 python3 scripts/nosf_cmd.py "SET:JOIN_RATE:1600" "SV:"
 
-# Read all live parameters as config.ini (copy-paste ready)
+# Read a full live settings snapshot as config-style key/value output
 python3 scripts/nosf_cmd.py --dump
 
 # Terse key: value dump

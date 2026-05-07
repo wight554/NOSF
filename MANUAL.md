@@ -106,10 +106,14 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `PRESS_RATE` | `press_rate` | RELOAD: Slow follow-sync speed | 1200 |
 | `SYNC_HARD_MAX_RATE` | `sync_hard_max_rate` | Absolute sync speed ceiling (independent of `SYNC_MAX_RATE`) | 2500 |
 | `SYNC_MAX_RATE` | `sync_max_rate` | Max speed allowed during sync | 20000 |
+| `BASELINE_RATE` | `baseline_rate` | Sync bootstrap and conservative baseline speed | 2100 |
 
 ### Smarter Sync (Estimator)
 | Parameter | `config.ini` Key | Description | Default |
 |-----------|------------------|-------------|---------|
+| `SYNC_TICK_MS` | `sync_tick_ms` | Period between sync-controller updates | 20 |
+| `BASELINE_ALPHA` | `baseline_alpha` | Settled-MID baseline adaptation factor | 0.15 |
+| `BUF_PREDICT_THR_MS` | `buf_predict_thr_ms` | MID-dwell threshold used by advance prediction | 250 |
 | `EST_ALPHA_MIN`| `est_alpha_min` | Estimator responsiveness for slow drifts | 0.10 |
 | `EST_ALPHA_MAX`| `est_alpha_max` | Estimator responsiveness for sharp jumps | 0.60 |
 | `ZONE_BIAS_BASE`| `zone_bias_base_rate`| Base centering pull (mm/min) | 100 |
@@ -120,14 +124,21 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 ### Safety & Timeouts
 | Parameter | `config.ini` Key | Description | Default |
 |-----------|------------------|-------------|---------|
+| `RAMP_TICK_MS` | `ramp_tick_ms` | Period between lane acceleration ramp steps | 5 |
 | `LOAD_MAX` | `load_max_mm` | Max distance for `FL:` or **Auto-Load** | 3000 |
 | `UNLOAD_MAX` | `unload_max_mm` | Max distance for `UL:`, `UM:` | 3000 |
 | `AUTO_MODE` | `auto_mode` | Enable autonomous Flow (Auto-Sync, Toolhead load) | 1 |
 | `AUTO_PRELOAD`| `auto_preload` | Enable parking preload on insertion | 1 |
 | `RELOAD_MODE`| `reload_mode` | Enable autonomous RELOAD behavior (Auto-Swap) | 0 |
+| `RUNOUT_COOLDOWN_MS` | `runout_cooldown_ms` | Cooldown before another runout can be reported on the same lane | 12000 |
 | `SYNC_OVERSHOOT_PCT` | `sync_overshoot_pct` | ADVANCE-only extra push as percent of sync KP correction (0..200) | 50 |
 | `SYNC_AUTO_STOP` | `sync_auto_stop_ms` | Auto-mode only: disable auto-started sync after sustained `TRAILING` for X ms | 5000 |
 | `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |
+
+### Cutter / Servo
+| Parameter | `config.ini` Key | Description | Default |
+|-----------|------------------|-------------|---------|
+| `SERVO_BLOCK` | `servo_block_us` | Servo block position used between cutter phases | 950 |
 
 ---
 

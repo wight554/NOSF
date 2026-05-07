@@ -317,18 +317,23 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "SYNC_HARD_MAX_RATE")) {
             SYNC_HARD_MAX_SPS = clamp_i(mm_per_min_to_sps(fv), mm_per_min_to_sps(1000.0f), mm_per_min_to_sps(5000.0f));
             SYNC_MAX_SPS = sync_clamp_max_sps(SYNC_MAX_SPS);
-        } else if (!strcmp(base_param, "SYNC_MIN_RATE")) SYNC_MIN_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
+        }
+        else if (!strcmp(base_param, "SYNC_MIN_RATE")) SYNC_MIN_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
         else if (!strcmp(base_param, "SYNC_UP_RATE")) SYNC_RAMP_UP_SPS = clamp_i(mm_per_min_to_sps(fv), 1, 50000);
         else if (!strcmp(base_param, "SYNC_DN_RATE")) SYNC_RAMP_DN_SPS = clamp_i(mm_per_min_to_sps(fv), 1, 50000);
+        else if (!strcmp(base_param, "SYNC_TICK_MS")) SYNC_TICK_MS = clamp_i(iv, 1, 1000);
         else if (!strcmp(base_param, "RAMP_STEP_RATE")) RAMP_STEP_SPS = clamp_i(mm_per_min_to_sps(fv), 1, 10000);
+        else if (!strcmp(base_param, "RAMP_TICK_MS")) RAMP_TICK_MS = clamp_i(iv, 1, 1000);
         else if (!strcmp(base_param, "PRE_RAMP_RATE")) PRE_RAMP_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
         else if (!strcmp(base_param, "BUF_TRAVEL")) { BUF_HALF_TRAVEL_MM = fv < 1.0f ? 1.0f : fv > 50.0f ? 50.0f : fv; }
         else if (!strcmp(base_param, "BUF_HYST")) BUF_HYST_MS = clamp_i(iv, 5, 500);
+        else if (!strcmp(base_param, "BUF_PREDICT_THR_MS")) BUF_PREDICT_THR_MS = clamp_i(iv, 0, 10000);
         else if (!strcmp(base_param, "AUTO_PRELOAD")) AUTO_PRELOAD = (iv != 0);
         else if (!strcmp(base_param, "RETRACT_MM")) AUTOLOAD_RETRACT_MM = clamp_i(iv, 0, 50);
         else if (!strcmp(base_param, "CUTTER")) ENABLE_CUTTER = (iv != 0);
         else if (!strcmp(base_param, "AUTO_MODE")) AUTO_MODE = clamp_i(iv, 0, 1);
         else if (!strcmp(base_param, "RELOAD_MODE")) RELOAD_MODE = (iv != 0) ? 1 : 0;
+        else if (!strcmp(base_param, "RUNOUT_COOLDOWN_MS")) RUNOUT_COOLDOWN_MS = clamp_i(iv, 0, 60000);
         else if (!strcmp(base_param, "RELOAD_Y_MS")) RELOAD_Y_TIMEOUT_MS = clamp_i(iv, 100, 30000);
         else if (!strcmp(base_param, "DIST_IN_OUT")) DIST_IN_OUT = clamp_i(iv, 10, 5000);
         else if (!strcmp(base_param, "DIST_OUT_Y")) DIST_OUT_Y = clamp_i(iv, 0, 5000);
@@ -339,6 +344,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "PRESS_RATE")) PRESS_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
         else if (!strcmp(base_param, "TRAILING_RATE")) TRAILING_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
         else if (!strcmp(base_param, "BUF_STAB_RATE")) BUF_STAB_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
+        else if (!strcmp(base_param, "BASELINE_ALPHA")) g_baseline_alpha = clamp_f(fv, 0.0f, 1.0f);
         else if (!strcmp(base_param, "EST_ALPHA_MIN")) EST_ALPHA_MIN = clamp_f(fv, 0.01f, 1.0f);
         else if (!strcmp(base_param, "EST_ALPHA_MAX")) EST_ALPHA_MAX = clamp_f(fv, 0.01f, 1.0f);
         else if (!strcmp(base_param, "ZONE_BIAS_BASE")) ZONE_BIAS_BASE_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 5000);
@@ -374,6 +380,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "STARTUP_MS")) MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "SERVO_OPEN")) SERVO_OPEN_US = clamp_i(iv, 400, 2600);
         else if (!strcmp(base_param, "SERVO_CLOSE")) SERVO_CLOSE_US = clamp_i(iv, 400, 2600);
+        else if (!strcmp(base_param, "SERVO_BLOCK")) SERVO_BLOCK_US = clamp_i(iv, 400, 2600);
         else if (!strcmp(base_param, "SERVO_SETTLE")) SERVO_SETTLE_MS = clamp_i(iv, 100, 2000);
         else if (!strcmp(base_param, "CUT_FEED")) CUT_FEED_MM = clamp_i(iv, 1, 200);
         else if (!strcmp(base_param, "CUT_LEN")) CUT_LENGTH_MM = clamp_i(iv, 1, 50);
@@ -411,15 +418,19 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "SYNC_MIN_RATE")) snprintf(out, sizeof(out), "SYNC_MIN_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_MIN_SPS, idx));
         else if (!strcmp(param, "SYNC_UP_RATE")) snprintf(out, sizeof(out), "SYNC_UP_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_RAMP_UP_SPS, idx));
         else if (!strcmp(param, "SYNC_DN_RATE")) snprintf(out, sizeof(out), "SYNC_DN_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_RAMP_DN_SPS, idx));
+        else if (!strcmp(param, "SYNC_TICK_MS")) snprintf(out, sizeof(out), "SYNC_TICK_MS:%d", SYNC_TICK_MS);
         else if (!strcmp(param, "RAMP_STEP_RATE")) snprintf(out, sizeof(out), "RAMP_STEP_RATE:%.1f", (double)sps_to_mm_per_min_idx(RAMP_STEP_SPS, idx));
+        else if (!strcmp(param, "RAMP_TICK_MS")) snprintf(out, sizeof(out), "RAMP_TICK_MS:%d", RAMP_TICK_MS);
         else if (!strcmp(param, "PRE_RAMP_RATE")) snprintf(out, sizeof(out), "PRE_RAMP_RATE:%.1f", (double)sps_to_mm_per_min_idx(PRE_RAMP_SPS, idx));
         else if (!strcmp(param, "BUF_TRAVEL")) snprintf(out, sizeof(out), "BUF_TRAVEL:%.3f", (double)BUF_HALF_TRAVEL_MM);
         else if (!strcmp(param, "BUF_HYST")) snprintf(out, sizeof(out), "BUF_HYST:%d", BUF_HYST_MS);
+        else if (!strcmp(param, "BUF_PREDICT_THR_MS")) snprintf(out, sizeof(out), "BUF_PREDICT_THR_MS:%d", BUF_PREDICT_THR_MS);
         else if (!strcmp(param, "AUTO_PRELOAD")) snprintf(out, sizeof(out), "AUTO_PRELOAD:%d", AUTO_PRELOAD ? 1 : 0);
         else if (!strcmp(param, "RETRACT_MM")) snprintf(out, sizeof(out), "RETRACT_MM:%d", AUTOLOAD_RETRACT_MM);
         else if (!strcmp(param, "CUTTER")) snprintf(out, sizeof(out), "CUTTER:%d", ENABLE_CUTTER ? 1 : 0);
         else if (!strcmp(param, "AUTO_MODE")) snprintf(out, sizeof(out), "AUTO_MODE:%d", AUTO_MODE);
         else if (!strcmp(param, "RELOAD_MODE")) snprintf(out, sizeof(out), "RELOAD_MODE:%d", RELOAD_MODE);
+        else if (!strcmp(param, "RUNOUT_COOLDOWN_MS")) snprintf(out, sizeof(out), "RUNOUT_COOLDOWN_MS:%d", RUNOUT_COOLDOWN_MS);
         else if (!strcmp(param, "RELOAD_Y_MS")) snprintf(out, sizeof(out), "RELOAD_Y_MS:%d", RELOAD_Y_TIMEOUT_MS);
         else if (!strcmp(param, "DIST_IN_OUT")) snprintf(out, sizeof(out), "DIST_IN_OUT:%d", DIST_IN_OUT);
         else if (!strcmp(param, "DIST_OUT_Y")) snprintf(out, sizeof(out), "DIST_OUT_Y:%d", DIST_OUT_Y);
@@ -432,6 +443,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "BUF_STAB_RATE")) snprintf(out, sizeof(out), "BUF_STAB_RATE:%.1f", (double)sps_to_mm_per_min_idx(BUF_STAB_SPS, idx));
         else if (!strcmp(param, "FOLLOW_MS")) snprintf(out, sizeof(out), "FOLLOW_MS:%d", FOLLOW_TIMEOUT_MS[idx]);
         else if (!strcmp(param, "BASELINE_RATE")) snprintf(out, sizeof(out), "BASELINE_RATE:%.1f", (double)sps_to_mm_per_min_idx(g_baseline_sps, idx));
+        else if (!strcmp(param, "BASELINE_ALPHA")) snprintf(out, sizeof(out), "BASELINE_ALPHA:%.3f", (double)g_baseline_alpha);
         else if (!strcmp(param, "BUF_SENSOR")) snprintf(out, sizeof(out), "BUF_SENSOR:%d", BUF_SENSOR_TYPE);
         else if (!strcmp(param, "BUF_NEUTRAL")) snprintf(out, sizeof(out), "BUF_NEUTRAL:%.3f", (double)BUF_NEUTRAL);
         else if (!strcmp(param, "BUF_RANGE")) snprintf(out, sizeof(out), "BUF_RANGE:%.3f", (double)BUF_RANGE);
@@ -470,6 +482,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "HOLD_CURRENT_MA")) snprintf(out, sizeof(out), "HOLD_CURRENT_MA:%d", TMC_HOLD_CURRENT_MA[idx]);
         else if (!strcmp(param, "SERVO_OPEN")) snprintf(out, sizeof(out), "SERVO_OPEN:%d", SERVO_OPEN_US);
         else if (!strcmp(param, "SERVO_CLOSE")) snprintf(out, sizeof(out), "SERVO_CLOSE:%d", SERVO_CLOSE_US);
+        else if (!strcmp(param, "SERVO_BLOCK")) snprintf(out, sizeof(out), "SERVO_BLOCK:%d", SERVO_BLOCK_US);
         else if (!strcmp(param, "SERVO_SETTLE")) snprintf(out, sizeof(out), "SERVO_SETTLE:%d", SERVO_SETTLE_MS);
         else if (!strcmp(param, "CUT_FEED")) snprintf(out, sizeof(out), "CUT_FEED:%d", CUT_FEED_MM);
         else if (!strcmp(param, "CUT_LEN")) snprintf(out, sizeof(out), "CUT_LEN:%d", CUT_LENGTH_MM);

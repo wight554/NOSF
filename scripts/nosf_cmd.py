@@ -35,16 +35,16 @@ COMPLETION_EVENTS = {
 }
 
 # ---------------------------------------------------------------------------
-# Parameters to dump, grouped by config.ini section.
-# Each entry: (serial_cmd, config_key, lane_aware)
+# Parameters to dump, grouped by config snapshot section.
+# Each entry: (serial_cmd, output_key, lane_aware)
 # lane_aware=True  → fetched as CMD_L1 and CMD_L2, emitted as "key: L1, L2"
 # lane_aware=False → fetched once, emitted as "key: VALUE"
 # ---------------------------------------------------------------------------
 DUMP_PARAMS = [
     # (serial_cmd,        config.ini key,           lane_aware)
     # --- Motor / TMC ---
-    ("RUN_CURRENT_MA",    "run_current_ma",          True),
-    ("HOLD_CURRENT_MA",   "hold_current_ma",         True),
+    ("RUN_CURRENT_MA",    "run_current",             True),
+    ("HOLD_CURRENT_MA",   "hold_current",            True),
     ("MICROSTEPS",        "microsteps",              True),
     ("ROTATION_DIST",     "rotation_distance",       True),
     ("FULL_STEPS",        "full_steps_per_rotation", True),
@@ -60,37 +60,62 @@ DUMP_PARAMS = [
     ("FEED_RATE",         "feed_rate",               False),
     ("REV_RATE",          "rev_rate",                False),
     ("AUTO_RATE",         "auto_rate",               False),
+    ("BUF_STAB_RATE",     "buf_stab_rate",           False),
+    ("SYNC_HARD_MAX_RATE", "sync_hard_max_rate",     False),
     ("SYNC_MAX_RATE",     "sync_max_rate",           False),
     ("SYNC_MIN_RATE",     "sync_min_rate",           False),
-    ("PRE_RAMP_RATE",     "pre_ramp_rate",           False),
     ("JOIN_RATE",         "join_rate",               False),
     ("PRESS_RATE",        "press_rate",              False),
     ("TRAILING_RATE",     "trailing_rate",           False),
-    # --- Motion ---
+    # --- Motion / Ramp ---
     ("STARTUP_MS",        "motion_startup_ms",       False),
     ("RAMP_STEP_RATE",    "ramp_step_rate",          False),
-    ("FOLLOW_MS",         "follow_timeout_ms",       True),
+    ("RAMP_TICK_MS",      "ramp_tick_ms",            False),
+    ("PRE_RAMP_RATE",     "pre_ramp_rate",           False),
     # --- Buffer sync ---
     ("BUF_TRAVEL",        "buf_half_travel_mm",      False),
     ("BUF_HYST",          "buf_hyst_ms",             False),
     ("SYNC_UP_RATE",      "sync_ramp_up_rate",       False),
     ("SYNC_DN_RATE",      "sync_ramp_dn_rate",       False),
+    ("SYNC_TICK_MS",      "sync_tick_ms",            False),
+    ("BASELINE_RATE",     "baseline_rate",           False),
+    ("BASELINE_ALPHA",    "baseline_alpha",          False),
+    ("BUF_PREDICT_THR_MS", "buf_predict_thr_ms",     False),
     ("SYNC_KP_RATE",      "sync_kp_rate",            False),
+    ("SYNC_OVERSHOOT_PCT", "sync_overshoot_pct",     False),
+    ("SYNC_AUTO_STOP",    "sync_auto_stop_ms",       False),
+    # --- Smarter Sync ---
+    ("EST_ALPHA_MIN",     "est_alpha_min",           False),
+    ("EST_ALPHA_MAX",     "est_alpha_max",           False),
+    ("ZONE_BIAS_BASE",    "zone_bias_base_rate",     False),
+    ("ZONE_BIAS_RAMP",    "zone_bias_ramp_rate",     False),
+    ("ZONE_BIAS_MAX",     "zone_bias_max_rate",      False),
+    ("RELOAD_LEAN",       "reload_lean_factor",      False),
+    # --- Physical Model ---
+    ("DIST_IN_OUT",       "dist_in_out",             False),
+    ("DIST_OUT_Y",        "dist_out_y",              False),
+    ("DIST_Y_BUF",        "dist_y_buf",              False),
+    ("BUF_BODY_LEN",      "buf_body_len",            False),
+    ("BUF_SIZE",          "buf_size_mm",             False),
+    # --- Analog Buffer Sensor ---
     ("BUF_SENSOR",        "buf_sensor_type",         False),
     ("BUF_NEUTRAL",       "buf_neutral",             False),
     ("BUF_RANGE",         "buf_range",               False),
     ("BUF_THR",           "buf_thr",                 False),
     ("BUF_ALPHA",         "buf_analog_alpha",        False),
     ("TS_BUF_MS",         "ts_buf_fallback_ms",      False),
-    # --- Reload ---
+    # --- Flow / Reload ---
+    ("AUTO_MODE",         "auto_mode",               False),
     ("RELOAD_MODE",       "reload_mode",             False),
     ("RELOAD_Y_MS",       "reload_y_timeout_ms",     False),
-    # --- Safety ---
     ("AUTO_PRELOAD",      "auto_preload",            False),
+    # --- Safety ---
     ("AUTOLOAD_MAX",      "autoload_max_mm",         False),
     ("LOAD_MAX",          "load_max_mm",             False),
     ("UNLOAD_MAX",        "unload_max_mm",           False),
     ("RETRACT_MM",        "autoload_retract_mm",     False),
+    ("RUNOUT_COOLDOWN_MS", "runout_cooldown_ms",     False),
+    ("FOLLOW_MS",         "follow_timeout_ms",       True),
     # --- Timeouts ---
     ("TC_CUT_MS",         "tc_timeout_cut_ms",       False),
     ("TC_TH_MS",          "tc_timeout_th_ms",        False),
@@ -99,6 +124,7 @@ DUMP_PARAMS = [
     ("CUTTER",            "enable_cutter",           False),
     ("SERVO_OPEN",        "servo_open_us",           False),
     ("SERVO_CLOSE",       "servo_close_us",          False),
+    ("SERVO_BLOCK",       "servo_block_us",          False),
     ("SERVO_SETTLE",      "servo_settle_ms",         False),
     ("CUT_FEED",          "cut_feed_mm",             False),
     ("CUT_LEN",           "cut_length_mm",           False),
@@ -107,16 +133,43 @@ DUMP_PARAMS = [
 
 # Section boundaries for pretty-printing (config_key → section header)
 SECTION_BREAKS = {
-    "run_current_ma":      "# ─── Motor / TMC (per-lane) ────────────────────────────────────────────────",
+    "run_current":         "# ─── Motor / TMC (per-lane) ────────────────────────────────────────────────",
     "driver_tbl":          "# ─── TMC Chopper (per-lane) ────────────────────────────────────────────────",
     "feed_rate":           "# ─── Speeds (mm/min) ───────────────────────────────────────────────────────",
     "motion_startup_ms":   "# ─── Motion / Ramp ─────────────────────────────────────────────────────────",
     "buf_half_travel_mm":  "# ─── Buffer Sync ───────────────────────────────────────────────────────────",
-    "reload_mode":         "# ─── Reload Mode ───────────────────────────────────────────────────────────",
-    "auto_preload":        "# ─── Safety ────────────────────────────────────────────────────────────────",
+    "est_alpha_min":       "# ─── Smarter Sync (Estimator) ─────────────────────────────────────────────",
+    "dist_in_out":         "# ─── Physical Model (mm) ─────────────────────────────────────────────────",
+    "buf_sensor_type":     "# ─── Analog Buffer Sensor ─────────────────────────────────────────────────",
+    "auto_mode":           "# ─── Flow / Reload ────────────────────────────────────────────────────────",
+    "autoload_max_mm":     "# ─── Safety ────────────────────────────────────────────────────────────────",
     "tc_timeout_cut_ms":   "# ─── Toolchange Timeouts ───────────────────────────────────────────────────",
     "enable_cutter":       "# ─── Cutter / Servo ────────────────────────────────────────────────────────",
 }
+
+BOOL_KEYS = {
+    "interpolate",
+    "auto_mode",
+    "auto_preload",
+    "reload_mode",
+    "enable_cutter",
+}
+
+
+def format_dump_value(key, value):
+    if value == "?":
+        return value
+
+    if key in {"run_current", "hold_current"}:
+        try:
+            return f"{int(value) / 1000.0:.3f}"
+        except ValueError:
+            return value
+
+    if key in BOOL_KEYS:
+        return "True" if value not in ("0", "False", "false") else "False"
+
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +268,8 @@ def run_dump(args):
                 if resp and resp.startswith("OK:"):
                     # Response format: OK:CMD:VALUE
                     parts = resp.split(":", 2)
-                    vals.append(parts[2] if len(parts) >= 3 else "?")
+                    raw_val = parts[2] if len(parts) >= 3 else "?"
+                    vals.append(format_dump_value(key, raw_val))
                 else:
                     vals.append("?")
                     errors.append(f"GET:{cmd}{suffix} → {resp}")
@@ -228,7 +282,8 @@ def run_dump(args):
             resp = send_recv(ser, f"GET:{cmd}")
             if resp and resp.startswith("OK:"):
                 parts = resp.split(":", 2)
-                results[key] = parts[2] if len(parts) >= 3 else "?"
+                raw_val = parts[2] if len(parts) >= 3 else "?"
+                results[key] = format_dump_value(key, raw_val)
             else:
                 results[key] = "?"
                 errors.append(f"GET:{cmd} → {resp}")
