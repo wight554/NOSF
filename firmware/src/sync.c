@@ -524,7 +524,7 @@ void sync_tick(uint32_t now_ms) {
 
     if (!sync_enabled) return;
 
-    if (sync_auto_started) {
+    if (sync_auto_started && sync_tail_assist_active) {
         if (s != BUF_TRAILING) {
             sync_idle_since_ms = 0;
         } else {
@@ -537,6 +537,8 @@ void sync_tick(uint32_t now_ms) {
                 return;
             }
         }
+    } else {
+        sync_idle_since_ms = 0;
     }
 
     if ((now_ms - sync_last_tick_ms) < (uint32_t)SYNC_TICK_MS) return;

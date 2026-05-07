@@ -271,8 +271,9 @@ jam severity from driver load telemetry.
 ### Trailing behavior and auto-stop
 
 `BUF_TRAILING` is now a low-speed recovery state, not an immediate hard stop.
-Normal sync clamps toward `TRAILING_RATE`, and AUTO mode disables sync only if
-TRAILING persists for `SYNC_AUTO_STOP_MS`.
+Normal sync clamps toward `TRAILING_RATE`. `SYNC_AUTO_STOP_MS` now applies only
+to the tail-clear assist path described below, not to ordinary auto-started
+print sync.
 
 **AUTO sync sequence:**
 
@@ -284,9 +285,11 @@ TRAILING persists for `SYNC_AUTO_STOP_MS`.
 3. Once `OUT` clears in that assist path, firmware disables sync immediately
   and then continues with the normal `RUNOUT` / optional RELOAD handling.
 4. Normal sync runs from the estimator, bounded by buffer state.
-5. Sustained `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` disables sync and resets the
-   estimator to 0.
-6. The next `BUF_ADVANCE` event bootstraps sync again.
+5. If that tail-clear assist stays in `BUF_TRAILING` for `SYNC_AUTO_STOP_MS`, it
+  disables sync and resets the estimator to 0.
+6. Ordinary auto-started print sync stays active and remains bounded by the
+  normal trailing-rate and hard-wall protections.
+7. The next `BUF_ADVANCE` event bootstraps sync again.
 
 ---
 
@@ -299,7 +302,7 @@ load completion and RELOAD handover, but it is not the main sync controller.
 |-------|-----------|
 | `BUF_ADVANCE` while sync is off | enabled and bootstrapped |
 | `UL:`, `UM:`, or `TC:` unload starts | disabled |
-| sustained `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` | disabled and estimator reset |
+| tail-assist `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` | disabled and estimator reset |
 | `ST:` command | disabled |
 ---
 
