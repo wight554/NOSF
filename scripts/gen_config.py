@@ -102,6 +102,7 @@ DEFAULTS = {
     # Reload Mode
     "reload_mode": "0",
     "reload_y_timeout_ms": "10000",
+    "reload_join_delay_ms": "500",
     "trailing_rate": "90",
     "join_rate": "1600",
     "press_rate": "1200",
@@ -340,6 +341,7 @@ def main():
         f"#define CONF_UNLOAD_MAX_MM          {get('unload_max_mm')}",
         f"#define CONF_AUTOLOAD_MAX_MM        {get('autoload_max_mm')}",
         f"#define CONF_RELOAD_Y_TIMEOUT_MS   {get('reload_y_timeout_ms')}",
+        f"#define CONF_RELOAD_JOIN_DELAY_MS  {get('reload_join_delay_ms')}",
         f"#define CONF_AUTO_MODE              {1 if get_bool('auto_mode') else 0}",
         f"#define CONF_AUTO_PRELOAD           {1 if get_bool('auto_preload') else 0}",
         "",

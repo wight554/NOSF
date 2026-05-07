@@ -389,7 +389,19 @@ void tc_tick(uint32_t now_ms) {
                 lane_stop(from_lane_ptr);
             }
 
-            if ((!from_lane_ptr || !lane_out_present(from_lane_ptr)) && (!on_al(&g_y_split) || RELOAD_Y_TIMEOUT_MS == 0)) {
+            bool tail_cleared = (!from_lane_ptr || !lane_out_present(from_lane_ptr));
+            bool y_cleared = (!on_al(&g_y_split) || RELOAD_Y_TIMEOUT_MS == 0);
+            if (tail_cleared && y_cleared) {
+                if (g_tc_ctx.ready_to_join_since_ms == 0) g_tc_ctx.ready_to_join_since_ms = now_ms;
+            } else {
+                g_tc_ctx.ready_to_join_since_ms = 0;
+            }
+
+            bool join_delay_elapsed = (RELOAD_JOIN_DELAY_MS <= 0) ||
+                                      (g_tc_ctx.ready_to_join_since_ms != 0 &&
+                                       (now_ms - g_tc_ctx.ready_to_join_since_ms) >= (uint32_t)RELOAD_JOIN_DELAY_MS);
+
+            if (tail_cleared && y_cleared && join_delay_elapsed) {
                 char lane_s[2] = { (char)('0' + g_tc_ctx.target_lane), 0 };
                 set_active_lane(g_tc_ctx.target_lane);
                 lane_t *new_lane = lane_ptr(active_lane);
@@ -398,6 +410,7 @@ void tc_tick(uint32_t now_ms) {
                 int approach_sps = FEED_SPS;
                 if (approach_sps <= 0) approach_sps = JOIN_SPS;
                 lane_start(new_lane, TASK_FEED, approach_sps, true, now_ms, 2000.0f);
+                g_tc_ctx.ready_to_join_since_ms = 0;
                 g_tc_ctx.reload_tick_ms = now_ms;
                 g_tc_ctx.reload_current_sps = 0;
                 g_tc_ctx.last_trailing_ms = 0;

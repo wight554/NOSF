@@ -14,7 +14,7 @@
 
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4e4f5346u
-#define SETTINGS_VERSION 40u
+#define SETTINGS_VERSION 41u
 
 typedef struct {
     uint32_t magic;
@@ -28,6 +28,7 @@ typedef struct {
     int load_max_mm;
     int unload_max_mm;
     int reload_y_timeout_ms;
+    int reload_join_delay_ms;
     int autoload_max_mm;
     int auto_mode;
     int cutter_settle_ms;
@@ -118,6 +119,7 @@ void settings_defaults(void) {
     LOAD_MAX_MM = CONF_LOAD_MAX_MM;
     UNLOAD_MAX_MM = CONF_UNLOAD_MAX_MM;
     RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
+    RELOAD_JOIN_DELAY_MS = CONF_RELOAD_JOIN_DELAY_MS;
     AUTO_MODE = 1;
     AUTO_PRELOAD = true;
     DIST_IN_OUT = CONF_DIST_IN_OUT;
@@ -237,6 +239,7 @@ void settings_save(void) {
     s.load_max_mm = LOAD_MAX_MM;
     s.unload_max_mm = UNLOAD_MAX_MM;
     s.reload_y_timeout_ms = RELOAD_Y_TIMEOUT_MS;
+    s.reload_join_delay_ms = RELOAD_JOIN_DELAY_MS;
     s.auto_mode = AUTO_MODE;
     s.auto_preload = AUTO_PRELOAD ? 1 : 0;
     s.buf_half_travel_mm = BUF_HALF_TRAVEL_MM;
@@ -386,6 +389,7 @@ void settings_load(void) {
     LOAD_MAX_MM = s->load_max_mm;
     UNLOAD_MAX_MM = s->unload_max_mm;
     RELOAD_Y_TIMEOUT_MS = s->reload_y_timeout_ms;
+    RELOAD_JOIN_DELAY_MS = s->reload_join_delay_ms;
     AUTO_MODE = s->auto_mode;
     AUTO_PRELOAD = (s->auto_preload != 0);
     float buf_physical_half_mm = (float)s->buf_size_mm / 2.0f;

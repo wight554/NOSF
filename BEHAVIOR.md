@@ -233,6 +233,11 @@ configured baseline with `BUF_STAB_RATE`.
 
 ### RELOAD contact and follow
 
+After the old lane tail clears `OUT` and the Y path is clear, firmware waits
+`RELOAD_JOIN_MS` before `RELOAD:JOINING` starts. This RELOAD-only grace period
+lets the printer pull the old tail clear of unsupported buffer geometry before
+the new lane begins its join approach.
+
 **`TC_RELOAD_APPROACH` — buffer-driven contact detection**
 
 The motor runs at `JOIN_RATE` while the controller waits for the buffer to move

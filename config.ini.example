@@ -112,6 +112,7 @@ run_current:
 # ─── Reload Mode ─────────────────────────────────────────────────────────────
 # reload_mode: 0              # Enable autonomous swap on runout
 # reload_y_timeout_ms: 10000  # max wait for Y to clear during RELOAD
+# reload_join_delay_ms: 500   # extra wait after tail/Y clear before JOINING
 
 # ─── RELOAD Tuning ───────────────────────────────────────────────────────────
 # trailing_rate: 90           # coasting speed when buffer is stalled

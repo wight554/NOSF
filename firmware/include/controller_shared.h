@@ -118,6 +118,7 @@ typedef struct {
     int target_lane;
     int from_lane;
     uint32_t phase_start_ms;
+    uint32_t ready_to_join_since_ms;
     uint32_t reload_tick_ms;
     int reload_current_sps;
     uint32_t last_trailing_ms;
@@ -161,6 +162,7 @@ extern int MOTION_STARTUP_MS;
 extern int RUNOUT_COOLDOWN_MS;
 extern int RELOAD_MODE;
 extern int RELOAD_Y_TIMEOUT_MS;
+extern int RELOAD_JOIN_DELAY_MS;
 extern int JOIN_SPS;
 extern int PRESS_SPS;
 extern int TRAILING_SPS;
