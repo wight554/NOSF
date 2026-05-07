@@ -59,7 +59,7 @@ DEFAULTS = {
     "sync_overshoot_pct": "25",
     "sync_reserve_pct": "40",
     "sync_auto_stop_ms": "5000",
-    "post_print_stab_delay_ms": "10000",
+    "post_print_stab_delay_ms": "0",
     "est_alpha_min": "0.12",
     "est_alpha_max": "0.65",
     "zone_bias_base_rate": "90",

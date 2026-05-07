@@ -289,10 +289,11 @@ TRAILING persists for `SYNC_AUTO_STOP_MS`.
 The same low-speed stabilization helper used at boot can also be run on demand
 with `BS:` when the controller is idle.
 
-After a normal non-tail-assist `SYNC:AUTO_STOP`, firmware can also wait
-`POST_PRINT_STAB_MS` and then run that helper automatically. This leaves the
-buffer closer to `MID` after a print ends, which makes later retract or
-recovery actions less likely to fight stale buffer preload.
+After a normal non-tail-assist `SYNC:AUTO_STOP`, firmware can run that helper
+immediately, or wait `POST_PRINT_STAB_MS` first if an extra delay is
+explicitly configured. This leaves the buffer closer to `MID` after a print
+ends, which makes later retract or recovery actions less likely to fight stale
+buffer preload.
 
 **AUTO sync sequence:**
 

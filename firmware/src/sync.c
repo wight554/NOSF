@@ -345,7 +345,11 @@ bool buffer_stabilize_request(uint32_t now_ms) {
 }
 
 void buffer_stabilize_schedule_after_print(uint32_t now_ms) {
-    if (POST_PRINT_STAB_DELAY_MS <= 0 || BUF_SENSOR_TYPE != 0) return;
+    if (BUF_SENSOR_TYPE != 0) return;
+    if (POST_PRINT_STAB_DELAY_MS <= 0) {
+        (void)buffer_stabilize_start_internal(now_ms, true);
+        return;
+    }
     g_post_print_stabilize_at_ms = now_ms + (uint32_t)POST_PRINT_STAB_DELAY_MS;
 }
 
