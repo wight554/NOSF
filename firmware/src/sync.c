@@ -677,7 +677,6 @@ void sync_tick(uint32_t now_ms) {
             }
         } else {
             sync_idle_since_ms = 0;
-            sync_trailing_floor_since_ms = 0;
         }
     }
 
