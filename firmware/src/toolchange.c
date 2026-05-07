@@ -416,7 +416,7 @@ void tc_tick(uint32_t now_ms) {
                 g_tc_ctx.last_trailing_ms = 0;
                 g_tc_ctx.phase_start_ms = now_ms;
                 g_tc_ctx.state = TC_RELOAD_APPROACH;
-            } else if (age > (uint32_t)RELOAD_Y_TIMEOUT_MS) {
+            } else if ((!tail_cleared || !y_cleared) && age > (uint32_t)RELOAD_Y_TIMEOUT_MS) {
                 tc_enter_error("RELOAD_Y_TIMEOUT");
             }
             break;

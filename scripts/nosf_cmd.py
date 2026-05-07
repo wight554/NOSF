@@ -109,6 +109,7 @@ DUMP_PARAMS = [
     ("AUTO_MODE",         "auto_mode",               False),
     ("RELOAD_MODE",       "reload_mode",             False),
     ("RELOAD_Y_MS",       "reload_y_timeout_ms",     False),
+    ("RELOAD_JOIN_MS",    "reload_join_delay_ms",    False),
     ("AUTO_PRELOAD",      "auto_preload",            False),
     # --- Safety ---
     ("AUTOLOAD_MAX",      "autoload_max_mm",         False),
