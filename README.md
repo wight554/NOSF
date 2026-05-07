@@ -14,6 +14,7 @@ and TMC2209 configuration and diagnostics over USB serial.
 - `scripts/`: serial/config/flash helpers
 - `config.ini`: user tuning source for motor and TMC defaults
 - `config.ini.example`: template for new setups
+- `MOTOR_PARAMS.md`: known motor/TMC parameter profiles
 
 ## Quick Start
 

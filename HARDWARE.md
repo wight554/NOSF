@@ -10,6 +10,8 @@ Schematic: ERB V2.0 Release SCH.pdf (in FYSETC-ERB/V2.0/hardware/)
 - **Motors**: [FYSETC G36HSY4405-6D-1200](https://github.com/FYSETC/FYSETC-MOTORS/blob/main/G36HSY4405-6D-1200/G36HSY4405-6D-1200.pdf). This motor is included in Fysetc NightOwl kits and has been verified to work well with the default NOSF feed and retract profiles.
 - **Buffer**: [QuattroSync](https://github.com/Batalhoti/QuattroSync). A dual-lane spring buffer that has produced more consistent RELOAD behavior than gravity-based designs such as TurtleNeck.
 
+Known working motor and TMC profiles are collected in [MOTOR_PARAMS.md](MOTOR_PARAMS.md).
+
 ---
 
 ## GPIO Map (verified from schematic)
