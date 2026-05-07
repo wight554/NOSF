@@ -712,7 +712,10 @@ void sync_tick(uint32_t now_ms) {
         g_buf.mmu_sps_dwell_samples++;
     }
 
-    if (s == BUF_MID && (now_ms - g_buf.entered_ms) > 2000u && A->task == TASK_FEED && A->fault == FAULT_NONE) {
+    bool buf_near_target = fabsf(g_buf_pos - buf_target_reserve_mm()) < (buf_virtual_deadband_mm() * 2.0f);
+    if (s == BUF_MID && (now_ms - g_buf.entered_ms) > 2000u &&
+        A->task == TASK_FEED && A->fault == FAULT_NONE &&
+        buf_near_target && sync_current_sps > 0) {
         extruder_est_sps += 0.05f * ((float)lane_motion_sps(A) - extruder_est_sps);
     }
 
@@ -722,9 +725,7 @@ void sync_tick(uint32_t now_ms) {
     if (reserve_error_mm < -reserve_deadband_mm) {
         sync_recent_negative_until_ms = now_ms + SYNC_RECENT_NEGATIVE_HOLD_MS;
     }
-    bool damp_positive_relaunch = !sync_tail_assist_active &&
-                                  sync_recent_negative_until_ms != 0 &&
-                                  (int32_t)(sync_recent_negative_until_ms - now_ms) > 0;
+    bool damp_positive_relaunch = sync_is_positive_relaunch_damped();
     int kp_window = sync_effective_kp_sps(s);
     int reserve_correction = 0;
     float trailing_wall_ms = 1000000000.0f;
@@ -893,4 +894,13 @@ void sync_tick(uint32_t now_ms) {
                  (double)g_buf_pos);
         cmd_event("BS", ev);
     }
+}
+float sync_reserve_error_mm(void) {
+    return g_buf_pos - buf_target_reserve_mm();
+}
+
+bool sync_is_positive_relaunch_damped(void) {
+    if (sync_tail_assist_active) return false;
+    if (sync_recent_negative_until_ms == 0) return false;
+    return (int32_t)(sync_recent_negative_until_ms - g_now_ms) > 0;
 }

@@ -73,7 +73,8 @@ static void status_dump(void) {
     snprintf(b, sizeof(b),
         "LN:%d,TC:%s,L1T:%s,L2T:%s,"
         "I1:%d,O1:%d,I2:%d,O2:%d,"
-        "TH:%d,YS:%d,BUF:%s,SPS:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,RELOAD:%d",
+        "TH:%d,YS:%d,BUF:%s,SPS:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,RELOAD:%d,"
+        "EST:%.1f,RE:%.2f,DP:%d",
         active_lane, tc_state_name(g_tc_ctx.state),
         task_name(g_lane_l1.task), task_name(g_lane_l2.task),
         lane_in_present(&g_lane_l1) ? 1 : 0,
@@ -90,7 +91,10 @@ static void status_dump(void) {
         BUF_INVERT ? 1 : 0,
         AUTO_PRELOAD ? 1 : 0,
         ENABLE_CUTTER ? 1 : 0,
-        RELOAD_MODE);
+        RELOAD_MODE,
+        (double)sps_to_mm_per_min((int)extruder_est_sps),
+        (double)sync_reserve_error_mm(),
+        sync_is_positive_relaunch_damped() ? 1 : 0);
 
     cmd_reply("OK", b);
 }
