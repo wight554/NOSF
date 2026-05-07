@@ -99,7 +99,7 @@ OUT is already clear.
 
 If buffer enters `BUF_ADVANCE` during `UL:`, firmware performs a one-shot
 stabilization sequence: stop reverse, feed forward gently by ~half buffer
-travel (`BUF_TRAVEL`), then resume reverse unload. Recovery speed is controlled
+travel (`BUF_HALF_TRAVEL`), then resume reverse unload. Recovery speed is controlled
 by `BUF_STAB_RATE` (default 600 mm/min).
 
 ### `UM:` — Unload from MMU
@@ -139,15 +139,17 @@ reached.
 ### Buffer sync speed control
 
 The sync controller runs every `SYNC_TICK_MS` (20 ms). In dual-endstop mode it
-is no longer a simple proportional controller on `g_buf_pos`; it is now driven
-primarily by an extruder-rate estimator and uses the buffer state as bounded
-correction.
+tracks a virtual buffer position in millimeters instead of treating `MID` as
+the steady-state target. The controller still uses the extruder-rate estimator,
+but it now drives toward a buffered-reserve target on the trailing side.
 
 ```
 target = extruder_est_sps
-       + zone_bias_sps
-       + slope_bias_sps
-       + PRE_RAMP_RATE  (if predict_advance_coming)
+  + reserve_correction_sps
+  + zone_bias_sps
+  + slope_bias_sps
+  - overshoot_trim_sps
+  + PRE_RAMP_RATE  (if predict_advance_coming)
 
 target = sync_apply_scaling(...)
 target = clamp(target, SYNC_MIN_RATE, SYNC_MAX_RATE)
@@ -156,13 +158,16 @@ target = clamp(target, SYNC_MIN_RATE, SYNC_MAX_RATE)
 #### Velocity estimator
 
 Whenever the buffer changes zone, firmware measures the dwell time in the old
-zone and converts the arm travel into an estimated arm velocity. Combined with
-the MMU speed averaged during that dwell, this yields an instantaneous
-extruder-rate estimate.
+zone and converts the switch-threshold travel into an estimated arm velocity.
+Combined with the MMU speed averaged during that dwell, this yields an
+instantaneous extruder-rate estimate.
 
-- `MID→ADVANCE`, `ADVANCE→MID`, `MID→TRAILING`, `TRAILING→MID` use half-buffer
-  travel.
-- `ADVANCE→TRAILING` and `TRAILING→ADVANCE` use full-buffer travel.
+- `BUF_HALF_TRAVEL` is the switch distance from `MID`, not the total arm half-travel.
+- `BUF_SIZE / 2` is the physical half-travel used to clamp the virtual
+  position beyond the switch.
+- `MID→ADVANCE`, `ADVANCE→MID`, `MID→TRAILING`, `TRAILING→MID` use the switch
+  threshold distance.
+- `ADVANCE→TRAILING` and `TRAILING→ADVANCE` use twice the switch threshold.
 - Half the hysteresis window is subtracted from dwell time before computing arm
   velocity so the estimate is not biased late.
 - The instantaneous estimate is clamped to `GLOBAL_MAX_RATE` and merged into
@@ -177,16 +182,27 @@ sections where no new transitions arrive.
 
 #### Zone bias and recovery behavior
 
-`ZONE_BIAS_BASE` and `ZONE_BIAS_RAMP` provide a bounded centering pull:
+In dual-endstop mode, firmware anchors the virtual position to the switch edge
+on each transition, then integrates the mismatch between estimated extruder
+draw and commanded MMU feed inside the physical travel envelope.
 
-- `BUF_ADVANCE` adds a positive bias, growing with time stuck in ADVANCE.
-- `BUF_TRAILING` adds a negative bias, growing with time stuck in TRAILING.
+The normal sync target is not `MID`. It is a small buffered-reserve target on
+the trailing side, derived from the switch threshold plus part of the hidden
+travel margin. This keeps reserve in the buffer instead of merely bouncing
+around the state boundary.
+
+`ZONE_BIAS_BASE` and `ZONE_BIAS_RAMP` provide a bounded reserve-recovery pull:
+
+- If the virtual position is more depleted than the target, sync adds positive
+  correction to refill the buffer.
+- If the virtual position is fuller than the target, sync removes speed and can
+  apply extra trailing-side trim.
 - The total bias is capped by `ZONE_BIAS_MAX`.
-- `SYNC_OVERSHOOT_PCT` adds an ADVANCE-only extra push derived from the
-  current positive correction, capped by the effective KP window.
+- `SYNC_OVERSHOOT_PCT` adds extra braking only after reserve overshoots into
+  the full/trailing side.
 
-This bias keeps the arm near MID when the estimator is slightly wrong, while
-the estimator remains the dominant term.
+This bias keeps the arm near the desired reserve target when the estimator is
+slightly wrong, while the estimator remains the dominant term.
 
 #### Scaling, brake, and baseline adaptation
 
@@ -194,8 +210,9 @@ the estimator remains the dominant term.
 
 - In analog-buffer mode, `g_buf_pos` scales the target between
   `TRAILING_RATE` and the requested target.
-- In dual-endstop mode, the buffer zone alone shapes the target: ADVANCE
-  enforces a floor and TRAILING enforces a ceiling.
+- In dual-endstop mode, the virtual reserve target shapes the controller.
+  If the estimated position moves past the target into “too full”, sync clamps
+  toward `TRAILING_RATE` until reserve comes back inside the target band.
 
 On a direct `ADVANCE→TRAILING` transition, firmware arms a short fast-brake
 window. During that window the sync target is forced to 0 before normal
@@ -222,7 +239,9 @@ sensor.
 **`TC_RELOAD_FOLLOW` — pressure maintenance during bowden journey**
 
 RELOAD follow no longer derives speed from driver-load telemetry.
-Instead it reuses the normal sync estimator and deliberately under-feeds:
+It benefits from the same estimator and virtual-position updates, but its speed
+policy stays deliberately trailing-centric and does not inherit the normal-sync
+reserve target:
 
 ```
 target = extruder_est_sps × RELOAD_LEAN

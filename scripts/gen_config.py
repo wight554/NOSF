@@ -47,7 +47,7 @@ DEFAULTS = {
     "ramp_tick_ms": "5",
 
     # Buffer Sync
-    "buf_half_travel_mm": "5.0",
+    "buf_half_travel_mm": "6.5",
     "buf_hyst_ms": "30",
     "sync_ramp_up_rate": "25",
     "sync_ramp_dn_rate": "13",

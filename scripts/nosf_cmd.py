@@ -73,7 +73,7 @@ DUMP_PARAMS = [
     ("RAMP_TICK_MS",      "ramp_tick_ms",            False),
     ("PRE_RAMP_RATE",     "pre_ramp_rate",           False),
     # --- Buffer sync ---
-    ("BUF_TRAVEL",        "buf_half_travel_mm",      False),
+    ("BUF_HALF_TRAVEL",   "buf_half_travel_mm",      False),
     ("BUF_HYST",          "buf_hyst_ms",             False),
     ("SYNC_UP_RATE",      "sync_ramp_up_rate",       False),
     ("SYNC_DN_RATE",      "sync_ramp_dn_rate",       False),

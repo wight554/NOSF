@@ -123,7 +123,7 @@ void settings_defaults(void) {
     DIST_Y_BUF = CONF_DIST_Y_BUF;
     BUF_BODY_LEN = CONF_BUF_BODY_LEN;
     BUF_SIZE_MM = CONF_BUF_SIZE_MM;
-    BUF_HALF_TRAVEL_MM = (float)BUF_SIZE_MM / 2.0f;
+    BUF_HALF_TRAVEL_MM = clamp_f(CONF_BUF_HALF_TRAVEL_MM, 1.0f, (float)BUF_SIZE_MM / 2.0f);
     BUF_HYST_MS = CONF_BUF_HYST_MS;
     EST_ALPHA_MIN = CONF_EST_ALPHA_MIN;
     EST_ALPHA_MAX = CONF_EST_ALPHA_MAX;
@@ -376,7 +376,9 @@ void settings_load(void) {
     RELOAD_Y_TIMEOUT_MS = s->reload_y_timeout_ms;
     AUTO_MODE = s->auto_mode;
     AUTO_PRELOAD = (s->auto_preload != 0);
-    BUF_HALF_TRAVEL_MM = s->buf_half_travel_mm;
+    float buf_physical_half_mm = (float)s->buf_size_mm / 2.0f;
+    if (buf_physical_half_mm < 1.0f) buf_physical_half_mm = 1.0f;
+    BUF_HALF_TRAVEL_MM = clamp_f(s->buf_half_travel_mm, 1.0f, buf_physical_half_mm);
     DIST_IN_OUT = s->dist_in_out;
     DIST_OUT_Y = s->dist_out_y;
     DIST_Y_BUF = s->dist_y_buf;

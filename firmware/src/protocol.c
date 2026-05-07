@@ -323,7 +323,11 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "RAMP_STEP_RATE")) RAMP_STEP_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 1, 10000));
         else if (!strcmp(base_param, "RAMP_TICK_MS")) RAMP_TICK_MS = clamp_i(iv, 1, 1000);
         else if (!strcmp(base_param, "PRE_RAMP_RATE")) PRE_RAMP_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 0, 50000));
-        else if (!strcmp(base_param, "BUF_TRAVEL")) { BUF_HALF_TRAVEL_MM = fv < 1.0f ? 1.0f : fv > 50.0f ? 50.0f : fv; }
+        else if (!strcmp(base_param, "BUF_HALF_TRAVEL") || !strcmp(base_param, "BUF_TRAVEL")) {
+            float max_travel = (float)BUF_SIZE_MM / 2.0f;
+            if (max_travel < 1.0f) max_travel = 1.0f;
+            BUF_HALF_TRAVEL_MM = clamp_f(fv, 1.0f, max_travel);
+        }
         else if (!strcmp(base_param, "BUF_HYST")) BUF_HYST_MS = clamp_i(iv, 5, 500);
         else if (!strcmp(base_param, "BUF_PREDICT_THR_MS")) BUF_PREDICT_THR_MS = clamp_i(iv, 0, 10000);
         else if (!strcmp(base_param, "AUTO_PRELOAD")) AUTO_PRELOAD = (iv != 0);
@@ -337,7 +341,11 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "DIST_OUT_Y")) DIST_OUT_Y = clamp_i(iv, 0, 5000);
         else if (!strcmp(base_param, "DIST_Y_BUF")) DIST_Y_BUF = clamp_i(iv, 0, 5000);
         else if (!strcmp(base_param, "BUF_BODY_LEN")) BUF_BODY_LEN = clamp_i(iv, 0, 5000);
-        else if (!strcmp(base_param, "BUF_SIZE")) { BUF_SIZE_MM = clamp_i(iv, 5, 1000); BUF_HALF_TRAVEL_MM = (float)BUF_SIZE_MM / 2.0f; }
+        else if (!strcmp(base_param, "BUF_SIZE")) {
+            BUF_SIZE_MM = clamp_i(iv, 5, 1000);
+            float max_travel = (float)BUF_SIZE_MM / 2.0f;
+            if (BUF_HALF_TRAVEL_MM > max_travel) BUF_HALF_TRAVEL_MM = max_travel;
+        }
         else if (!strcmp(base_param, "JOIN_RATE")) JOIN_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 200, 50000));
         else if (!strcmp(base_param, "PRESS_RATE")) PRESS_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 200, 50000));
         else if (!strcmp(base_param, "TRAILING_RATE")) TRAILING_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 10, 10000));
@@ -423,7 +431,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "RAMP_STEP_RATE")) snprintf(out, sizeof(out), "RAMP_STEP_RATE:%.1f", (double)sps_to_mm_per_min_idx(RAMP_STEP_SPS, idx));
         else if (!strcmp(param, "RAMP_TICK_MS")) snprintf(out, sizeof(out), "RAMP_TICK_MS:%d", RAMP_TICK_MS);
         else if (!strcmp(param, "PRE_RAMP_RATE")) snprintf(out, sizeof(out), "PRE_RAMP_RATE:%.1f", (double)sps_to_mm_per_min_idx(PRE_RAMP_SPS, idx));
-        else if (!strcmp(param, "BUF_TRAVEL")) snprintf(out, sizeof(out), "BUF_TRAVEL:%.3f", (double)BUF_HALF_TRAVEL_MM);
+        else if (!strcmp(param, "BUF_HALF_TRAVEL") || !strcmp(param, "BUF_TRAVEL")) snprintf(out, sizeof(out), "BUF_HALF_TRAVEL:%.3f", (double)BUF_HALF_TRAVEL_MM);
         else if (!strcmp(param, "BUF_HYST")) snprintf(out, sizeof(out), "BUF_HYST:%d", BUF_HYST_MS);
         else if (!strcmp(param, "BUF_PREDICT_THR_MS")) snprintf(out, sizeof(out), "BUF_PREDICT_THR_MS:%d", BUF_PREDICT_THR_MS);
         else if (!strcmp(param, "AUTO_PRELOAD")) snprintf(out, sizeof(out), "AUTO_PRELOAD:%d", AUTO_PRELOAD ? 1 : 0);

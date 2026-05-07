@@ -60,6 +60,84 @@ static lane_t *pick_boot_stabilize_lane(void) {
     return &g_lane_l1;
 }
 
+static float buf_physical_half_travel_mm(void) {
+    float physical_half = (BUF_SIZE_MM > 0) ? ((float)BUF_SIZE_MM * 0.5f) : BUF_HALF_TRAVEL_MM;
+    if (physical_half < 1.0f) physical_half = 1.0f;
+    if (physical_half < BUF_HALF_TRAVEL_MM) physical_half = BUF_HALF_TRAVEL_MM;
+    return physical_half;
+}
+
+static float buf_threshold_mm(void) {
+    float physical_half = buf_physical_half_travel_mm();
+    float threshold = BUF_HALF_TRAVEL_MM;
+    if (threshold < 1.0f) threshold = 1.0f;
+    if (threshold > physical_half) threshold = physical_half;
+    return threshold;
+}
+
+static float buf_target_reserve_mm(void) {
+    float threshold = buf_threshold_mm();
+    float physical_half = buf_physical_half_travel_mm();
+    float hidden_margin = physical_half - threshold;
+    float target = -(threshold * 0.35f);
+
+    if (hidden_margin > 0.5f) {
+        target = -(threshold + hidden_margin * 0.25f);
+    }
+
+    float min_target = -physical_half + 0.5f;
+    if (target < min_target) target = min_target;
+    return target;
+}
+
+static float buf_virtual_deadband_mm(void) {
+    float deadband = buf_threshold_mm() * 0.15f;
+    if (deadband < 0.5f) deadband = 0.5f;
+    if (deadband > 2.0f) deadband = 2.0f;
+    return deadband;
+}
+
+static void buf_anchor_virtual_position(buf_state_t old_state, buf_state_t new_state) {
+    if (BUF_SENSOR_TYPE != 0) return;
+
+    float threshold = buf_threshold_mm();
+    buf_state_t anchor_state = new_state;
+    if (new_state == BUF_MID) anchor_state = old_state;
+
+    if (anchor_state == BUF_ADVANCE) g_buf_pos = threshold;
+    else if (anchor_state == BUF_TRAILING) g_buf_pos = -threshold;
+    else g_buf_pos = 0.0f;
+}
+
+static void buf_virtual_position_tick(lane_t *A, uint32_t elapsed_ms) {
+    if (BUF_SENSOR_TYPE != 0 || elapsed_ms == 0) return;
+
+    float threshold = buf_threshold_mm();
+    float physical_half = buf_physical_half_travel_mm();
+    if (!A) {
+        g_buf_pos = clamp_f(g_buf_pos, -physical_half, physical_half);
+        return;
+    }
+
+    int idx = lane_to_idx(A->lane_id);
+    if (idx < 0 || idx >= NUM_LANES) idx = 0;
+
+    bool tracking_motion = sync_enabled || g_tc_ctx.state == TC_RELOAD_APPROACH ||
+                           g_tc_ctx.state == TC_RELOAD_FOLLOW ||
+                           (A->task == TASK_FEED && A->fault == FAULT_NONE);
+    if (tracking_motion) {
+        float dt_s = (float)elapsed_ms / 1000.0f;
+        float mmu_mm_s = (float)lane_motion_sps(A) * MM_PER_STEP[idx];
+        float extruder_mm_s = extruder_est_sps * MM_PER_STEP[idx];
+        g_buf_pos += (extruder_mm_s - mmu_mm_s) * dt_s;
+    }
+
+    g_buf_pos = clamp_f(g_buf_pos, -physical_half, physical_half);
+    if (g_buf.state == BUF_ADVANCE && g_buf_pos < threshold) g_buf_pos = threshold;
+    else if (g_buf.state == BUF_TRAILING && g_buf_pos > -threshold) g_buf_pos = -threshold;
+    else if (g_buf.state == BUF_MID) g_buf_pos = clamp_f(g_buf_pos, -threshold, threshold);
+}
+
 static int sync_apply_scaling(int base_sps) {
     if (BUF_SENSOR_TYPE == 1) {
         float frac = clamp_f((g_buf_pos + 1.0f) * 0.5f, 0.0f, 1.0f);
@@ -68,9 +146,7 @@ static int sync_apply_scaling(int base_sps) {
 
     int target = base_sps;
 
-    if (g_buf.state == BUF_ADVANCE) {
-        if (target < base_sps) target = base_sps;
-    } else if (g_buf.state == BUF_TRAILING) {
+    if (g_buf_pos < (buf_target_reserve_mm() - buf_virtual_deadband_mm())) {
         if (target > TRAILING_SPS) target = TRAILING_SPS;
     }
 
@@ -276,6 +352,7 @@ static void buf_update(buf_state_t new_state, uint32_t now_ms) {
     history_push(g_buf.state, prev_dwell);
     g_buf.state = new_state;
     g_buf.entered_ms = now_ms;
+    buf_anchor_virtual_position(old, new_state);
 
     g_buf.lane_idx_at_entry = (active_lane == 2) ? 1 : 0;
     g_buf.mmu_sps_at_entry = mmu_now_sps;
@@ -365,7 +442,8 @@ static void sync_on_transition(buf_state_t prev, buf_state_t now_state, uint32_t
 }
 
 void buf_sensor_tick(uint32_t now_ms) {
-    bool do_pos = (now_ms - buf_pos_last_ms) >= (uint32_t)SYNC_TICK_MS;
+    uint32_t elapsed_ms = now_ms - buf_pos_last_ms;
+    bool do_pos = elapsed_ms >= (uint32_t)SYNC_TICK_MS;
     if (do_pos) buf_pos_last_ms = now_ms;
 
     if (BUF_SENSOR_TYPE == 1 && do_pos) buf_analog_update();
@@ -378,10 +456,7 @@ void buf_sensor_tick(uint32_t now_ms) {
     }
 
     if (BUF_SENSOR_TYPE == 0 && do_pos) {
-        float target = (g_buf.state == BUF_ADVANCE) ? 1.0f :
-                       (g_buf.state == BUF_TRAILING) ? -1.0f : 0.0f;
-        g_buf_pos = BUF_ANALOG_ALPHA * target + (1.0f - BUF_ANALOG_ALPHA) * g_buf_pos;
-        if (g_buf.state == BUF_MID && g_buf_pos < 0.0f) g_buf_pos = 0.0f;
+        buf_virtual_position_tick(lane_ptr(active_lane), elapsed_ms);
     }
 }
 
@@ -440,11 +515,22 @@ void sync_tick(uint32_t now_ms) {
         extruder_est_sps += 0.05f * ((float)lane_motion_sps(A) - extruder_est_sps);
     }
 
+    float reserve_target_mm = buf_target_reserve_mm();
+    float reserve_deadband_mm = buf_virtual_deadband_mm();
+    float reserve_error_mm = g_buf_pos - reserve_target_mm;
+    int kp_window = sync_effective_kp_sps(s);
+    int reserve_correction = 0;
+    if (BUF_SENSOR_TYPE == 0) {
+        float threshold = buf_threshold_mm();
+        reserve_correction = (int)((reserve_error_mm / threshold) * (float)kp_window);
+        reserve_correction = clamp_i(reserve_correction, -kp_window, kp_window);
+    }
+
     int zone_bias = 0;
     uint32_t dwell_s = (now_ms - g_buf.entered_ms) / 1000u;
-    if (s == BUF_ADVANCE) {
+    if (reserve_error_mm > reserve_deadband_mm) {
         zone_bias = ZONE_BIAS_BASE_SPS + (int)(dwell_s * ZONE_BIAS_RAMP_SPS_S);
-    } else if (s == BUF_TRAILING) {
+    } else if (reserve_error_mm < -reserve_deadband_mm) {
         zone_bias = -ZONE_BIAS_BASE_SPS - (int)(dwell_s * ZONE_BIAS_RAMP_SPS_S);
     }
     zone_bias = clamp_i(zone_bias, -ZONE_BIAS_MAX_SPS, ZONE_BIAS_MAX_SPS);
@@ -457,17 +543,16 @@ void sync_tick(uint32_t now_ms) {
     int slope_bias = (int)(slope_gain * (extruder_est_sps - extruder_est_prev_sps));
 
     bool advance_predicted = predict_advance_coming();
-    int advance_push = 0;
-    if (s == BUF_ADVANCE && SYNC_OVERSHOOT_PCT > 0) {
-        int kp_window = sync_effective_kp_sps(s);
-        int positive_correction = zone_bias + slope_bias;
-        if (advance_predicted) positive_correction += PRE_RAMP_SPS;
-        if (positive_correction < 0) positive_correction = 0;
-        if (positive_correction > kp_window) positive_correction = kp_window;
-        advance_push = (positive_correction * SYNC_OVERSHOOT_PCT) / 100;
+    int overshoot_trim = 0;
+    if (s == BUF_TRAILING && SYNC_OVERSHOOT_PCT > 0) {
+        int negative_correction = -reserve_correction;
+        if (zone_bias < 0) negative_correction += -zone_bias;
+        if (negative_correction < 0) negative_correction = 0;
+        if (negative_correction > kp_window) negative_correction = kp_window;
+        overshoot_trim = (negative_correction * SYNC_OVERSHOOT_PCT) / 100;
     }
 
-    int target_sps = (int)extruder_est_sps + zone_bias + slope_bias + advance_push;
+    int target_sps = (int)extruder_est_sps + reserve_correction + zone_bias + slope_bias - overshoot_trim;
     if (advance_predicted) target_sps += PRE_RAMP_SPS;
 
     target_sps = sync_apply_scaling(target_sps);

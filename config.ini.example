@@ -94,6 +94,7 @@ run_current:
 # dist_out_y: 100             # Distance from OUT sensor to Y-splitter
 # dist_y_buf: 300             # Distance from Y-splitter to buffer entry
 # buf_body_len: 200           # Total physical length of buffer body
+# buf_half_travel_mm: 6.5     # Distance from MID to switch trip, not total half-travel
 # buf_size_mm: 50             # Total travel distance of buffer arm
 
 # ─── Analog Buffer Sensor ─────────────────────────────────────────────────────

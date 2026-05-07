@@ -93,6 +93,7 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `DIST_OUT_Y` | `dist_out_y` | Distance between OUT sensor and Y-splitter | 100 |
 | `DIST_Y_BUF` | `dist_y_buf` | Distance between Y-splitter and buffer entry | 300 |
 | `BUF_BODY_LEN`| `buf_body_len`| Physical length of the buffer body/tube | 200 |
+| `BUF_HALF_TRAVEL` | `buf_half_travel_mm` | Distance from MID to a dual-endstop switch trip point | 6.5 |
 | `BUF_SIZE` | `buf_size_mm` | Travel distance of the buffer arm | 50 |
 
 ### Speeds & Rates (mm/min)
@@ -116,9 +117,9 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `BUF_PREDICT_THR_MS` | `buf_predict_thr_ms` | MID-dwell threshold used by advance prediction | 250 |
 | `EST_ALPHA_MIN`| `est_alpha_min` | Estimator responsiveness for slow drifts | 0.10 |
 | `EST_ALPHA_MAX`| `est_alpha_max` | Estimator responsiveness for sharp jumps | 0.60 |
-| `ZONE_BIAS_BASE`| `zone_bias_base_rate`| Base centering pull (mm/min) | 100 |
-| `ZONE_BIAS_RAMP`| `zone_bias_ramp_rate`| Centering ramp (mm/min per second stuck in zone) | 50 |
-| `ZONE_BIAS_MAX` | `zone_bias_max_rate` | Max centering correction (mm/min) | 400 |
+| `ZONE_BIAS_BASE`| `zone_bias_base_rate`| Base reserve-recovery correction around the virtual buffer target (mm/min) | 100 |
+| `ZONE_BIAS_RAMP`| `zone_bias_ramp_rate`| Extra reserve-recovery ramp while buffer stays away from target (mm/min per second) | 50 |
+| `ZONE_BIAS_MAX` | `zone_bias_max_rate` | Max reserve-recovery correction (mm/min) | 400 |
 | `RELOAD_LEAN`  | `reload_lean_factor` | RELOAD follow under-feed factor (0.0 to 1.0) | 0.85 |
 
 ### Safety & Timeouts
@@ -131,9 +132,11 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `AUTO_PRELOAD`| `auto_preload` | Enable parking preload on insertion | 1 |
 | `RELOAD_MODE`| `reload_mode` | Enable autonomous RELOAD behavior (Auto-Swap) | 0 |
 | `RUNOUT_COOLDOWN_MS` | `runout_cooldown_ms` | Cooldown before another runout can be reported on the same lane | 12000 |
-| `SYNC_OVERSHOOT_PCT` | `sync_overshoot_pct` | ADVANCE-only extra push as percent of sync KP correction (0..200) | 50 |
+| `SYNC_OVERSHOOT_PCT` | `sync_overshoot_pct` | Extra trailing-side trim as percent of sync correction after reserve overshoots full (0..200) | 50 |
 | `SYNC_AUTO_STOP` | `sync_auto_stop_ms` | Auto-mode only: disable auto-started sync after sustained `TRAILING` for X ms | 5000 |
 | `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |
+
+`BUF_TRAVEL` remains accepted as a backward-compatible alias for `BUF_HALF_TRAVEL`.
 
 ### Cutter / Servo
 | Parameter | `config.ini` Key | Description | Default |
