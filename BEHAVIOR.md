@@ -213,6 +213,11 @@ slightly wrong, while the estimator remains the dominant term.
 - In dual-endstop mode, the virtual reserve target shapes the controller.
   If the estimated position moves past the target into “too full”, sync clamps
   toward `TRAILING_RATE` until reserve comes back inside the target band.
+- The controller also computes a dynamic trailing-wall time from remaining
+  physical margin and current relative push. If time-to-wall collapses while
+  sync is still driving toward `TRAILING`, firmware adds urgency trim and can
+  briefly brake or early-stop AUTO sync instead of waiting for a long static
+  trailing dwell.
 
 On a direct `ADVANCE→TRAILING` transition, firmware arms a short fast-brake
 window. During that window the sync target is forced to 0 before normal
@@ -253,6 +258,10 @@ target = extruder_est_sps × RELOAD_LEAN
   `PRESS_RATE × RELOAD_TOUCH_FLOOR_PCT`.
 - `BUF_TRAILING` keeps the motor at the low trailing push rate.
 - `BUF_ADVANCE` or `TS:1` means the extruder has taken over, so follow exits.
+- RELOAD follow also watches geometry-aware trailing-wall time. If the lane is
+  still pushing deeper into the trailing wall and the predicted remaining time
+  collapses, `FOLLOW_JAM` is raised early instead of waiting only on the static
+  `FOLLOW_TIMEOUT_MS` dwell.
 
 Follow protection is now sensor- and timeout-driven: if the lane task faults or
 the state exceeds `FOLLOW_TIMEOUT_MS`, RELOAD aborts instead of trying to infer

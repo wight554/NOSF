@@ -9,6 +9,11 @@
 #include "protocol.h"
 #include "sync.h"
 
+#define RELOAD_TRAILING_SOFT_WALL_MS 900.0f
+#define RELOAD_TRAILING_HARD_WALL_MS 450.0f
+#define RELOAD_TRAILING_HARD_PUSH_MM_S 0.25f
+#define RELOAD_TRAILING_HARD_HOLD_MS 250u
+
 static uint g_servo_slice = 0;
 static uint g_servo_chan = 0;
 
@@ -424,6 +429,7 @@ void tc_tick(uint32_t now_ms) {
                 }
                 g_tc_ctx.reload_current_sps = PRESS_SPS;
                 g_tc_ctx.last_trailing_ms = (g_buf.state == BUF_TRAILING) ? now_ms : 0;
+                g_tc_ctx.wall_critical_since_ms = 0;
                 g_tc_ctx.reload_tick_ms = now_ms;
                 g_tc_ctx.phase_start_ms = now_ms;
                 g_tc_ctx.state = TC_RELOAD_FOLLOW;
@@ -456,12 +462,21 @@ void tc_tick(uint32_t now_ms) {
             g_tc_ctx.reload_tick_ms = now_ms;
 
             uint32_t follow_age_ms = now_ms - g_tc_ctx.phase_start_ms;
+            float trailing_wall_ms = sync_trailing_wall_time_ms(A);
+            float trailing_push_mm_s = sync_trailing_wall_velocity_mm_s(A);
 
             int target_sps = (int)(extruder_est_sps * RELOAD_LEAN_FACTOR);
             if (g_buf.state == BUF_TRAILING) {
                 target_sps = TRAILING_SPS;
             } else if (g_buf.state == BUF_ADVANCE) {
                 target_sps = JOIN_SPS;
+            }
+
+            if (g_buf.state != BUF_TRAILING && trailing_wall_ms < RELOAD_TRAILING_SOFT_WALL_MS) {
+                float urgency = (RELOAD_TRAILING_SOFT_WALL_MS - trailing_wall_ms) / RELOAD_TRAILING_SOFT_WALL_MS;
+                urgency = clamp_f(urgency, 0.0f, 1.0f);
+                int wall_trim = (int)(urgency * (float)(target_sps - TRAILING_SPS));
+                target_sps -= wall_trim;
             }
             target_sps = clamp_i(target_sps, TRAILING_SPS, JOIN_SPS);
 
@@ -496,6 +511,18 @@ void tc_tick(uint32_t now_ms) {
 
             if (g_buf.state == BUF_TRAILING) {
                 if (g_tc_ctx.last_trailing_ms == 0) g_tc_ctx.last_trailing_ms = now_ms;
+                bool wall_critical = trailing_push_mm_s > RELOAD_TRAILING_HARD_PUSH_MM_S &&
+                                     trailing_wall_ms < RELOAD_TRAILING_HARD_WALL_MS;
+                if (wall_critical) {
+                    if (g_tc_ctx.wall_critical_since_ms == 0) g_tc_ctx.wall_critical_since_ms = now_ms;
+                    else if ((now_ms - g_tc_ctx.wall_critical_since_ms) >= RELOAD_TRAILING_HARD_HOLD_MS) {
+                        tc_enter_error("FOLLOW_JAM");
+                        lane_stop(A);
+                        break;
+                    }
+                } else {
+                    g_tc_ctx.wall_critical_since_ms = 0;
+                }
                 if ((now_ms - g_tc_ctx.last_trailing_ms) > (uint32_t)FOLLOW_TIMEOUT_MS[lane_to_idx(A->lane_id)]) {
                     tc_enter_error("FOLLOW_JAM");
                     lane_stop(A);
@@ -503,6 +530,7 @@ void tc_tick(uint32_t now_ms) {
                 }
             } else {
                 g_tc_ctx.last_trailing_ms = 0;
+                g_tc_ctx.wall_critical_since_ms = 0;
             }
 
             if ((now_ms - g_tc_ctx.phase_start_ms) > 300000) {

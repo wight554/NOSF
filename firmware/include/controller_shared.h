@@ -121,6 +121,7 @@ typedef struct {
     uint32_t reload_tick_ms;
     int reload_current_sps;
     uint32_t last_trailing_ms;
+    uint32_t wall_critical_since_ms;
 } tc_ctx_t;
 
 typedef enum {

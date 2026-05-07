@@ -10,6 +10,10 @@
 #include "toolchange.h"
 
 #define HISTORY_LEN 16
+#define SYNC_TRAILING_SOFT_WALL_MS 1200.0f
+#define SYNC_TRAILING_HARD_WALL_MS 350.0f
+#define SYNC_TRAILING_HARD_PUSH_MM_S 0.25f
+#define SYNC_TRAILING_HARD_HOLD_MS 200u
 
 bool sync_enabled = false;
 bool sync_auto_started = false;
@@ -43,6 +47,7 @@ typedef struct {
 static zone_event_t g_history[HISTORY_LEN] = {0};
 static int g_hist_idx = 0;
 static uint32_t buf_pos_last_ms = 0;
+static uint32_t sync_trailing_critical_since_ms = 0;
 
 static int lane_motion_sps(lane_t *L) {
     if (!L) return 0;
@@ -133,6 +138,39 @@ static void buf_virtual_position_tick(lane_t *A, uint32_t elapsed_ms) {
     if (g_buf.state == BUF_ADVANCE && g_buf_pos < threshold) g_buf_pos = threshold;
     else if (g_buf.state == BUF_TRAILING && g_buf_pos > -threshold) g_buf_pos = -threshold;
     else if (g_buf.state == BUF_MID) g_buf_pos = clamp_f(g_buf_pos, -threshold, threshold);
+}
+
+static float lane_motion_mm_s(lane_t *L) {
+    if (!L) return 0.0f;
+    int idx = lane_to_idx(L->lane_id);
+    if (idx < 0 || idx >= NUM_LANES) idx = 0;
+    return (float)lane_motion_sps(L) * MM_PER_STEP[idx];
+}
+
+static float extruder_motion_mm_s(lane_t *L) {
+    if (!L) return 0.0f;
+    int idx = lane_to_idx(L->lane_id);
+    if (idx < 0 || idx >= NUM_LANES) idx = 0;
+    return extruder_est_sps * MM_PER_STEP[idx];
+}
+
+float sync_trailing_wall_velocity_mm_s(lane_t *L) {
+    if (!L || BUF_SENSOR_TYPE != 0) return 0.0f;
+    float toward_trailing = lane_motion_mm_s(L) - extruder_motion_mm_s(L);
+    return toward_trailing > 0.0f ? toward_trailing : 0.0f;
+}
+
+static float sync_trailing_wall_remaining_mm(void) {
+    if (BUF_SENSOR_TYPE != 0) return 0.0f;
+    float remaining = g_buf_pos + buf_physical_half_travel_mm();
+    if (remaining < 0.0f) remaining = 0.0f;
+    return remaining;
+}
+
+float sync_trailing_wall_time_ms(lane_t *L) {
+    float toward_trailing = sync_trailing_wall_velocity_mm_s(L);
+    if (!L || BUF_SENSOR_TYPE != 0 || toward_trailing < 0.05f) return 1000000000.0f;
+    return (sync_trailing_wall_remaining_mm() / toward_trailing) * 1000.0f;
 }
 
 static int sync_apply_scaling(int base_sps) {
@@ -374,6 +412,7 @@ void sync_disable(bool reset_estimator) {
     sync_current_sps = 0;
     sync_idle_since_ms = 0;
     sync_fast_brake_until_ms = 0;
+    sync_trailing_critical_since_ms = 0;
 
     if (reset_estimator) {
         extruder_est_sps = 0.0f;
@@ -517,10 +556,14 @@ void sync_tick(uint32_t now_ms) {
     float reserve_error_mm = g_buf_pos - reserve_target_mm;
     int kp_window = sync_effective_kp_sps(s);
     int reserve_correction = 0;
+    float trailing_wall_ms = 1000000000.0f;
+    float trailing_push_mm_s = 0.0f;
     if (BUF_SENSOR_TYPE == 0) {
         float threshold = buf_threshold_mm();
         reserve_correction = (int)((reserve_error_mm / threshold) * (float)kp_window);
         reserve_correction = clamp_i(reserve_correction, -kp_window, kp_window);
+        trailing_push_mm_s = sync_trailing_wall_velocity_mm_s(A);
+        trailing_wall_ms = sync_trailing_wall_time_ms(A);
     }
 
     int zone_bias = 0;
@@ -549,10 +592,34 @@ void sync_tick(uint32_t now_ms) {
         overshoot_trim = (negative_correction * SYNC_OVERSHOOT_PCT) / 100;
     }
 
-    int target_sps = (int)extruder_est_sps + reserve_correction + zone_bias + slope_bias - overshoot_trim;
+    int wall_trim = 0;
+    if (BUF_SENSOR_TYPE == 0 && trailing_wall_ms < SYNC_TRAILING_SOFT_WALL_MS) {
+        float urgency = (SYNC_TRAILING_SOFT_WALL_MS - trailing_wall_ms) / SYNC_TRAILING_SOFT_WALL_MS;
+        urgency = clamp_f(urgency, 0.0f, 1.0f);
+        wall_trim = (int)(urgency * (float)kp_window);
+    }
+
+    int target_sps = (int)extruder_est_sps + reserve_correction + zone_bias + slope_bias - overshoot_trim - wall_trim;
     if (advance_predicted) target_sps += PRE_RAMP_SPS;
 
     target_sps = sync_apply_scaling(target_sps);
+
+    bool trailing_wall_critical = BUF_SENSOR_TYPE == 0 && s == BUF_TRAILING &&
+                                 trailing_push_mm_s > SYNC_TRAILING_HARD_PUSH_MM_S &&
+                                 trailing_wall_ms < SYNC_TRAILING_HARD_WALL_MS;
+    if (trailing_wall_critical) {
+        if (sync_trailing_critical_since_ms == 0) sync_trailing_critical_since_ms = now_ms;
+        sync_fast_brake_until_ms = now_ms + 120u;
+        if (sync_auto_started && (now_ms - sync_trailing_critical_since_ms) >= SYNC_TRAILING_HARD_HOLD_MS) {
+            sync_disable(true);
+            extruder_est_last_update_ms = now_ms;
+            sync_apply_to_active();
+            cmd_event("SYNC", "AUTO_STOP");
+            return;
+        }
+    } else {
+        sync_trailing_critical_since_ms = 0;
+    }
 
     bool fast_brake_active = sync_fast_brake_until_ms != 0 && (int32_t)(sync_fast_brake_until_ms - now_ms) > 0;
     if (!fast_brake_active && sync_fast_brake_until_ms != 0 && (int32_t)(now_ms - sync_fast_brake_until_ms) >= 0)
