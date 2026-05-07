@@ -427,7 +427,7 @@ void tc_tick(uint32_t now_ms) {
                 if (A) {
                     lane_stop(A);
                 }
-                g_tc_ctx.reload_current_sps = PRESS_SPS;
+                g_tc_ctx.reload_current_sps = TRAILING_SPS;
                 g_tc_ctx.last_trailing_ms = (g_buf.state == BUF_TRAILING) ? now_ms : 0;
                 g_tc_ctx.wall_critical_since_ms = 0;
                 g_tc_ctx.reload_tick_ms = now_ms;
@@ -480,7 +480,10 @@ void tc_tick(uint32_t now_ms) {
             }
             target_sps = clamp_i(target_sps, TRAILING_SPS, JOIN_SPS);
 
-            if (follow_age_ms < (uint32_t)(RELOAD_TOUCH_SETTLE_MS + RELOAD_TOUCH_BOOST_MS)) {
+            if (follow_age_ms < (uint32_t)RELOAD_TOUCH_SETTLE_MS) {
+                target_sps = TRAILING_SPS;
+            } else if (g_buf.state != BUF_TRAILING &&
+                       follow_age_ms < (uint32_t)(RELOAD_TOUCH_SETTLE_MS + RELOAD_TOUCH_BOOST_MS)) {
                 int floor_sps = (PRESS_SPS * RELOAD_TOUCH_FLOOR_PCT) / 100;
                 if (floor_sps < TRAILING_SPS) floor_sps = TRAILING_SPS;
                 if (target_sps < floor_sps) target_sps = floor_sps;
