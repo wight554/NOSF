@@ -225,6 +225,7 @@ void set_toolhead_filament(bool present) {
         if (!present) {
             sync_current_sps = 0;
             sync_auto_started = false;
+            sync_tail_assist_active = false;
             sync_idle_since_ms = 0;
         }
     }

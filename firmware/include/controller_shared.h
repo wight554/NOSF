@@ -250,6 +250,7 @@ extern int active_lane;
 extern bool toolhead_has_filament;
 extern bool sync_enabled;
 extern bool sync_auto_started;
+extern bool sync_tail_assist_active;
 extern uint32_t sync_idle_since_ms;
 extern int sync_current_sps;
 extern int g_baseline_sps;

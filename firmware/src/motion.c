@@ -1,6 +1,7 @@
 #include "motion.h"
 
 #include "toolchange.h"
+#include "sync.h"
 
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
@@ -382,6 +383,8 @@ void lane_tick(lane_t *L, uint32_t now_ms) {
 
     if (L->reload_tail_ms != 0 && (L->task == TASK_FEED || L->task == TASK_LOAD_FULL || L->task == TASK_AUTOLOAD)) {
         if (lane_tail_runout_ready(L)) {
+            bool tail_assist_finished = sync_tail_assist_active && L->task == TASK_FEED;
+            if (tail_assist_finished) sync_disable(true);
             L->reload_tail_ms = 0;
             L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
             cmd_event("RUNOUT", lane_s);

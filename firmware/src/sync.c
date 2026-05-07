@@ -13,6 +13,7 @@
 
 bool sync_enabled = false;
 bool sync_auto_started = false;
+bool sync_tail_assist_active = false;
 uint32_t sync_idle_since_ms = 0;
 int sync_current_sps = 0;
 int g_baseline_sps = CONF_BASELINE_SPS;
@@ -297,6 +298,21 @@ int sync_clamp_max_sps(int requested_sps) {
     return (requested_sps < hard_max) ? requested_sps : hard_max;
 }
 
+void sync_disable(bool reset_estimator) {
+    sync_enabled = false;
+    sync_auto_started = false;
+    sync_tail_assist_active = false;
+    sync_current_sps = 0;
+    sync_idle_since_ms = 0;
+    sync_fast_brake_until_ms = 0;
+
+    if (reset_estimator) {
+        extruder_est_sps = 0.0f;
+        extruder_est_prev_sps = 0.0f;
+        extruder_est_last_update_ms = g_now_ms;
+    }
+}
+
 static int sync_bootstrap_sps(void) {
     int startup_sps = (g_baseline_sps < BUF_STAB_SPS) ? g_baseline_sps : BUF_STAB_SPS;
     int max_sps = sync_clamp_max_sps(SYNC_MAX_SPS);
@@ -384,11 +400,13 @@ void sync_tick(uint32_t now_ms) {
     buf_state_t s = g_buf.state;
 
     if (AUTO_MODE && !sync_enabled && s == BUF_ADVANCE) {
+        bool tail_assist = !lane_in_present(A) && lane_out_present(A);
         int startup_sps = sync_bootstrap_sps();
         g_baseline_sps = startup_sps;
         sync_current_sps = startup_sps;
         sync_enabled = true;
         sync_auto_started = true;
+        sync_tail_assist_active = tail_assist;
         sync_idle_since_ms = 0;
         cmd_event("SYNC", "AUTO_START");
     }
@@ -401,13 +419,8 @@ void sync_tick(uint32_t now_ms) {
         } else {
             if (sync_idle_since_ms == 0) sync_idle_since_ms = now_ms;
             if (SYNC_AUTO_STOP_MS > 0 && (now_ms - sync_idle_since_ms) > (uint32_t)SYNC_AUTO_STOP_MS) {
-                sync_enabled = false;
-                sync_auto_started = false;
-                sync_current_sps = 0;
-                extruder_est_sps = 0.0f;
-                extruder_est_prev_sps = 0.0f;
+                sync_disable(true);
                 extruder_est_last_update_ms = now_ms;
-                sync_fast_brake_until_ms = 0;
                 sync_apply_to_active();
                 cmd_event("SYNC", "AUTO_STOP");
                 return;

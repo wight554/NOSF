@@ -246,10 +246,15 @@ TRAILING persists for `SYNC_AUTO_STOP_MS`.
 
 1. `BUF_ADVANCE` auto-starts sync in `AUTO_MODE` and seeds the estimator from
    the current baseline.
-2. Normal sync runs from the estimator, bounded by buffer state.
-3. Sustained `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` disables sync and resets the
+2. If the active lane is in the `IN=0`, `OUT=1` tail-between-sensors state,
+  that same auto-start acts as a temporary tail-clear assist so the printer's
+  pull can drag the remaining filament past `OUT`.
+3. Once `OUT` clears in that assist path, firmware disables sync immediately
+  and then continues with the normal `RUNOUT` / optional RELOAD handling.
+4. Normal sync runs from the estimator, bounded by buffer state.
+5. Sustained `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` disables sync and resets the
    estimator to 0.
-4. The next `BUF_ADVANCE` event bootstraps sync again.
+6. The next `BUF_ADVANCE` event bootstraps sync again.
 
 ---
 

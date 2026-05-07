@@ -4,6 +4,7 @@
 
 const char *buf_state_name(buf_state_t s);
 int sync_clamp_max_sps(int requested_sps);
+void sync_disable(bool reset_estimator);
 
 void boot_stabilize_start(uint32_t now_ms);
 void boot_stabilize_tick(uint32_t now_ms);

@@ -204,15 +204,13 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             cmd_reply("ER", "ARG");
             return;
         }
-        sync_enabled = false;
+        sync_disable(false);
         lane_start(A, TASK_MOVE, sps, forward, now_ms, limit);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "ST")) {
         tc_abort();
         cutter_abort();
-        sync_enabled = false;
-        sync_auto_started = false;
-        sync_current_sps = 0;
+        sync_disable(false);
         stop_all();
         set_toolhead_filament(false);
         cmd_reply("OK", NULL);
@@ -229,6 +227,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         if (v == 0 || v == 1) {
             sync_enabled = (v == 1);
             sync_auto_started = false;
+            sync_tail_assist_active = false;
             if (v == 0) sync_current_sps = 0;
             cmd_reply("OK", NULL);
         } else {
