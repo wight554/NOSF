@@ -597,7 +597,7 @@ void buf_sensor_tick(uint32_t now_ms) {
 
 void sync_tick(uint32_t now_ms) {
     lane_t *A = lane_ptr(active_lane);
-    if (!A || tc_state() != TC_IDLE) return;
+    if (!A || tc_state() != TC_IDLE || g_boot_stabilizing) return;
 
     buf_state_t s = g_buf.state;
     bool auto_start_allowed = (A->task == TASK_IDLE || A->task == TASK_FEED);
