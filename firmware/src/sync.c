@@ -49,7 +49,6 @@ static zone_event_t g_history[HISTORY_LEN] = {0};
 static int g_hist_idx = 0;
 static uint32_t buf_pos_last_ms = 0;
 static uint32_t sync_trailing_critical_since_ms = 0;
-static bool sync_auto_rearm_needs_advance_clear = false;
 
 static int lane_motion_sps(lane_t *L) {
     if (!L) return 0;
@@ -510,13 +509,9 @@ void sync_tick(uint32_t now_ms) {
     if (!A || tc_state() != TC_IDLE) return;
 
     buf_state_t s = g_buf.state;
-    if (sync_auto_rearm_needs_advance_clear && s != BUF_ADVANCE)
-        sync_auto_rearm_needs_advance_clear = false;
-
     bool auto_start_allowed = (A->task == TASK_IDLE || A->task == TASK_FEED);
 
-    if (AUTO_MODE && !sync_enabled && auto_start_allowed && s == BUF_ADVANCE &&
-        !sync_auto_rearm_needs_advance_clear) {
+    if (AUTO_MODE && !sync_enabled && auto_start_allowed && s == BUF_ADVANCE) {
         bool tail_assist = !lane_in_present(A) && lane_out_present(A);
         int startup_sps = sync_bootstrap_sps();
         sync_current_sps = startup_sps;
@@ -530,23 +525,18 @@ void sync_tick(uint32_t now_ms) {
     if (!sync_enabled) return;
 
     if (sync_auto_started) {
-        bool auto_stop_state = sync_tail_assist_active ? (s == BUF_TRAILING) : (s == BUF_ADVANCE);
-        if (!auto_stop_state) {
+        if (s != BUF_TRAILING) {
             sync_idle_since_ms = 0;
         } else {
             if (sync_idle_since_ms == 0) sync_idle_since_ms = now_ms;
             if (SYNC_AUTO_STOP_MS > 0 && (now_ms - sync_idle_since_ms) > (uint32_t)SYNC_AUTO_STOP_MS) {
-                bool normal_auto_full_stop = !sync_tail_assist_active;
                 sync_disable(true);
                 extruder_est_last_update_ms = now_ms;
                 sync_apply_to_active();
-                if (normal_auto_full_stop) sync_auto_rearm_needs_advance_clear = true;
                 cmd_event("SYNC", "AUTO_STOP");
                 return;
             }
         }
-    } else {
-        sync_idle_since_ms = 0;
     }
 
     if ((now_ms - sync_last_tick_ms) < (uint32_t)SYNC_TICK_MS) return;

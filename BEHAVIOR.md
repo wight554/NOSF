@@ -271,10 +271,8 @@ jam severity from driver load telemetry.
 ### Trailing behavior and auto-stop
 
 `BUF_TRAILING` is now a low-speed recovery state, not an immediate hard stop.
-Normal sync clamps toward `TRAILING_RATE`. `SYNC_AUTO_STOP_MS` now applies only
-to two AUTO-only cases: the tail-clear assist path described below, and a
-sustained full-buffer `BUF_ADVANCE` condition after ordinary print sync has
-finished filling the buffer.
+Normal sync clamps toward `TRAILING_RATE`, and AUTO mode disables sync only if
+TRAILING persists for `SYNC_AUTO_STOP_MS`.
 
 **AUTO sync sequence:**
 
@@ -286,15 +284,9 @@ finished filling the buffer.
 3. Once `OUT` clears in that assist path, firmware disables sync immediately
   and then continues with the normal `RUNOUT` / optional RELOAD handling.
 4. Normal sync runs from the estimator, bounded by buffer state.
-5. If that tail-clear assist stays in `BUF_TRAILING` for `SYNC_AUTO_STOP_MS`, it
-  disables sync and resets the estimator to 0.
-6. Ordinary auto-started print sync stays active through difficult trailing
-  recovery, bounded by the normal trailing-rate and hard-wall protections.
-7. If ordinary auto-started sync later holds `BUF_ADVANCE` for
-  `SYNC_AUTO_STOP_MS`, firmware treats that as a filled-buffer / print-end
-  condition, disables sync, and waits for the buffer to leave `ADVANCE`
-  before another auto-start is allowed.
-8. The next qualifying `BUF_ADVANCE` event bootstraps sync again.
+5. Sustained `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` disables sync and resets the
+   estimator to 0.
+6. The next `BUF_ADVANCE` event bootstraps sync again.
 
 ---
 
@@ -307,8 +299,7 @@ load completion and RELOAD handover, but it is not the main sync controller.
 |-------|-----------|
 | `BUF_ADVANCE` while sync is off | enabled and bootstrapped |
 | `UL:`, `UM:`, or `TC:` unload starts | disabled |
-| tail-assist `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` | disabled and estimator reset |
-| normal auto sync `BUF_ADVANCE` for `SYNC_AUTO_STOP_MS` | disabled until buffer leaves `ADVANCE` |
+| sustained `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` | disabled and estimator reset |
 | `ST:` command | disabled |
 ---
 
