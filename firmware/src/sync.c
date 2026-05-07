@@ -14,6 +14,9 @@
 #define SYNC_TRAILING_HARD_WALL_MS 350.0f
 #define SYNC_TRAILING_HARD_PUSH_MM_S 0.25f
 #define SYNC_TRAILING_HARD_HOLD_MS 200u
+#define SYNC_TRAILING_COLLAPSE_DELAY_MS 250u
+#define SYNC_TRAILING_COLLAPSE_RAMP_MULT 3
+#define SYNC_TRAILING_COLLAPSE_CAP_MS 600u
 
 bool sync_enabled = false;
 bool sync_auto_started = false;
@@ -24,9 +27,8 @@ int g_baseline_target_sps = CONF_BASELINE_SPS;
 int g_baseline_sps = CONF_BASELINE_SPS;
 float g_baseline_alpha = CONF_BASELINE_ALPHA;
 uint32_t sync_fast_brake_until_ms = 0;
-static uint32_t sync_full_since_ms = 0;
-static bool sync_auto_rearm_blocked = false;
 static bool sync_trailing_recovery_active = false;
+static uint32_t sync_trailing_floor_since_ms = 0;
 static uint32_t sync_post_trailing_boost_until_ms = 0;
 
 buf_tracker_t g_buf = { .state = BUF_MID };
@@ -184,6 +186,10 @@ static float sync_trailing_wall_remaining_mm(void) {
     float remaining = g_buf_pos + buf_physical_half_travel_mm();
     if (remaining < 0.0f) remaining = 0.0f;
     return remaining;
+}
+
+static int sync_trailing_floor_sps(void) {
+    return (SYNC_MIN_SPS > TRAILING_SPS) ? SYNC_MIN_SPS : TRAILING_SPS;
 }
 
 float sync_trailing_wall_time_ms(lane_t *L) {
@@ -527,10 +533,10 @@ void sync_disable(bool reset_estimator) {
     sync_tail_assist_active = false;
     sync_current_sps = 0;
     sync_idle_since_ms = 0;
-    sync_full_since_ms = 0;
     sync_fast_brake_until_ms = 0;
     sync_trailing_critical_since_ms = 0;
     sync_trailing_recovery_active = false;
+    sync_trailing_floor_since_ms = 0;
     sync_post_trailing_boost_until_ms = 0;
 
     if (reset_estimator) {
@@ -598,12 +604,15 @@ static void sync_on_transition(buf_state_t prev, buf_state_t now_state, uint32_t
     if (!sync_tail_assist_active) {
         if (now_state == BUF_TRAILING) {
             sync_trailing_recovery_active = true;
+            sync_trailing_floor_since_ms = 0;
             sync_post_trailing_boost_until_ms = 0;
         } else if (prev == BUF_TRAILING && now_state == BUF_MID) {
             if (sync_trailing_recovery_active) sync_post_trailing_boost_until_ms = now_ms + 300u;
             sync_trailing_recovery_active = false;
+            sync_trailing_floor_since_ms = 0;
         } else if (now_state == BUF_ADVANCE) {
             sync_trailing_recovery_active = false;
+            sync_trailing_floor_since_ms = 0;
             sync_post_trailing_boost_until_ms = 0;
         }
     }
@@ -637,10 +646,9 @@ void sync_tick(uint32_t now_ms) {
     if (!A || tc_state() != TC_IDLE || g_boot_stabilizing) return;
 
     buf_state_t s = g_buf.state;
-    if (sync_auto_rearm_blocked && s != BUF_ADVANCE) sync_auto_rearm_blocked = false;
     bool auto_start_allowed = (A->task == TASK_IDLE || A->task == TASK_FEED);
 
-    if (AUTO_MODE && !sync_enabled && auto_start_allowed && !sync_auto_rearm_blocked && s == BUF_ADVANCE) {
+    if (AUTO_MODE && !sync_enabled && auto_start_allowed && s == BUF_ADVANCE) {
         bool tail_assist = !lane_in_present(A) && lane_out_present(A);
         int startup_sps = sync_bootstrap_sps();
         sync_current_sps = startup_sps;
@@ -648,7 +656,6 @@ void sync_tick(uint32_t now_ms) {
         sync_auto_started = true;
         sync_tail_assist_active = tail_assist;
         sync_idle_since_ms = 0;
-        sync_full_since_ms = 0;
         cmd_event("SYNC", "AUTO_START");
     }
 
@@ -656,7 +663,6 @@ void sync_tick(uint32_t now_ms) {
 
     if (sync_auto_started) {
         if (sync_tail_assist_active) {
-            sync_full_since_ms = 0;
             if (s != BUF_TRAILING) {
                 sync_idle_since_ms = 0;
             } else {
@@ -671,19 +677,7 @@ void sync_tick(uint32_t now_ms) {
             }
         } else {
             sync_idle_since_ms = 0;
-            if (s != BUF_ADVANCE) {
-                sync_full_since_ms = 0;
-            } else {
-                if (sync_full_since_ms == 0) sync_full_since_ms = now_ms;
-                if (SYNC_AUTO_STOP_MS > 0 && (now_ms - sync_full_since_ms) > (uint32_t)SYNC_AUTO_STOP_MS) {
-                    sync_disable(true);
-                    sync_auto_rearm_blocked = true;
-                    extruder_est_last_update_ms = now_ms;
-                    sync_apply_to_active();
-                    cmd_event("SYNC", "AUTO_STOP");
-                    return;
-                }
-            }
+            sync_trailing_floor_since_ms = 0;
         }
     }
 
@@ -766,8 +760,17 @@ void sync_tick(uint32_t now_ms) {
     }
 
     if (sync_trailing_recovery_active) {
+        uint32_t trailing_recovery_ms = now_ms - g_buf.entered_ms;
+        int trailing_floor_sps = sync_trailing_floor_sps();
         int recovery_cap = (int)extruder_est_sps - kp_window;
-        if (recovery_cap < TRAILING_SPS) recovery_cap = TRAILING_SPS;
+        if (trailing_recovery_ms > SYNC_TRAILING_COLLAPSE_DELAY_MS) {
+            uint32_t collapse_ms = trailing_recovery_ms - SYNC_TRAILING_COLLAPSE_DELAY_MS;
+            if (collapse_ms > SYNC_TRAILING_COLLAPSE_CAP_MS) collapse_ms = SYNC_TRAILING_COLLAPSE_CAP_MS;
+            int extra_trim = (int)(((uint64_t)collapse_ms * (uint64_t)(kp_window + PRE_RAMP_SPS)) /
+                                   (uint64_t)SYNC_TRAILING_COLLAPSE_CAP_MS);
+            recovery_cap -= extra_trim;
+        }
+        if (recovery_cap < trailing_floor_sps) recovery_cap = trailing_floor_sps;
         if (target_sps > recovery_cap) target_sps = recovery_cap;
     }
 
@@ -796,14 +799,42 @@ void sync_tick(uint32_t now_ms) {
     if (fast_brake_active) target_sps = 0;
     else target_sps = clamp_i(target_sps, SYNC_MIN_SPS, max_sps);
 
+    int ramp_dn_sps = SYNC_RAMP_DN_SPS;
+    if (!fast_brake_active && sync_trailing_recovery_active && s == BUF_TRAILING) {
+        uint32_t trailing_recovery_ms = now_ms - g_buf.entered_ms;
+        if (trailing_recovery_ms > SYNC_TRAILING_COLLAPSE_DELAY_MS) {
+            ramp_dn_sps *= SYNC_TRAILING_COLLAPSE_RAMP_MULT;
+        }
+    }
+
     if (fast_brake_active) sync_current_sps = 0;
-    else if (sync_current_sps > target_sps) sync_current_sps -= SYNC_RAMP_DN_SPS;
+    else if (sync_current_sps > target_sps) sync_current_sps -= ramp_dn_sps;
     else if (sync_current_sps < target_sps) sync_current_sps += SYNC_RAMP_UP_SPS;
 
-    if (!fast_brake_active && s == BUF_TRAILING && sync_current_sps < TRAILING_SPS)
-        sync_current_sps = TRAILING_SPS;
+    if (!fast_brake_active && s == BUF_TRAILING) {
+        int trailing_floor_sps = sync_trailing_floor_sps();
+        if (sync_current_sps < trailing_floor_sps) sync_current_sps = trailing_floor_sps;
+    }
 
     sync_current_sps = clamp_i(sync_current_sps, 0, max_sps);
+
+    if (sync_auto_started && !sync_tail_assist_active && s == BUF_TRAILING) {
+        int trailing_floor_sps = sync_trailing_floor_sps();
+        if (sync_current_sps <= trailing_floor_sps) {
+            if (sync_trailing_floor_since_ms == 0) sync_trailing_floor_since_ms = now_ms;
+            if (SYNC_AUTO_STOP_MS > 0 && (now_ms - sync_trailing_floor_since_ms) > (uint32_t)SYNC_AUTO_STOP_MS) {
+                sync_disable(true);
+                extruder_est_last_update_ms = now_ms;
+                sync_apply_to_active();
+                cmd_event("SYNC", "AUTO_STOP");
+                return;
+            }
+        } else {
+            sync_trailing_floor_since_ms = 0;
+        }
+    } else {
+        sync_trailing_floor_since_ms = 0;
+    }
 
     sync_apply_to_active();
 

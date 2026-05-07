@@ -56,8 +56,9 @@ run_current:
 # sync_kp_rate: 900
 # sync_overshoot_pct: 25         # Trailing-side trim as % of sync correction (0..200)
 # sync_reserve_pct: 40           # Reserve target as % of BUF_HALF_TRAVEL toward trailing
-# sync_auto_stop_ms: 5000          # Auto-mode only: disable auto-started sync after buffer
-                                   # stays TRAILING this long.
+# sync_auto_stop_ms: 5000          # Auto-mode only: tail-assist timeout in TRAILING,
+                                   # or normal sync timeout only after TRAILING
+                                   # recovery has already hit the minimum floor.
 # post_print_stab_delay_ms: 0      # Legacy name: idle trailing negative-sync delay.
                                    # 0 = start immediately when idle+TRAILING.
 

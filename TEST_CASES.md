@@ -416,13 +416,13 @@ python3 scripts/nosf_cmd.py "SET:AUTO_MODE:1" "SM:1"
 
 2. Put the active lane in a loaded state where the downstream path can pull filament.
 3. Pull the buffer into `ADVANCE` and monitor with repeated `?:` calls.
-4. Let the system settle, then hold the buffer in `TRAILING` long enough to exceed `SYNC_AUTO_STOP`.
+4. Let the system settle, then hold the buffer in `TRAILING` long enough for sync to collapse to its minimum trailing-floor speed and remain there past `SYNC_AUTO_STOP`.
 
 ### Expected Result
 
 - `BUF_ADVANCE` can trigger `EV:SYNC:AUTO_START`.
 - Status shows sync active and `SPS` / `BL` / `BS` fields updating.
-- Sustained `TRAILING` eventually triggers `EV:SYNC:AUTO_STOP`.
+- Sustained `TRAILING` only triggers `EV:SYNC:AUTO_STOP` after sync has already collapsed to its minimum trailing-floor speed.
 - Sync does not run during toolchange or RELOAD phases.
 
 ---
