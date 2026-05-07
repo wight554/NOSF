@@ -16,3 +16,4 @@ void buf_sensor_tick(uint32_t now_ms);
 void sync_tick(uint32_t now_ms);
 float sync_reserve_error_mm(void);
 bool sync_is_positive_relaunch_damped(void);
+bool sync_is_advance_predicted(void);

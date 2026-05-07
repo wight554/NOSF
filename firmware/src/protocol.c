@@ -74,7 +74,7 @@ static void status_dump(void) {
         "LN:%d,TC:%s,L1T:%s,L2T:%s,"
         "I1:%d,O1:%d,I2:%d,O2:%d,"
         "TH:%d,YS:%d,BUF:%s,SPS:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,RELOAD:%d,"
-        "EST:%.1f,RE:%.2f,DP:%d",
+        "EST:%.1f,RE:%.2f,DP:%d,PR:%d,AV:%.2f",
         active_lane, tc_state_name(g_tc_ctx.state),
         task_name(g_lane_l1.task), task_name(g_lane_l2.task),
         lane_in_present(&g_lane_l1) ? 1 : 0,
@@ -94,7 +94,9 @@ static void status_dump(void) {
         RELOAD_MODE,
         (double)sps_to_mm_per_min((int)extruder_est_sps),
         (double)sync_reserve_error_mm(),
-        sync_is_positive_relaunch_damped() ? 1 : 0);
+        sync_is_positive_relaunch_damped() ? 1 : 0,
+        sync_is_advance_predicted() ? 1 : 0,
+        (double)g_buf.arm_vel_mm_s);
 
     cmd_reply("OK", b);
 }

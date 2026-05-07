@@ -904,3 +904,7 @@ bool sync_is_positive_relaunch_damped(void) {
     if (sync_recent_negative_until_ms == 0) return false;
     return (int32_t)(sync_recent_negative_until_ms - g_now_ms) > 0;
 }
+
+bool sync_is_advance_predicted(void) {
+    return predict_advance_coming();
+}
