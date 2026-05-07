@@ -19,6 +19,9 @@
 #define SYNC_TRAILING_COLLAPSE_CAP_MS 600u
 #define SYNC_MID_TRAILING_TAPER_FRAC 0.5f
 #define SYNC_MID_TRAILING_FLOOR_FRAC 0.45f
+#define SYNC_HIGH_FLOW_NEG_ASSIST_START_MM_MIN 1000.0f
+#define SYNC_HIGH_FLOW_NEG_ASSIST_FULL_MM_MIN 1400.0f
+#define SYNC_HIGH_FLOW_NEG_ASSIST_FRAC 0.75f
 
 bool sync_enabled = false;
 bool sync_auto_started = false;
@@ -730,6 +733,23 @@ void sync_tick(uint32_t now_ms) {
         zone_bias = ZONE_BIAS_BASE_SPS + (int)(dwell_s * ZONE_BIAS_RAMP_SPS_S);
     } else if (reserve_error_mm < -reserve_deadband_mm) {
         zone_bias = -ZONE_BIAS_BASE_SPS - (int)(dwell_s * ZONE_BIAS_RAMP_SPS_S);
+
+        if (s == BUF_MID) {
+            int assist_start_sps = mm_per_min_to_sps(SYNC_HIGH_FLOW_NEG_ASSIST_START_MM_MIN);
+            int assist_full_sps = mm_per_min_to_sps(SYNC_HIGH_FLOW_NEG_ASSIST_FULL_MM_MIN);
+            float flow_frac = 1.0f;
+
+            if (assist_full_sps > assist_start_sps) {
+                flow_frac = ((float)extruder_est_sps - (float)assist_start_sps) /
+                            (float)(assist_full_sps - assist_start_sps);
+                flow_frac = clamp_f(flow_frac, 0.0f, 1.0f);
+            }
+
+            if (flow_frac > 0.0f) {
+                int assist_sps = (int)(flow_frac * (float)ZONE_BIAS_BASE_SPS * SYNC_HIGH_FLOW_NEG_ASSIST_FRAC);
+                zone_bias += assist_sps;
+            }
+        }
     }
     zone_bias = clamp_i(zone_bias, -ZONE_BIAS_MAX_SPS, ZONE_BIAS_MAX_SPS);
 
