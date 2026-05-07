@@ -13,6 +13,11 @@ static bool lane_tail_in_transit(lane_t *L) {
            ((L->task_dist_mm - L->dist_at_in_clear_mm) < ((float)DIST_IN_OUT * 1.2f));
 }
 
+static bool lane_tail_runout_ready(lane_t *L) {
+    if (!lane_out_present(L)) return true;
+    return (L->task_dist_mm - L->dist_at_in_clear_mm) >= ((float)DIST_IN_OUT * 1.2f);
+}
+
 void din_init(din_t *d, uint pin) {
     d->pin = pin;
     gpio_init(pin);
@@ -376,8 +381,7 @@ void lane_tick(lane_t *L, uint32_t now_ms) {
     }
 
     if (L->reload_tail_ms != 0 && (L->task == TASK_FEED || L->task == TASK_LOAD_FULL || L->task == TASK_AUTOLOAD)) {
-        uint32_t tail_age = now_ms - L->reload_tail_ms;
-        if (!lane_out_present(L) || tail_age >= 10000u) {
+        if (lane_tail_runout_ready(L)) {
             L->reload_tail_ms = 0;
             L->runout_block_until_ms = now_ms + (uint32_t)RUNOUT_COOLDOWN_MS;
             cmd_event("RUNOUT", lane_s);
