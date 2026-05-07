@@ -22,6 +22,9 @@
 #define SYNC_HIGH_FLOW_NEG_ASSIST_START_MM_MIN 1000.0f
 #define SYNC_HIGH_FLOW_NEG_ASSIST_FULL_MM_MIN 1400.0f
 #define SYNC_HIGH_FLOW_NEG_ASSIST_FRAC 0.75f
+#define SYNC_RECENT_NEGATIVE_HOLD_MS 900u
+#define SYNC_POSITIVE_RELAUNCH_DAMP_NUM 1
+#define SYNC_POSITIVE_RELAUNCH_DAMP_DEN 4
 
 bool sync_enabled = false;
 bool sync_auto_started = false;
@@ -35,6 +38,7 @@ uint32_t sync_fast_brake_until_ms = 0;
 static bool sync_trailing_recovery_active = false;
 static uint32_t sync_trailing_floor_since_ms = 0;
 static uint32_t sync_post_trailing_boost_until_ms = 0;
+static uint32_t sync_recent_negative_until_ms = 0;
 
 buf_tracker_t g_buf = { .state = BUF_MID };
 
@@ -715,6 +719,12 @@ void sync_tick(uint32_t now_ms) {
     float reserve_target_mm = buf_target_reserve_mm();
     float reserve_deadband_mm = buf_virtual_deadband_mm();
     float reserve_error_mm = g_buf_pos - reserve_target_mm;
+    if (reserve_error_mm < -reserve_deadband_mm) {
+        sync_recent_negative_until_ms = now_ms + SYNC_RECENT_NEGATIVE_HOLD_MS;
+    }
+    bool damp_positive_relaunch = !sync_tail_assist_active &&
+                                  sync_recent_negative_until_ms != 0 &&
+                                  (int32_t)(sync_recent_negative_until_ms - now_ms) > 0;
     int kp_window = sync_effective_kp_sps(s);
     int reserve_correction = 0;
     float trailing_wall_ms = 1000000000.0f;
@@ -723,6 +733,10 @@ void sync_tick(uint32_t now_ms) {
         float threshold = buf_threshold_mm();
         reserve_correction = (int)((reserve_error_mm / threshold) * (float)kp_window);
         reserve_correction = clamp_i(reserve_correction, -kp_window, kp_window);
+        if (damp_positive_relaunch && reserve_correction > 0) {
+            reserve_correction = (reserve_correction * SYNC_POSITIVE_RELAUNCH_DAMP_NUM) /
+                                 SYNC_POSITIVE_RELAUNCH_DAMP_DEN;
+        }
         trailing_push_mm_s = sync_trailing_wall_velocity_mm_s(A);
         trailing_wall_ms = sync_trailing_wall_time_ms(A);
     }
@@ -731,6 +745,10 @@ void sync_tick(uint32_t now_ms) {
     uint32_t dwell_s = (now_ms - g_buf.entered_ms) / 1000u;
     if (reserve_error_mm > reserve_deadband_mm) {
         zone_bias = ZONE_BIAS_BASE_SPS + (int)(dwell_s * ZONE_BIAS_RAMP_SPS_S);
+        if (damp_positive_relaunch) {
+            zone_bias = (zone_bias * SYNC_POSITIVE_RELAUNCH_DAMP_NUM) /
+                        SYNC_POSITIVE_RELAUNCH_DAMP_DEN;
+        }
     } else if (reserve_error_mm < -reserve_deadband_mm) {
         zone_bias = -ZONE_BIAS_BASE_SPS - (int)(dwell_s * ZONE_BIAS_RAMP_SPS_S);
 
@@ -760,7 +778,7 @@ void sync_tick(uint32_t now_ms) {
     float slope_gain = 0.5f;
     int slope_bias = (int)(slope_gain * (extruder_est_sps - extruder_est_prev_sps));
 
-    bool advance_predicted = predict_advance_coming();
+    bool advance_predicted = !damp_positive_relaunch && predict_advance_coming();
     int overshoot_trim = 0;
     if (s == BUF_TRAILING && SYNC_OVERSHOOT_PCT > 0) {
         int negative_correction = -reserve_correction;
