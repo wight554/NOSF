@@ -14,6 +14,12 @@ DUMP MODE:
     Reads all GET-able parameters from the device and prints them in
     config.ini format (copy-paste ready).  Use --raw for a terse list.
 
+POLL MODE:
+    python3 scripts/nosf_cmd.py [--port PORT] --poll MS
+
+    Repeatedly sends the status command (?:) at the specified interval.
+    Useful for live debugging of the control loop.
+
 Exit codes: 0 = success, 1 = error or timeout.
 """
 import argparse
@@ -321,6 +327,39 @@ def run_dump(args):
 
 
 # ---------------------------------------------------------------------------
+# Poll mode
+# ---------------------------------------------------------------------------
+def run_poll(args):
+    port = args.port or find_serial_port()
+    ser  = open_port(port)
+    interval = args.poll / 1000.0
+
+    print(f"# Polling status every {args.poll} ms on {port}. Press Ctrl+C to stop.", flush=True)
+    try:
+        while True:
+            start_time = time.time()
+            ser.write(b"?:\n")
+
+            # Read until OK: response or ER:
+            while True:
+                line = ser.readline().decode('utf-8', errors='ignore').strip()
+                if not line:
+                    break
+                if line:
+                    print(line, flush=True)
+                if line.startswith('OK:') or line == 'OK' or line.startswith('ER:'):
+                    break
+
+            elapsed = time.time() - start_time
+            sleep_time = max(0, interval - elapsed)
+            time.sleep(sleep_time)
+    except KeyboardInterrupt:
+        print("\n# Stopped by user.")
+    finally:
+        ser.close()
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 def main():
@@ -336,11 +375,15 @@ def main():
                         help='Read all parameters from device and print as config.ini')
     parser.add_argument('--raw',     action='store_true',
                         help='With --dump: print terse key: value lines without comments')
+    parser.add_argument('--poll',    type=int, metavar='MS',
+                        help='Repeatedly poll status (?:) at specified interval in ms')
     parser.add_argument('cmd', nargs='*', help='NOSF command(s) to send')
     args = parser.parse_args()
 
     if args.dump:
         run_dump(args)
+    elif args.poll:
+        run_poll(args)
     elif args.cmd:
         run_send(args)
     else:
