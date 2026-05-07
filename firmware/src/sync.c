@@ -183,7 +183,16 @@ static int sync_apply_scaling(int base_sps) {
     int target = base_sps;
 
     if (g_buf_pos < (buf_target_reserve_mm() - buf_virtual_deadband_mm())) {
-        if (target > TRAILING_SPS) target = TRAILING_SPS;
+        float taper_start_mm = buf_target_reserve_mm() - buf_virtual_deadband_mm();
+        float taper_end_mm = -buf_threshold_mm();
+        float taper_span_mm = taper_start_mm - taper_end_mm;
+
+        if (target > TRAILING_SPS && taper_span_mm > 0.001f) {
+            float overfill_mm = taper_start_mm - g_buf_pos;
+            float taper_frac = clamp_f(overfill_mm / taper_span_mm, 0.0f, 1.0f);
+            float tapered = (float)target - ((float)(target - TRAILING_SPS) * taper_frac);
+            target = (int)tapered;
+        }
     }
 
     return target;
