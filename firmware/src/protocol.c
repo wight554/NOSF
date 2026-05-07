@@ -216,6 +216,16 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         stop_all();
         set_toolhead_filament(false);
         cmd_reply("OK", NULL);
+    } else if (!strcmp(cmd, "BS")) {
+        if (controller_activity_in_progress() || sync_enabled) {
+            cmd_reply("ER", "BUSY");
+            return;
+        }
+        if (!buffer_stabilize_request(now_ms)) {
+            cmd_reply("ER", "BUF_STAB_UNAVAILABLE");
+            return;
+        }
+        cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "TS")) {
         int v = atoi(p);
         if (v == 0 || v == 1) {
@@ -338,6 +348,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "AUTO_MODE")) AUTO_MODE = clamp_i(iv, 0, 1);
         else if (!strcmp(base_param, "RELOAD_MODE")) RELOAD_MODE = (iv != 0) ? 1 : 0;
         else if (!strcmp(base_param, "RUNOUT_COOLDOWN_MS")) RUNOUT_COOLDOWN_MS = clamp_i(iv, 0, 60000);
+        else if (!strcmp(base_param, "POST_PRINT_STAB_MS")) POST_PRINT_STAB_DELAY_MS = clamp_i(iv, 0, 300000);
         else if (!strcmp(base_param, "RELOAD_Y_MS")) RELOAD_Y_TIMEOUT_MS = clamp_i(iv, 100, 30000);
         else if (!strcmp(base_param, "RELOAD_JOIN_MS")) RELOAD_JOIN_DELAY_MS = clamp_i(iv, 0, 10000);
         else if (!strcmp(base_param, "DIST_IN_OUT")) DIST_IN_OUT = clamp_i(iv, 10, 5000);
@@ -448,6 +459,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "AUTO_MODE")) snprintf(out, sizeof(out), "AUTO_MODE:%d", AUTO_MODE);
         else if (!strcmp(param, "RELOAD_MODE")) snprintf(out, sizeof(out), "RELOAD_MODE:%d", RELOAD_MODE);
         else if (!strcmp(param, "RUNOUT_COOLDOWN_MS")) snprintf(out, sizeof(out), "RUNOUT_COOLDOWN_MS:%d", RUNOUT_COOLDOWN_MS);
+        else if (!strcmp(param, "POST_PRINT_STAB_MS")) snprintf(out, sizeof(out), "POST_PRINT_STAB_MS:%d", POST_PRINT_STAB_DELAY_MS);
         else if (!strcmp(param, "RELOAD_Y_MS")) snprintf(out, sizeof(out), "RELOAD_Y_MS:%d", RELOAD_Y_TIMEOUT_MS);
         else if (!strcmp(param, "RELOAD_JOIN_MS")) snprintf(out, sizeof(out), "RELOAD_JOIN_MS:%d", RELOAD_JOIN_DELAY_MS);
         else if (!strcmp(param, "DIST_IN_OUT")) snprintf(out, sizeof(out), "DIST_IN_OUT:%d", DIST_IN_OUT);

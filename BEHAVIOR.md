@@ -286,6 +286,14 @@ jam severity from driver load telemetry.
 Normal sync clamps toward `TRAILING_RATE`, and AUTO mode disables sync only if
 TRAILING persists for `SYNC_AUTO_STOP_MS`.
 
+The same low-speed stabilization helper used at boot can also be run on demand
+with `BS:` when the controller is idle.
+
+After a normal non-tail-assist `SYNC:AUTO_STOP`, firmware can also wait
+`POST_PRINT_STAB_MS` and then run that helper automatically. This leaves the
+buffer closer to `MID` after a print ends, which makes later retract or
+recovery actions less likely to fight stale buffer preload.
+
 **AUTO sync sequence:**
 
 1. `BUF_ADVANCE` auto-starts sync in `AUTO_MODE` and seeds the estimator from

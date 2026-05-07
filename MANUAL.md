@@ -56,6 +56,7 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 | `TC:n` | Manual| **Toolchange** — Unload active lane and load lane `n`. |
 | `MV:mm:F[:D]`| Both | **Exact Move** — move `abs(mm)` at `F` mm/min. Direction from sign of `mm` or optional `D` (`F`/`R`/`B`, `+`/`-`). Disables sync. |
 | `FD:` | Both  | **Continuous Feed** — runs forward until `ST:`. |
+| `BS:` | Both  | **Buffer Stabilize** — if the controller is idle, run the buffer neutralization move immediately to bring a dual-endstop buffer back toward `MID`. |
 | `ST:` | Both  | **Stop** — aborts all motion and resets toolchange state. |
 | `CU:` | Both  | **Cut** — performs the cutter sequence on the active lane. |
 
@@ -67,9 +68,9 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 | `TS:<0\|1>`| OK | **Toolhead Sensor** — report toolhead filament status (sent by host). |
 | `SM:<0\|1>`| OK | **Sync Mode** — manually toggle buffer sync. |
 | `BI:<0\|1>`| OK | **Buffer Invert** — invert buffer endstop logic. |
-| `SV:` | OK | **Save Settings** — persist current runtime parameters to flash. Rejected with `ER:PERSIST_BUSY` while motion, toolchange, cutter activity, or boot buffer stabilization is active. |
-| `LD:` | OK | **Load Settings** — reload persisted settings from flash. Rejected with `ER:PERSIST_BUSY` while motion, toolchange, cutter activity, or boot buffer stabilization is active. |
-| `RS:` | OK | **Reset Settings** — restore defaults and save them to flash. Rejected with `ER:PERSIST_BUSY` while motion, toolchange, cutter activity, or boot buffer stabilization is active. |
+| `SV:` | OK | **Save Settings** — persist current runtime parameters to flash. Rejected with `ER:PERSIST_BUSY` while motion, toolchange, cutter activity, or buffer stabilization is active. |
+| `LD:` | OK | **Load Settings** — reload persisted settings from flash. Rejected with `ER:PERSIST_BUSY` while motion, toolchange, cutter activity, or buffer stabilization is active. |
+| `RS:` | OK | **Reset Settings** — restore defaults and save them to flash. Rejected with `ER:PERSIST_BUSY` while motion, toolchange, cutter activity, or buffer stabilization is active. |
 | `CA:lane:ma` | OK | **Set Run Current** — immediately program the lane TMC run current in mA. |
 | `BOOT:` | OK | **Reboot To BOOTSEL** — reboot into RP2040 USB boot mode for flashing. |
 
@@ -138,6 +139,7 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `RUNOUT_COOLDOWN_MS` | `runout_cooldown_ms` | Cooldown before another runout can be reported on the same lane | 12000 |
 | `SYNC_OVERSHOOT_PCT` | `sync_overshoot_pct` | Extra trailing-side trim as percent of sync correction after reserve overshoots full (0..200) | 25 |
 | `SYNC_AUTO_STOP` | `sync_auto_stop_ms` | Auto-mode only: disable auto-started sync after sustained `TRAILING` for X ms | 5000 |
+| `POST_PRINT_STAB_MS` | `post_print_stab_delay_ms` | After normal `SYNC:AUTO_STOP`, wait this long before automatically neutralizing the buffer; `0` disables it | 10000 |
 | `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |
 | `RELOAD_JOIN_MS` | `reload_join_delay_ms` | Extra RELOAD-only settling delay after tail and Y clear before `RELOAD:JOINING` starts | 500 |
 
@@ -169,6 +171,7 @@ Runtime status `BL` is the learned control baseline. `GET:` / `SET:` / `SV:` / `
 | `ACTIVE` | `lane\|NONE`| Reported when the active lane changes. |
 | `FAULT:DRY_SPIN`| `lane` | Motor spinning > 8s without filament (`IN` clear). |
 | `SYNC` | `AUTO_START\|AUTO_STOP` | Automatic sync state transitions. |
+| `BUF_STAB` | `START\|DONE\|TIMEOUT` | Buffer neutralization started, reached `MID`, or hit its safety timeout. |
 | `BS` | Mode-specific snapshot | Periodic buffer/sync status event used during sync and RELOAD follow. |
 | `TC:*` | Phase-specific | Toolchange progress events such as `TC:UNLOADING`, `TC:SWAPPING`, `TC:LOADING`, `TC:DONE`, `TC:ERROR`. |
 | `RELOAD:*` | Phase-specific | RELOAD progress and fault events such as `RELOAD:SWITCHING`, `RELOAD:JOINING`, `RELOAD:LOADED`, `RELOAD:FAULT`. |

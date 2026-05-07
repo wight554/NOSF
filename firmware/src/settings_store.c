@@ -14,7 +14,7 @@
 
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4e4f5346u
-#define SETTINGS_VERSION 41u
+#define SETTINGS_VERSION 42u
 
 typedef struct {
     uint32_t magic;
@@ -25,6 +25,7 @@ typedef struct {
     int sync_ramp_up, sync_ramp_dn;
     int sync_tick_ms, pre_ramp_sps;
     int sync_auto_stop_ms;
+    int post_print_stab_delay_ms;
     int load_max_mm;
     int unload_max_mm;
     int reload_y_timeout_ms;
@@ -115,6 +116,7 @@ void settings_defaults(void) {
     SYNC_TICK_MS = CONF_SYNC_TICK_MS;
     PRE_RAMP_SPS = CONF_PRE_RAMP_SPS;
     SYNC_AUTO_STOP_MS = CONF_SYNC_AUTO_STOP_MS;
+    POST_PRINT_STAB_DELAY_MS = CONF_POST_PRINT_STAB_DELAY_MS;
     AUTOLOAD_MAX_MM = CONF_AUTOLOAD_MAX_MM;
     LOAD_MAX_MM = CONF_LOAD_MAX_MM;
     UNLOAD_MAX_MM = CONF_UNLOAD_MAX_MM;
@@ -235,6 +237,7 @@ void settings_save(void) {
     s.sync_tick_ms = SYNC_TICK_MS;
     s.pre_ramp_sps = PRE_RAMP_SPS;
     s.sync_auto_stop_ms = SYNC_AUTO_STOP_MS;
+    s.post_print_stab_delay_ms = POST_PRINT_STAB_DELAY_MS;
     s.autoload_max_mm = AUTOLOAD_MAX_MM;
     s.load_max_mm = LOAD_MAX_MM;
     s.unload_max_mm = UNLOAD_MAX_MM;
@@ -385,6 +388,7 @@ void settings_load(void) {
     SYNC_TICK_MS = s->sync_tick_ms;
     PRE_RAMP_SPS = s->pre_ramp_sps;
     SYNC_AUTO_STOP_MS = s->sync_auto_stop_ms;
+    POST_PRINT_STAB_DELAY_MS = s->post_print_stab_delay_ms;
     AUTOLOAD_MAX_MM = s->autoload_max_mm;
     LOAD_MAX_MM = s->load_max_mm;
     UNLOAD_MAX_MM = s->unload_max_mm;

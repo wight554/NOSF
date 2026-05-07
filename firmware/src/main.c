@@ -38,6 +38,7 @@ int AUTO_SPS = CONF_AUTO_SPS;
 int MOTION_STARTUP_MS = CONF_MOTION_STARTUP_MS;
 
 int RUNOUT_COOLDOWN_MS = CONF_RUNOUT_COOLDOWN_MS;
+int POST_PRINT_STAB_DELAY_MS = CONF_POST_PRINT_STAB_DELAY_MS;
 int RELOAD_MODE = CONF_RELOAD_MODE;
 int RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
 int RELOAD_JOIN_DELAY_MS = CONF_RELOAD_JOIN_DELAY_MS;
@@ -432,8 +433,8 @@ int main(void) {
         // USB commands
         cmd_poll(g_now_ms);
 
-        // Background boot-only buffer neutralization.
-        boot_stabilize_tick(g_now_ms);
+        // Background buffer neutralization: boot startup and optional post-print cleanup.
+        buffer_stabilize_tick(g_now_ms);
 
         // State machines (order matters)
         cutter_tick(g_now_ms);

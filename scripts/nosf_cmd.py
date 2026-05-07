@@ -85,6 +85,7 @@ DUMP_PARAMS = [
     ("SYNC_OVERSHOOT_PCT", "sync_overshoot_pct",     False),
     ("SYNC_RESERVE_PCT",  "sync_reserve_pct",        False),
     ("SYNC_AUTO_STOP",    "sync_auto_stop_ms",       False),
+    ("POST_PRINT_STAB_MS", "post_print_stab_delay_ms", False),
     # --- Smarter Sync ---
     ("EST_ALPHA_MIN",     "est_alpha_min",           False),
     ("EST_ALPHA_MAX",     "est_alpha_max",           False),

@@ -160,6 +160,7 @@ extern int REV_SPS;
 extern int AUTO_SPS;
 extern int MOTION_STARTUP_MS;
 extern int RUNOUT_COOLDOWN_MS;
+extern int POST_PRINT_STAB_DELAY_MS;
 extern int RELOAD_MODE;
 extern int RELOAD_Y_TIMEOUT_MS;
 extern int RELOAD_JOIN_DELAY_MS;
