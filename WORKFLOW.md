@@ -70,6 +70,8 @@ If new functionality is added, analyze the current affected flows and confirm th
 
 ### 4. Commit with the project format
 
+Use shell git commands for staging, committing, and pushing. Do not rely on Git MCP commit helpers.
+
 ```text
 <short description>
 

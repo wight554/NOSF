@@ -108,6 +108,7 @@ the context budget for code reading instead.
    This creates an audit trail and helps the user understand the capabilities and limitations of each decision.
    You do **not** need to repeat the model name in the chat or when listing tools.
 9. **MANDATORY: Analyze regression impact for new features** — Unless the user explicitly asks to change current behavior, every new feature must include a code-level impact review of the existing affected flows (for example preload, load, unload, toolchange, sync, RELOAD, persistence, protocol, and docs) and validation that those flows remain intact.
+10. **MANDATORY: Use shell git for commits and pushes** — Do not rely on Git MCP tooling for `git add`, `git commit`, or `git push`. Use non-interactive shell git commands in the terminal instead.
 
 ## Commit Format
 
@@ -138,6 +139,7 @@ Rules:
 - Body: explain *why*, not just what
 - **Always include the model in `Generated-By`:** `Generated-By: <Agent Name> (<Model>)`. Examples: `GitHub Copilot (Claude Haiku 4.5)`, `Gemini 3.1 Pro (High)`. This creates an audit trail.
 - Push immediately after every commit: `git push`
+- Use shell git commands for add / commit / push; do not use Git MCP commit helpers.
 
 ## TASK.md Workflow — Required Before Writing Any Code
 
