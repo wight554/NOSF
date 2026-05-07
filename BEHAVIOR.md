@@ -182,6 +182,8 @@ sections where no new transitions arrive.
 - `BUF_ADVANCE` adds a positive bias, growing with time stuck in ADVANCE.
 - `BUF_TRAILING` adds a negative bias, growing with time stuck in TRAILING.
 - The total bias is capped by `ZONE_BIAS_MAX`.
+- `SYNC_OVERSHOOT_PCT` adds an ADVANCE-only extra push derived from the
+  current positive correction, capped by the effective KP window.
 
 This bias keeps the arm near MID when the estimator is slightly wrong, while
 the estimator remains the dominant term.

@@ -456,8 +456,19 @@ void sync_tick(uint32_t now_ms) {
     float slope_gain = 0.5f;
     int slope_bias = (int)(slope_gain * (extruder_est_sps - extruder_est_prev_sps));
 
-    int target_sps = (int)extruder_est_sps + zone_bias + slope_bias;
-    if (predict_advance_coming()) target_sps += PRE_RAMP_SPS;
+    bool advance_predicted = predict_advance_coming();
+    int advance_push = 0;
+    if (s == BUF_ADVANCE && SYNC_OVERSHOOT_PCT > 0) {
+        int kp_window = sync_effective_kp_sps(s);
+        int positive_correction = zone_bias + slope_bias;
+        if (advance_predicted) positive_correction += PRE_RAMP_SPS;
+        if (positive_correction < 0) positive_correction = 0;
+        if (positive_correction > kp_window) positive_correction = kp_window;
+        advance_push = (positive_correction * SYNC_OVERSHOOT_PCT) / 100;
+    }
+
+    int target_sps = (int)extruder_est_sps + zone_bias + slope_bias + advance_push;
+    if (advance_predicted) target_sps += PRE_RAMP_SPS;
 
     target_sps = sync_apply_scaling(target_sps);
 
