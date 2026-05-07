@@ -210,11 +210,10 @@ slightly wrong, while the estimator remains the dominant term.
 
 - In analog-buffer mode, `g_buf_pos` scales the target between
   `TRAILING_RATE` and the requested target.
-- In dual-endstop mode, reserve targeting is handled by the reserve-correction
-  and zone-bias terms. The extra taper is only a trailing-wall guard: once the
-  raw buffer state reaches `BUF_TRAILING`, sync tapers the requested target
-  down toward `TRAILING_RATE` across the remaining physical travel beyond the
-  switch point instead of starting that taper from the reserve target.
+- In dual-endstop mode, the virtual reserve target shapes the controller.
+  If the estimated position moves past the target into “too full”, sync tapers
+  the requested target down toward `TRAILING_RATE` across the remaining
+  full-side virtual travel instead of dropping there in one step.
 - The controller also computes a dynamic trailing-wall time from remaining
   physical margin and current relative push. If time-to-wall collapses while
   sync is still driving toward `TRAILING`, firmware adds urgency trim and can
