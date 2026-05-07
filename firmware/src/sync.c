@@ -78,15 +78,12 @@ static float buf_threshold_mm(void) {
 static float buf_target_reserve_mm(void) {
     float threshold = buf_threshold_mm();
     float physical_half = buf_physical_half_travel_mm();
-    float hidden_margin = physical_half - threshold;
-    float target = -(threshold * 0.35f);
-
-    if (hidden_margin > 0.5f) {
-        target = -(threshold + hidden_margin * 0.25f);
-    }
+    float pct = (float)SYNC_RESERVE_PCT / 100.0f;
+    float target = -(threshold * pct);
 
     float min_target = -physical_half + 0.5f;
     if (target < min_target) target = min_target;
+    if (target > threshold) target = threshold;
     return target;
 }
 
@@ -386,7 +383,8 @@ void sync_disable(bool reset_estimator) {
 }
 
 static int sync_bootstrap_sps(void) {
-    int startup_sps = (g_baseline_sps < BUF_STAB_SPS) ? g_baseline_sps : BUF_STAB_SPS;
+    int startup_sps = g_baseline_sps;
+    if (startup_sps < BUF_STAB_SPS) startup_sps = BUF_STAB_SPS;
     int max_sps = sync_clamp_max_sps(SYNC_MAX_SPS);
     int res = clamp_i(startup_sps, TRAILING_SPS, max_sps);
     extruder_est_sps = (float)res;
@@ -469,7 +467,6 @@ void sync_tick(uint32_t now_ms) {
     if (AUTO_MODE && !sync_enabled && s == BUF_ADVANCE) {
         bool tail_assist = !lane_in_present(A) && lane_out_present(A);
         int startup_sps = sync_bootstrap_sps();
-        g_baseline_sps = startup_sps;
         sync_current_sps = startup_sps;
         sync_enabled = true;
         sync_auto_started = true;

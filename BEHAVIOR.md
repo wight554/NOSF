@@ -186,10 +186,10 @@ In dual-endstop mode, firmware anchors the virtual position to the switch edge
 on each transition, then integrates the mismatch between estimated extruder
 draw and commanded MMU feed inside the physical travel envelope.
 
-The normal sync target is not `MID`. It is a small buffered-reserve target on
-the trailing side, derived from the switch threshold plus part of the hidden
-travel margin. This keeps reserve in the buffer instead of merely bouncing
-around the state boundary.
+The normal sync target is not `MID`. It is a buffered-reserve target on the
+trailing side set by `SYNC_RESERVE_PCT`, expressed as a percentage of
+`BUF_HALF_TRAVEL`. This keeps reserve in the buffer without hard-coding a deep
+hidden-margin target into firmware.
 
 `ZONE_BIAS_BASE` and `ZONE_BIAS_RAMP` provide a bounded reserve-recovery pull:
 
@@ -221,7 +221,8 @@ TRAILING low-speed recovery resumes.
 When the buffer returns to MID after a non-MID dwell and settles there for
 > 500 ms, `g_baseline_sps` drifts toward the current speed. This baseline is
 still used for bootstrapping and conservative limits, but it is no longer the
-primary sync controller.
+primary sync controller. AUTO start seeds sync from that baseline but no longer
+overwrites the configured baseline with `BUF_STAB_RATE`.
 
 ### RELOAD contact and follow
 

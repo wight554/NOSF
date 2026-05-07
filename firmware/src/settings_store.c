@@ -14,7 +14,7 @@
 
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4e4f5346u
-#define SETTINGS_VERSION 38u
+#define SETTINGS_VERSION 39u
 
 typedef struct {
     uint32_t magic;
@@ -55,6 +55,7 @@ typedef struct {
     float buf_neutral, buf_range, buf_thr, buf_analog_alpha;
     int sync_kp_sps;
     int sync_overshoot_pct;
+    int sync_reserve_pct;
     int ts_buf_fallback_ms;
 
     int join_sps;
@@ -172,6 +173,7 @@ void settings_defaults(void) {
     BUF_ANALOG_ALPHA = CONF_BUF_ANALOG_ALPHA;
     SYNC_KP_SPS = CONF_SYNC_KP_SPS;
     SYNC_OVERSHOOT_PCT = clamp_i(CONF_SYNC_OVERSHOOT_PCT, 0, 200);
+    SYNC_RESERVE_PCT = clamp_i(CONF_SYNC_RESERVE_PCT, 0, 150);
     TS_BUF_FALLBACK_MS = CONF_TS_BUF_FALLBACK_MS;
     BUF_STAB_SPS = clamp_i(CONF_BUF_STAB_SPS, 10, 10000);
 
@@ -276,6 +278,7 @@ void settings_save(void) {
     s.buf_analog_alpha = BUF_ANALOG_ALPHA;
     s.sync_kp_sps = SYNC_KP_SPS;
     s.sync_overshoot_pct = SYNC_OVERSHOOT_PCT;
+    s.sync_reserve_pct = SYNC_RESERVE_PCT;
     s.ts_buf_fallback_ms = TS_BUF_FALLBACK_MS;
 
     s.reload_mode = (bool)RELOAD_MODE;
@@ -439,6 +442,7 @@ void settings_load(void) {
     BUF_ANALOG_ALPHA = s->buf_analog_alpha;
     SYNC_KP_SPS = s->sync_kp_sps;
     SYNC_OVERSHOOT_PCT = clamp_i(s->sync_overshoot_pct, 0, 200);
+    SYNC_RESERVE_PCT = clamp_i(s->sync_reserve_pct, 0, 150);
     TS_BUF_FALLBACK_MS = s->ts_buf_fallback_ms;
 
     RELOAD_MODE = s->reload_mode ? 1 : 0;

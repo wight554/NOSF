@@ -195,6 +195,7 @@ extern float BUF_THR;
 extern float BUF_ANALOG_ALPHA;
 extern int SYNC_KP_SPS;
 extern int SYNC_OVERSHOOT_PCT;
+extern int SYNC_RESERVE_PCT;
 extern int TS_BUF_FALLBACK_MS;
 extern int SERVO_OPEN_US;
 extern int SERVO_CLOSE_US;

@@ -53,7 +53,8 @@ run_current:
 # buf_predict_thr_ms: 250
 # global_max_rate: 2500         # absolute ceiling for every commanded motor rate (mm/min)
 # sync_kp_rate: 1050
-# sync_overshoot_pct: 50         # ADVANCE-only extra push as % of KP correction (0..200)
+# sync_overshoot_pct: 50         # Trailing-side trim as % of sync correction (0..200)
+# sync_reserve_pct: 30           # Reserve target as % of BUF_HALF_TRAVEL toward trailing
 # sync_auto_stop_ms: 5000          # Auto-mode only: disable auto-started sync after buffer
                                    # stays TRAILING this long.
 

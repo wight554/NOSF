@@ -83,6 +83,7 @@ DUMP_PARAMS = [
     ("BUF_PREDICT_THR_MS", "buf_predict_thr_ms",     False),
     ("SYNC_KP_RATE",      "sync_kp_rate",            False),
     ("SYNC_OVERSHOOT_PCT", "sync_overshoot_pct",     False),
+    ("SYNC_RESERVE_PCT",  "sync_reserve_pct",        False),
     ("SYNC_AUTO_STOP",    "sync_auto_stop_ms",       False),
     # --- Smarter Sync ---
     ("EST_ALPHA_MIN",     "est_alpha_min",           False),
