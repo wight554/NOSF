@@ -58,9 +58,8 @@ run_current:
 # sync_reserve_pct: 40           # Reserve target as % of BUF_HALF_TRAVEL toward trailing
 # sync_auto_stop_ms: 5000          # Auto-mode only: disable auto-started sync after buffer
                                    # stays TRAILING this long.
-# post_print_stab_delay_ms: 0      # After normal AUTO_STOP, wait this long before
-                                   # automatic buffer stabilization / neutralization.
-                                   # 0 = start immediately.
+# post_print_stab_delay_ms: 0      # Legacy name: idle trailing negative-sync delay.
+                                   # 0 = start immediately when idle+TRAILING.
 
 # ─── Smarter Sync (Estimator) ────────────────────────────────────────────────
 # est_alpha_min: 0.12          # Estimator responsiveness (slow drifts)

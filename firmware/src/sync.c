@@ -40,7 +40,14 @@ bool g_boot_stabilizing = false;
 uint32_t g_boot_stabilize_deadline_ms = 0;
 lane_t *g_boot_stabilize_lane = NULL;
 static bool g_buffer_stabilize_emit_events = false;
-static uint32_t g_post_print_stabilize_at_ms = 0;
+
+typedef enum {
+    BUFFER_SERVICE_STABILIZE = 0,
+    BUFFER_SERVICE_NEG_SYNC,
+} buffer_service_mode_t;
+
+static buffer_service_mode_t g_buffer_service_mode = BUFFER_SERVICE_STABILIZE;
+static uint32_t g_idle_trailing_since_ms = 0;
 
 typedef struct {
     buf_state_t zone;
@@ -296,6 +303,7 @@ static void boot_stabilize_stop(void) {
     g_boot_stabilize_deadline_ms = 0;
     g_boot_stabilize_lane = NULL;
     g_buffer_stabilize_emit_events = false;
+    g_buffer_service_mode = BUFFER_SERVICE_STABILIZE;
 }
 
 static void boot_stabilize_disarm(void) {
@@ -303,6 +311,7 @@ static void boot_stabilize_disarm(void) {
     g_boot_stabilize_deadline_ms = 0;
     g_boot_stabilize_lane = NULL;
     g_buffer_stabilize_emit_events = false;
+    g_buffer_service_mode = BUFFER_SERVICE_STABILIZE;
 }
 
 static bool buffer_stabilize_controller_idle(void) {
@@ -311,28 +320,41 @@ static bool buffer_stabilize_controller_idle(void) {
     return true;
 }
 
-static bool buffer_stabilize_start_internal(uint32_t now_ms, bool emit_events) {
+static bool buffer_negative_sync_eligible(void) {
+    lane_t *active = lane_ptr(active_lane);
+    return active && lane_out_present(active);
+}
+
+static bool buffer_stabilize_start_internal(uint32_t now_ms, bool emit_events, buffer_service_mode_t mode) {
     if (g_boot_stabilizing) return true;
     if (!buffer_stabilize_controller_idle()) return false;
     if (BUF_SENSOR_TYPE != 0) return false;
 
     buf_state_t buf_state = buf_state_raw();
-    if (buf_state != BUF_TRAILING && buf_state != BUF_ADVANCE) {
-        g_post_print_stabilize_at_ms = 0;
-        return true;
+    lane_t *stab_lane = NULL;
+    bool forward = false;
+
+    if (mode == BUFFER_SERVICE_NEG_SYNC) {
+        if (buf_state != BUF_TRAILING || !buffer_negative_sync_eligible()) return true;
+        stab_lane = lane_ptr(active_lane);
+        forward = false;
+    } else {
+        if (buf_state != BUF_TRAILING && buf_state != BUF_ADVANCE) return true;
+        stab_lane = pick_boot_stabilize_lane();
+        forward = (buf_state == BUF_ADVANCE);
     }
 
-    lane_t *stab_lane = pick_boot_stabilize_lane();
     if (!stab_lane || BUF_STAB_SPS <= 0) return false;
 
     g_boot_stabilizing = true;
     g_boot_stabilize_deadline_ms = now_ms + 10000u;
     g_boot_stabilize_lane = stab_lane;
     g_buffer_stabilize_emit_events = emit_events;
-    g_post_print_stabilize_at_ms = 0;
+    g_buffer_service_mode = mode;
+    g_idle_trailing_since_ms = 0;
 
     motor_enable(&stab_lane->m, true);
-    motor_set_dir(&stab_lane->m, buf_state == BUF_ADVANCE);
+    motor_set_dir(&stab_lane->m, forward);
     motor_set_rate_sps(&stab_lane->m, BUF_STAB_SPS);
 
     if (g_buffer_stabilize_emit_events) cmd_event("BUF_STAB", "START");
@@ -340,30 +362,26 @@ static bool buffer_stabilize_start_internal(uint32_t now_ms, bool emit_events) {
 }
 
 bool buffer_stabilize_request(uint32_t now_ms) {
-    g_post_print_stabilize_at_ms = 0;
-    return buffer_stabilize_start_internal(now_ms, true);
-}
-
-void buffer_stabilize_schedule_after_print(uint32_t now_ms) {
-    if (BUF_SENSOR_TYPE != 0) return;
-    if (POST_PRINT_STAB_DELAY_MS <= 0) {
-        (void)buffer_stabilize_start_internal(now_ms, true);
-        return;
-    }
-    g_post_print_stabilize_at_ms = now_ms + (uint32_t)POST_PRINT_STAB_DELAY_MS;
+    g_idle_trailing_since_ms = 0;
+    return buffer_stabilize_start_internal(now_ms, true, BUFFER_SERVICE_STABILIZE);
 }
 
 void boot_stabilize_start(uint32_t now_ms) {
-    (void)buffer_stabilize_start_internal(now_ms, false);
+    (void)buffer_stabilize_start_internal(now_ms, false, BUFFER_SERVICE_STABILIZE);
 }
 
 void buffer_stabilize_tick(uint32_t now_ms) {
-    if (g_post_print_stabilize_at_ms != 0) {
+    if (!g_boot_stabilizing) {
         if (!buffer_stabilize_controller_idle()) {
-            g_post_print_stabilize_at_ms = 0;
-        } else if ((int32_t)(now_ms - g_post_print_stabilize_at_ms) >= 0) {
-            g_post_print_stabilize_at_ms = 0;
-            (void)buffer_stabilize_start_internal(now_ms, true);
+            g_idle_trailing_since_ms = 0;
+        } else if (buf_state_raw() == BUF_TRAILING && buffer_negative_sync_eligible()) {
+            if (g_idle_trailing_since_ms == 0) g_idle_trailing_since_ms = now_ms;
+            if (POST_PRINT_STAB_DELAY_MS <= 0 ||
+                (now_ms - g_idle_trailing_since_ms) >= (uint32_t)POST_PRINT_STAB_DELAY_MS) {
+                (void)buffer_stabilize_start_internal(now_ms, true, BUFFER_SERVICE_NEG_SYNC);
+            }
+        } else {
+            g_idle_trailing_since_ms = 0;
         }
     }
 
@@ -384,10 +402,23 @@ void buffer_stabilize_tick(uint32_t now_ms) {
         return;
     }
 
-    if (buf_state_raw() == BUF_MID) {
+    buf_state_t raw_state = buf_state_raw();
+    if (g_buffer_service_mode == BUFFER_SERVICE_NEG_SYNC) {
+        if (raw_state == BUF_ADVANCE) {
+            g_buffer_service_mode = BUFFER_SERVICE_STABILIZE;
+            g_boot_stabilize_deadline_ms = now_ms + 10000u;
+            motor_enable(&g_boot_stabilize_lane->m, true);
+            motor_set_dir(&g_boot_stabilize_lane->m, true);
+            motor_set_rate_sps(&g_boot_stabilize_lane->m, BUF_STAB_SPS);
+            return;
+        }
+    } else if (raw_state == BUF_MID) {
         if (g_buffer_stabilize_emit_events) cmd_event("BUF_STAB", "DONE");
         boot_stabilize_stop();
-    } else if ((int32_t)(now_ms - g_boot_stabilize_deadline_ms) >= 0) {
+        return;
+    }
+
+    if ((int32_t)(now_ms - g_boot_stabilize_deadline_ms) >= 0) {
         if (g_buffer_stabilize_emit_events) cmd_event("BUF_STAB", "TIMEOUT");
         boot_stabilize_stop();
     }
@@ -590,12 +621,10 @@ void sync_tick(uint32_t now_ms) {
         } else {
             if (sync_idle_since_ms == 0) sync_idle_since_ms = now_ms;
             if (SYNC_AUTO_STOP_MS > 0 && (now_ms - sync_idle_since_ms) > (uint32_t)SYNC_AUTO_STOP_MS) {
-                bool schedule_post_print_stabilize = !sync_tail_assist_active;
                 sync_disable(true);
                 extruder_est_last_update_ms = now_ms;
                 sync_apply_to_active();
                 cmd_event("SYNC", "AUTO_STOP");
-                if (schedule_post_print_stabilize) buffer_stabilize_schedule_after_print(now_ms);
                 return;
             }
         }

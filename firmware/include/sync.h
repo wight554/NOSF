@@ -5,7 +5,6 @@
 const char *buf_state_name(buf_state_t s);
 buf_state_t buf_state_raw(void);
 bool buffer_stabilize_request(uint32_t now_ms);
-void buffer_stabilize_schedule_after_print(uint32_t now_ms);
 void buffer_stabilize_tick(uint32_t now_ms);
 int sync_clamp_max_sps(int requested_sps);
 void sync_disable(bool reset_estimator);
