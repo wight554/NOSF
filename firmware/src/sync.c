@@ -601,7 +601,7 @@ void sync_tick(uint32_t now_ms) {
     }
 
     int wall_trim = 0;
-    if (BUF_SENSOR_TYPE == 0 && trailing_wall_ms < SYNC_TRAILING_SOFT_WALL_MS) {
+    if (BUF_SENSOR_TYPE == 0 && s == BUF_TRAILING && trailing_wall_ms < SYNC_TRAILING_SOFT_WALL_MS) {
         float urgency = (SYNC_TRAILING_SOFT_WALL_MS - trailing_wall_ms) / SYNC_TRAILING_SOFT_WALL_MS;
         urgency = clamp_f(urgency, 0.0f, 1.0f);
         wall_trim = (int)(urgency * (float)kp_window);

@@ -178,6 +178,9 @@ void settings_defaults(void) {
     SYNC_RESERVE_PCT = clamp_i(CONF_SYNC_RESERVE_PCT, 0, 150);
     TS_BUF_FALLBACK_MS = CONF_TS_BUF_FALLBACK_MS;
     BUF_STAB_SPS = clamp_i(CONF_BUF_STAB_SPS, 10, 10000);
+    JOIN_SPS = CONF_JOIN_SPS;
+    PRESS_SPS = CONF_PRESS_SPS;
+    TRAILING_SPS = CONF_TRAILING_SPS;
 
     MM_PER_STEP[0] = CONF_L1_MM_PER_STEP;
     MM_PER_STEP[1] = CONF_L2_MM_PER_STEP;
@@ -283,6 +286,9 @@ void settings_save(void) {
     s.sync_overshoot_pct = SYNC_OVERSHOOT_PCT;
     s.sync_reserve_pct = SYNC_RESERVE_PCT;
     s.ts_buf_fallback_ms = TS_BUF_FALLBACK_MS;
+    s.join_sps = JOIN_SPS;
+    s.press_sps = PRESS_SPS;
+    s.trailing_sps = TRAILING_SPS;
 
     s.reload_mode = (bool)RELOAD_MODE;
     s.cutter_settle_ms = CUT_TIMEOUT_SETTLE_MS;
