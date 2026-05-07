@@ -372,7 +372,11 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "DRIVER_HSTRT")) { SET_LANE({ TMC_HSTRT[idx] = clamp_i(iv, 0, 7); }); }
         else if (!strcmp(base_param, "DRIVER_HEND")) { SET_LANE({ TMC_HEND[idx] = clamp_i(iv, -3, 12); }); }
         else if (!strcmp(base_param, "FOLLOW_MS")) { SET_LANE({ FOLLOW_TIMEOUT_MS[idx] = clamp_i(iv, 1000, 60000); }); }
-        else if (!strcmp(base_param, "BASELINE_RATE")) g_baseline_sps = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 200, 50000));
+        else if (!strcmp(base_param, "BASELINE_RATE")) {
+            int baseline_sps = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 200, 50000));
+            g_baseline_target_sps = baseline_sps;
+            g_baseline_sps = baseline_sps;
+        }
         else if (!strcmp(base_param, "BUF_SENSOR")) BUF_SENSOR_TYPE = clamp_i(iv, 0, 1);
         else if (!strcmp(base_param, "BUF_NEUTRAL")) BUF_NEUTRAL = clamp_f(fv, 0.0f, 1.0f);
         else if (!strcmp(base_param, "BUF_RANGE")) BUF_RANGE = clamp_f(fv, 0.01f, 0.5f);
@@ -454,7 +458,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "TRAILING_RATE")) snprintf(out, sizeof(out), "TRAILING_RATE:%.1f", (double)sps_to_mm_per_min_idx(TRAILING_SPS, idx));
         else if (!strcmp(param, "BUF_STAB_RATE")) snprintf(out, sizeof(out), "BUF_STAB_RATE:%.1f", (double)sps_to_mm_per_min_idx(BUF_STAB_SPS, idx));
         else if (!strcmp(param, "FOLLOW_MS")) snprintf(out, sizeof(out), "FOLLOW_MS:%d", FOLLOW_TIMEOUT_MS[idx]);
-        else if (!strcmp(param, "BASELINE_RATE")) snprintf(out, sizeof(out), "BASELINE_RATE:%.1f", (double)sps_to_mm_per_min_idx(g_baseline_sps, idx));
+        else if (!strcmp(param, "BASELINE_RATE")) snprintf(out, sizeof(out), "BASELINE_RATE:%.1f", (double)sps_to_mm_per_min_idx(g_baseline_target_sps, idx));
         else if (!strcmp(param, "BASELINE_ALPHA")) snprintf(out, sizeof(out), "BASELINE_ALPHA:%.3f", (double)g_baseline_alpha);
         else if (!strcmp(param, "BUF_SENSOR")) snprintf(out, sizeof(out), "BUF_SENSOR:%d", BUF_SENSOR_TYPE);
         else if (!strcmp(param, "BUF_NEUTRAL")) snprintf(out, sizeof(out), "BUF_NEUTRAL:%.3f", (double)BUF_NEUTRAL);

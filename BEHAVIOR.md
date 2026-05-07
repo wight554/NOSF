@@ -224,10 +224,11 @@ window. During that window the sync target is forced to 0 before normal
 TRAILING low-speed recovery resumes.
 
 When the buffer returns to MID after a non-MID dwell and settles there for
-> 500 ms, `g_baseline_sps` drifts toward the current speed. This baseline is
-still used for bootstrapping and conservative limits, but it is no longer the
-primary sync controller. AUTO start seeds sync from that baseline but no longer
-overwrites the configured baseline with `BUF_STAB_RATE`.
+> 500 ms, the runtime control baseline drifts toward the current speed. The
+configured `BASELINE_RATE` remains a separate bootstrap target and persistence
+value; the learned runtime baseline cannot pull control below that configured
+floor. AUTO start seeds sync from that floor and no longer overwrites the
+configured baseline with `BUF_STAB_RATE`.
 
 ### RELOAD contact and follow
 

@@ -20,6 +20,7 @@ bool sync_auto_started = false;
 bool sync_tail_assist_active = false;
 uint32_t sync_idle_since_ms = 0;
 int sync_current_sps = 0;
+int g_baseline_target_sps = CONF_BASELINE_SPS;
 int g_baseline_sps = CONF_BASELINE_SPS;
 float g_baseline_alpha = CONF_BASELINE_ALPHA;
 uint32_t sync_fast_brake_until_ms = 0;
@@ -401,6 +402,10 @@ static void baseline_update_on_settle(uint32_t mid_dwell_ms) {
     }
 }
 
+static int baseline_control_floor_sps(void) {
+    return (g_baseline_sps > g_baseline_target_sps) ? g_baseline_sps : g_baseline_target_sps;
+}
+
 int sync_clamp_max_sps(int requested_sps) {
     return motion_clamp_rate_sps(requested_sps);
 }
@@ -422,10 +427,11 @@ void sync_disable(bool reset_estimator) {
 }
 
 static int sync_bootstrap_sps(void) {
-    int startup_sps = g_baseline_sps;
+    int startup_sps = baseline_control_floor_sps();
     if (startup_sps < BUF_STAB_SPS) startup_sps = BUF_STAB_SPS;
     int max_sps = sync_clamp_max_sps(SYNC_MAX_SPS);
     int res = clamp_i(startup_sps, TRAILING_SPS, max_sps);
+    g_baseline_sps = res;
     extruder_est_sps = (float)res;
     extruder_est_prev_sps = (float)res;
     extruder_est_last_update_ms = g_now_ms;
@@ -434,7 +440,8 @@ static int sync_bootstrap_sps(void) {
 }
 
 static int sync_effective_kp_sps(buf_state_t s) {
-    int baseline_limited_kp = (s == BUF_ADVANCE) ? (g_baseline_sps * 2) : (g_baseline_sps / 3);
+    int baseline_ref_sps = baseline_control_floor_sps();
+    int baseline_limited_kp = (s == BUF_ADVANCE) ? (baseline_ref_sps * 2) : (baseline_ref_sps / 3);
     if (baseline_limited_kp < TRAILING_SPS) baseline_limited_kp = TRAILING_SPS;
     return (SYNC_KP_SPS < baseline_limited_kp) ? SYNC_KP_SPS : baseline_limited_kp;
 }

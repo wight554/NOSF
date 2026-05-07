@@ -38,6 +38,7 @@ void motion_limit_runtime_rates(bool refresh_active_motors) {
     SYNC_MIN_SPS = motion_clamp_rate_sps(SYNC_MIN_SPS);
     SYNC_RAMP_UP_SPS = motion_clamp_rate_sps(SYNC_RAMP_UP_SPS);
     SYNC_RAMP_DN_SPS = motion_clamp_rate_sps(SYNC_RAMP_DN_SPS);
+    g_baseline_target_sps = motion_clamp_rate_sps(g_baseline_target_sps);
     g_baseline_sps = motion_clamp_rate_sps(g_baseline_sps);
     sync_current_sps = motion_clamp_rate_sps(sync_current_sps);
     g_tc_ctx.reload_current_sps = motion_clamp_rate_sps(g_tc_ctx.reload_current_sps);

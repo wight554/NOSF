@@ -139,6 +139,8 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 
 `BASELINE_RATE` remains a persistent bootstrap target. AUTO sync no longer rewrites it during startup.
 
+Runtime status `BL` is the learned control baseline. `GET:` / `SET:` / `SV:` / `LD:` for `BASELINE_RATE` operate on the configured bootstrap target.
+
 `BUF_TRAVEL` remains accepted as a backward-compatible alias for `BUF_HALF_TRAVEL`.
 
 ### Cutter / Servo

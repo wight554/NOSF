@@ -255,6 +255,7 @@ extern bool sync_auto_started;
 extern bool sync_tail_assist_active;
 extern uint32_t sync_idle_since_ms;
 extern int sync_current_sps;
+extern int g_baseline_target_sps;
 extern int g_baseline_sps;
 extern float g_baseline_alpha;
 extern uint32_t sync_fast_brake_until_ms;

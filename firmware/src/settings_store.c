@@ -14,7 +14,7 @@
 
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4e4f5346u
-#define SETTINGS_VERSION 39u
+#define SETTINGS_VERSION 40u
 
 typedef struct {
     uint32_t magic;
@@ -34,6 +34,7 @@ typedef struct {
     int dist_in_out, dist_out_y, dist_y_buf, buf_body_len, buf_size_mm;
     float buf_half_travel_mm;
     int buf_hyst_ms, buf_predict_thr_ms;
+    int baseline_sps;
     float baseline_alpha;
     int autoload_retract_mm;
 
@@ -133,6 +134,7 @@ void settings_defaults(void) {
     ZONE_BIAS_MAX_SPS = CONF_ZONE_BIAS_MAX_SPS;
     RELOAD_LEAN_FACTOR = CONF_RELOAD_LEAN_FACTOR;
     BUF_PREDICT_THR_MS = CONF_BUF_PREDICT_THR_MS;
+    g_baseline_target_sps = CONF_BASELINE_SPS;
     g_baseline_sps = CONF_BASELINE_SPS;
     g_baseline_alpha = CONF_BASELINE_ALPHA;
     BUF_INVERT = false;
@@ -242,6 +244,7 @@ void settings_save(void) {
     s.buf_size_mm = BUF_SIZE_MM;
     s.buf_hyst_ms = BUF_HYST_MS;
     s.buf_predict_thr_ms = BUF_PREDICT_THR_MS;
+    s.baseline_sps = g_baseline_target_sps;
     s.baseline_alpha = g_baseline_alpha;
     s.buf_invert = BUF_INVERT;
     s.auto_preload = AUTO_PRELOAD;
@@ -389,6 +392,8 @@ void settings_load(void) {
     BUF_SIZE_MM = s->buf_size_mm;
     BUF_HYST_MS = s->buf_hyst_ms;
     BUF_PREDICT_THR_MS = s->buf_predict_thr_ms;
+    g_baseline_target_sps = motion_clamp_rate_sps(s->baseline_sps);
+    g_baseline_sps = g_baseline_target_sps;
     g_baseline_alpha = s->baseline_alpha;
     BUF_INVERT = s->buf_invert;
     AUTO_PRELOAD = s->auto_preload;
