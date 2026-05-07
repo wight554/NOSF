@@ -243,7 +243,7 @@ static void buf_analog_update(void) {
     g_buf_pos = BUF_ANALOG_ALPHA * norm + (1.0f - BUF_ANALOG_ALPHA) * g_buf_pos;
 }
 
-static buf_state_t buf_read(void) {
+buf_state_t buf_state_raw(void) {
     if (BUF_SENSOR_TYPE == 1) {
         if (g_buf_pos > BUF_THR) return BUF_ADVANCE;
         if (g_buf_pos < -BUF_THR) return BUF_TRAILING;
@@ -267,7 +267,7 @@ static buf_state_t buf_read_stable(uint32_t now_ms) {
     static buf_state_t pending = BUF_MID;
     static uint32_t pend_since = 0;
 
-    buf_state_t raw = buf_read();
+    buf_state_t raw = buf_state_raw();
     if (raw == cur) {
         pend_since = 0;
         return cur;
@@ -304,7 +304,7 @@ static void boot_stabilize_disarm(void) {
 void boot_stabilize_start(uint32_t now_ms) {
     if (BUF_SENSOR_TYPE != 0) return;
 
-    buf_state_t buf_state = buf_read();
+    buf_state_t buf_state = buf_state_raw();
     if (buf_state != BUF_TRAILING && buf_state != BUF_ADVANCE) return;
 
     lane_t *stab_lane = pick_boot_stabilize_lane();
@@ -337,7 +337,7 @@ void boot_stabilize_tick(uint32_t now_ms) {
         return;
     }
 
-    if (buf_read() == BUF_MID || (int32_t)(now_ms - g_boot_stabilize_deadline_ms) >= 0) {
+    if (buf_state_raw() == BUF_MID || (int32_t)(now_ms - g_boot_stabilize_deadline_ms) >= 0) {
         boot_stabilize_stop();
     }
 }

@@ -453,7 +453,8 @@ void tc_tick(uint32_t now_ms) {
         }
 
         case TC_RELOAD_FOLLOW: {
-            if (g_buf.state == BUF_ADVANCE || toolhead_has_filament) {
+            buf_state_t instant_buf_state = buf_state_raw();
+            if (g_buf.state == BUF_ADVANCE || instant_buf_state == BUF_ADVANCE || toolhead_has_filament) {
                 if (A) lane_stop(A);
                 set_toolhead_filament(true);
                 char lane_s[2] = { (char)('0' + active_lane), 0 };

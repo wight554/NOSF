@@ -266,6 +266,9 @@ target = extruder_est_sps × RELOAD_LEAN
 - After that settle window, firmware enforces the post-touch boost floor
   derived from `PRESS_RATE × RELOAD_TOUCH_FLOOR_PCT` only if the buffer has
   already relaxed out of `BUF_TRAILING`.
+- RELOAD completion accepts either the debounced buffer state or an
+  instantaneous `BUF_ADVANCE` pulse, so a brief real pickup event is not lost
+  behind normal buffer hysteresis.
 - `BUF_TRAILING` keeps the motor at the low trailing push rate.
 - `BUF_ADVANCE` or `TS:1` means the extruder has taken over, so follow exits.
 - RELOAD follow also watches geometry-aware trailing-wall time. If the lane is
