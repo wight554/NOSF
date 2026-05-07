@@ -282,9 +282,20 @@ jam severity from driver load telemetry.
 
 ### Trailing behavior and auto-stop
 
-`BUF_TRAILING` is now a low-speed recovery state, not an immediate hard stop.
-Normal sync clamps toward `TRAILING_RATE`, and AUTO mode disables sync only if
-TRAILING persists for `SYNC_AUTO_STOP_MS`.
+`BUF_TRAILING` is now a valid low-speed recovery state, not an immediate hard
+stop. In normal print sync, entering `BUF_TRAILING` latches a recovery phase:
+sync caps speed below the estimator until the buffer returns to `MID`, then
+applies a brief re-acceleration bump. The hard trailing-wall guard still
+remains the true stop path if recovery cannot pull the buffer back safely.
+
+`SYNC_AUTO_STOP_MS` is no longer a generic normal-sync trailing timeout.
+Instead:
+
+- tail-assist auto-starts still stop if `BUF_TRAILING` persists for
+  `SYNC_AUTO_STOP_MS`;
+- normal auto-started print sync stops after sustained `BUF_ADVANCE` for
+  `SYNC_AUTO_STOP_MS`, using a re-arm latch so full-buffer stop does not
+  immediately auto-restart while the buffer remains full.
 
 The same low-speed stabilization helper used at boot can also be run on demand
 with `BS:` when the controller is idle.
@@ -305,9 +316,12 @@ gentle stabilization move and settles the buffer back toward `MID`.
 3. Once `OUT` clears in that assist path, firmware disables sync immediately
   and then continues with the normal `RUNOUT` / optional RELOAD handling.
 4. Normal sync runs from the estimator, bounded by buffer state.
-5. Sustained `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` disables sync and resets the
-   estimator to 0.
-6. The next `BUF_ADVANCE` event bootstraps sync again.
+5. During normal print sync, `BUF_TRAILING` enters a bounded recovery phase
+  until the buffer returns to `MID`; during tail assist, sustained
+  `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` disables sync.
+6. Sustained `BUF_ADVANCE` for `SYNC_AUTO_STOP_MS` disables normal auto-started
+  print sync and blocks immediate re-arm until the buffer leaves `ADVANCE`.
+7. The next eligible `BUF_ADVANCE` event bootstraps sync again.
 
 ---
 
@@ -320,7 +334,8 @@ load completion and RELOAD handover, but it is not the main sync controller.
 |-------|-----------|
 | `BUF_ADVANCE` while sync is off | enabled and bootstrapped |
 | `UL:`, `UM:`, or `TC:` unload starts | disabled |
-| sustained `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` | disabled and estimator reset |
+| tail-assist `BUF_TRAILING` for `SYNC_AUTO_STOP_MS` | disabled and estimator reset |
+| normal-sync `BUF_ADVANCE` for `SYNC_AUTO_STOP_MS` | disabled and auto-start re-arm blocked until buffer leaves `ADVANCE` |
 | `ST:` command | disabled |
 ---
 
