@@ -351,10 +351,7 @@ static void sync_apply_to_active(void) {
             motor_set_dir(&A->m, true);
         }
     } else if (A->task == TASK_FEED) {
-        motor_stop(&A->m);
-        A->current_sps = 0;
-        A->target_sps = 0;
-        tmc_set_spreadcycle(A->tmc, TMC_SPREADCYCLE[A->lane_id - 1]);
+        lane_stop(A);
     }
 }
 
