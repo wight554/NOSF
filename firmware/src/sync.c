@@ -906,5 +906,5 @@ bool sync_is_positive_relaunch_damped(void) {
 }
 
 bool sync_is_advance_predicted(void) {
-    return predict_advance_coming();
+    return !sync_is_positive_relaunch_damped() && predict_advance_coming();
 }
