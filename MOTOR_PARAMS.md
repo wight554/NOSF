@@ -37,3 +37,35 @@ Reference values:
 | `driver_toff` | `3` |
 | `driver_hstrt` | `7` |
 | `driver_hend` | `10` |
+
+## Replacement Motor Baselines
+
+### Hanpose 17HS4401
+
+Status: user-supplied replacement motor baseline / validate on hardware
+
+`config.ini` snippet:
+
+```ini
+gear_ratio: 50:17
+run_current: 0.980
+hold_current: 0.980
+full_steps_per_rotation: 200
+driver_tbl: 1
+driver_toff: 4
+driver_hstrt: 5
+driver_hend: 3
+```
+
+Reference values:
+
+| Key | Value |
+|-----|-------|
+| `gear_ratio` | `50:17` |
+| `run_current` | `0.980` |
+| `hold_current` | `0.980` |
+| `full_steps_per_rotation` | `200` |
+| `driver_tbl` | `1` |
+| `driver_toff` | `4` |
+| `driver_hstrt` | `5` |
+| `driver_hend` | `3` |
