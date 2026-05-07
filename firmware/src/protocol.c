@@ -132,6 +132,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         lane_t *A = get_active_lane_and_clear_error();
         if (!A) return;
         if (!lane_out_present(A)) { cmd_reply("ER", "NOT_LOADED"); return; }
+        sync_disable(false);
         set_toolhead_filament(false);
         A->unload_to_in = false;
         lane_start(A, TASK_UNLOAD, REV_SPS, false, now_ms, (float)UNLOAD_MAX_MM);
@@ -140,6 +141,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         lane_t *A = get_active_lane_and_clear_error();
         if (!A) return;
         if (!lane_in_present(A)) { cmd_reply("ER", "NOT_LOADED"); return; }
+        sync_disable(false);
         set_toolhead_filament(false);
         A->unload_to_in = true;
         lane_start(A, TASK_UNLOAD, REV_SPS, false, now_ms, (float)UNLOAD_MAX_MM);

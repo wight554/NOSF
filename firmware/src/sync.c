@@ -502,8 +502,9 @@ void sync_tick(uint32_t now_ms) {
     if (!A || tc_state() != TC_IDLE) return;
 
     buf_state_t s = g_buf.state;
+    bool auto_start_allowed = (A->task == TASK_IDLE || A->task == TASK_FEED);
 
-    if (AUTO_MODE && !sync_enabled && s == BUF_ADVANCE) {
+    if (AUTO_MODE && !sync_enabled && auto_start_allowed && s == BUF_ADVANCE) {
         bool tail_assist = !lane_in_present(A) && lane_out_present(A);
         int startup_sps = sync_bootstrap_sps();
         sync_current_sps = startup_sps;
