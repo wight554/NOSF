@@ -61,7 +61,7 @@ DUMP_PARAMS = [
     ("REV_RATE",          "rev_rate",                False),
     ("AUTO_RATE",         "auto_rate",               False),
     ("BUF_STAB_RATE",     "buf_stab_rate",           False),
-    ("SYNC_HARD_MAX_RATE", "sync_hard_max_rate",     False),
+    ("GLOBAL_MAX_RATE",   "global_max_rate",         False),
     ("SYNC_MAX_RATE",     "sync_max_rate",           False),
     ("SYNC_MIN_RATE",     "sync_min_rate",           False),
     ("JOIN_RATE",         "join_rate",               False),

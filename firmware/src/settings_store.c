@@ -21,7 +21,7 @@ typedef struct {
     uint32_t version;
 
     int feed_sps, rev_sps, auto_sps;
-    int sync_max_sps, sync_hard_max_sps, sync_min_sps;
+    int sync_max_sps, global_max_sps, sync_min_sps;
     int sync_ramp_up, sync_ramp_dn;
     int sync_tick_ms, pre_ramp_sps;
     int sync_auto_stop_ms;
@@ -104,7 +104,7 @@ void settings_defaults(void) {
     REV_SPS = CONF_REV_SPS;
     AUTO_SPS = CONF_AUTO_SPS;
 
-    SYNC_HARD_MAX_SPS = clamp_i(CONF_SYNC_HARD_MAX_SPS, mm_per_min_to_sps(1000.0f), mm_per_min_to_sps(5000.0f));
+    GLOBAL_MAX_SPS = clamp_i(CONF_GLOBAL_MAX_SPS, mm_per_min_to_sps(1000.0f), mm_per_min_to_sps(5000.0f));
     SYNC_MAX_SPS = sync_clamp_max_sps(CONF_SYNC_MAX_SPS);
     SYNC_MIN_SPS = CONF_SYNC_MIN_SPS;
     SYNC_RAMP_UP_SPS = CONF_SYNC_RAMP_UP_SPS;
@@ -205,6 +205,8 @@ void settings_defaults(void) {
 
     MM_PER_STEP[0] = CONF_L1_MM_PER_STEP;
     MM_PER_STEP[1] = CONF_L2_MM_PER_STEP;
+
+    motion_limit_runtime_rates(false);
 }
 
 void settings_save(void) {
@@ -217,7 +219,7 @@ void settings_save(void) {
     s.auto_sps = AUTO_SPS;
 
     s.sync_max_sps = SYNC_MAX_SPS;
-    s.sync_hard_max_sps = SYNC_HARD_MAX_SPS;
+    s.global_max_sps = GLOBAL_MAX_SPS;
     s.sync_min_sps = SYNC_MIN_SPS;
     s.sync_ramp_up = SYNC_RAMP_UP_SPS;
     s.sync_ramp_dn = SYNC_RAMP_DN_SPS;
@@ -360,7 +362,7 @@ void settings_load(void) {
     REV_SPS = s->rev_sps;
     AUTO_SPS = s->auto_sps;
 
-    SYNC_HARD_MAX_SPS = clamp_i(s->sync_hard_max_sps, mm_per_min_to_sps(1000.0f), mm_per_min_to_sps(5000.0f));
+    GLOBAL_MAX_SPS = clamp_i(s->global_max_sps, mm_per_min_to_sps(1000.0f), mm_per_min_to_sps(5000.0f));
     SYNC_MAX_SPS = sync_clamp_max_sps(s->sync_max_sps);
     SYNC_MIN_SPS = s->sync_min_sps;
     SYNC_RAMP_UP_SPS = s->sync_ramp_up;
@@ -458,6 +460,8 @@ void settings_load(void) {
         TMC_RUN_CURRENT_MA[i] = s->tmc_run_current_ma[i];
         TMC_HOLD_CURRENT_MA[i] = s->tmc_hold_current_ma[i];
     }
+
+    motion_limit_runtime_rates(false);
 
     tmc_apply_all();
 }

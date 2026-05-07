@@ -19,6 +19,43 @@ static bool lane_tail_runout_ready(lane_t *L) {
     return (L->task_dist_mm - L->dist_at_in_clear_mm) >= ((float)DIST_IN_OUT * 1.2f);
 }
 
+int motion_clamp_rate_sps(int sps) {
+    if (sps <= 0) return sps;
+    return (sps < GLOBAL_MAX_SPS) ? sps : GLOBAL_MAX_SPS;
+}
+
+void motion_limit_runtime_rates(bool refresh_active_motors) {
+    FEED_SPS = motion_clamp_rate_sps(FEED_SPS);
+    REV_SPS = motion_clamp_rate_sps(REV_SPS);
+    AUTO_SPS = motion_clamp_rate_sps(AUTO_SPS);
+    BUF_STAB_SPS = motion_clamp_rate_sps(BUF_STAB_SPS);
+    JOIN_SPS = motion_clamp_rate_sps(JOIN_SPS);
+    PRESS_SPS = motion_clamp_rate_sps(PRESS_SPS);
+    TRAILING_SPS = motion_clamp_rate_sps(TRAILING_SPS);
+    RAMP_STEP_SPS = motion_clamp_rate_sps(RAMP_STEP_SPS);
+    PRE_RAMP_SPS = motion_clamp_rate_sps(PRE_RAMP_SPS);
+    SYNC_MAX_SPS = motion_clamp_rate_sps(SYNC_MAX_SPS);
+    SYNC_MIN_SPS = motion_clamp_rate_sps(SYNC_MIN_SPS);
+    SYNC_RAMP_UP_SPS = motion_clamp_rate_sps(SYNC_RAMP_UP_SPS);
+    SYNC_RAMP_DN_SPS = motion_clamp_rate_sps(SYNC_RAMP_DN_SPS);
+    g_baseline_sps = motion_clamp_rate_sps(g_baseline_sps);
+    sync_current_sps = motion_clamp_rate_sps(sync_current_sps);
+    g_tc_ctx.reload_current_sps = motion_clamp_rate_sps(g_tc_ctx.reload_current_sps);
+
+    if (SYNC_MIN_SPS > SYNC_MAX_SPS) SYNC_MIN_SPS = SYNC_MAX_SPS;
+
+    lane_t *lanes[] = { &g_lane_l1, &g_lane_l2 };
+    for (size_t i = 0; i < NUM_LANES; i++) {
+        lane_t *L = lanes[i];
+        L->target_sps = motion_clamp_rate_sps(L->target_sps);
+        L->current_sps = motion_clamp_rate_sps(L->current_sps);
+        if (L->target_sps > 0 && L->current_sps > L->target_sps) L->current_sps = L->target_sps;
+        if (refresh_active_motors && L->task != TASK_IDLE && L->current_sps > 0) {
+            motor_set_rate_sps(&L->m, L->current_sps);
+        }
+    }
+}
+
 void din_init(din_t *d, uint pin) {
     d->pin = pin;
     gpio_init(pin);
@@ -84,6 +121,7 @@ void motor_set_dir(motor_t *m, bool forward) {
 }
 
 void motor_set_rate_sps(motor_t *m, int sps) {
+    sps = motion_clamp_rate_sps(sps);
     if (sps <= 0) {
         pwm_set_enabled(m->slice, false);
         return;
@@ -163,8 +201,9 @@ void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_ms, flo
 
     L->task_limit_mm = limit_mm;
 
-    L->target_sps = sps;
-    L->current_sps = RAMP_STEP_SPS;
+    L->target_sps = motion_clamp_rate_sps(sps);
+    L->current_sps = motion_clamp_rate_sps(RAMP_STEP_SPS);
+    if (L->current_sps > L->target_sps) L->current_sps = L->target_sps;
     L->ramp_last_tick_ms = now_ms;
     L->motion_started_ms = now_ms;
     if (L->task_started_ms == 0) L->task_started_ms = now_ms;

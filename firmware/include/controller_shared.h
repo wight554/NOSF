@@ -211,7 +211,7 @@ extern int UNLOAD_MAX_MM;
 extern int TC_TIMEOUT_TH_MS;
 extern int TC_TIMEOUT_Y_MS;
 extern int SYNC_MAX_SPS;
-extern int SYNC_HARD_MAX_SPS;
+extern int GLOBAL_MAX_SPS;
 extern int SYNC_MIN_SPS;
 extern int SYNC_RAMP_UP_SPS;
 extern int SYNC_RAMP_DN_SPS;

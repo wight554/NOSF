@@ -104,7 +104,7 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `BUF_STAB_RATE` | `buf_stab_rate` | Buffer stabilization speed for boot neutralization and UL advance-recovery move | 600 |
 | `JOIN_RATE` | `join_rate` | RELOAD: Fast approach speed | 1600 |
 | `PRESS_RATE` | `press_rate` | RELOAD: Slow follow-sync speed | 1200 |
-| `SYNC_HARD_MAX_RATE` | `sync_hard_max_rate` | Absolute sync speed ceiling (independent of `SYNC_MAX_RATE`) | 2500 |
+| `GLOBAL_MAX_RATE` | `global_max_rate` | Absolute ceiling applied to every commanded motor rate; `SYNC_MAX_RATE` remains the sync-only soft cap under it | 2500 |
 | `SYNC_MAX_RATE` | `sync_max_rate` | Max speed allowed during sync | 20000 |
 | `BASELINE_RATE` | `baseline_rate` | Sync bootstrap and conservative baseline speed | 2100 |
 

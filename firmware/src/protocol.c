@@ -309,21 +309,20 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
 
         #define SET_LANE(BLOCK) for(int l=1; l<=NUM_LANES; l++) if(lane_mask & (1<<(l-1))) { int idx=l-1; BLOCK; sync_tmc_settings(l); }
 
-        if (!strcmp(base_param, "FEED_RATE")) FEED_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
-        else if (!strcmp(base_param, "REV_RATE")) REV_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
-        else if (!strcmp(base_param, "AUTO_RATE")) AUTO_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
+        if (!strcmp(base_param, "FEED_RATE")) FEED_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 200, 50000));
+        else if (!strcmp(base_param, "REV_RATE")) REV_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 200, 50000));
+        else if (!strcmp(base_param, "AUTO_RATE")) AUTO_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 200, 50000));
         else if (!strcmp(base_param, "SYNC_MAX_RATE")) SYNC_MAX_SPS = sync_clamp_max_sps(clamp_i(mm_per_min_to_sps(fv), 200, 50000));
-        else if (!strcmp(base_param, "SYNC_HARD_MAX_RATE")) {
-            SYNC_HARD_MAX_SPS = clamp_i(mm_per_min_to_sps(fv), mm_per_min_to_sps(1000.0f), mm_per_min_to_sps(5000.0f));
-            SYNC_MAX_SPS = sync_clamp_max_sps(SYNC_MAX_SPS);
+        else if (!strcmp(base_param, "GLOBAL_MAX_RATE")) {
+            GLOBAL_MAX_SPS = clamp_i(mm_per_min_to_sps(fv), mm_per_min_to_sps(1000.0f), mm_per_min_to_sps(5000.0f));
         }
-        else if (!strcmp(base_param, "SYNC_MIN_RATE")) SYNC_MIN_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
-        else if (!strcmp(base_param, "SYNC_UP_RATE")) SYNC_RAMP_UP_SPS = clamp_i(mm_per_min_to_sps(fv), 1, 50000);
-        else if (!strcmp(base_param, "SYNC_DN_RATE")) SYNC_RAMP_DN_SPS = clamp_i(mm_per_min_to_sps(fv), 1, 50000);
+        else if (!strcmp(base_param, "SYNC_MIN_RATE")) SYNC_MIN_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 0, 50000));
+        else if (!strcmp(base_param, "SYNC_UP_RATE")) SYNC_RAMP_UP_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 1, 50000));
+        else if (!strcmp(base_param, "SYNC_DN_RATE")) SYNC_RAMP_DN_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 1, 50000));
         else if (!strcmp(base_param, "SYNC_TICK_MS")) SYNC_TICK_MS = clamp_i(iv, 1, 1000);
-        else if (!strcmp(base_param, "RAMP_STEP_RATE")) RAMP_STEP_SPS = clamp_i(mm_per_min_to_sps(fv), 1, 10000);
+        else if (!strcmp(base_param, "RAMP_STEP_RATE")) RAMP_STEP_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 1, 10000));
         else if (!strcmp(base_param, "RAMP_TICK_MS")) RAMP_TICK_MS = clamp_i(iv, 1, 1000);
-        else if (!strcmp(base_param, "PRE_RAMP_RATE")) PRE_RAMP_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
+        else if (!strcmp(base_param, "PRE_RAMP_RATE")) PRE_RAMP_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 0, 50000));
         else if (!strcmp(base_param, "BUF_TRAVEL")) { BUF_HALF_TRAVEL_MM = fv < 1.0f ? 1.0f : fv > 50.0f ? 50.0f : fv; }
         else if (!strcmp(base_param, "BUF_HYST")) BUF_HYST_MS = clamp_i(iv, 5, 500);
         else if (!strcmp(base_param, "BUF_PREDICT_THR_MS")) BUF_PREDICT_THR_MS = clamp_i(iv, 0, 10000);
@@ -339,10 +338,10 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "DIST_Y_BUF")) DIST_Y_BUF = clamp_i(iv, 0, 5000);
         else if (!strcmp(base_param, "BUF_BODY_LEN")) BUF_BODY_LEN = clamp_i(iv, 0, 5000);
         else if (!strcmp(base_param, "BUF_SIZE")) { BUF_SIZE_MM = clamp_i(iv, 5, 1000); BUF_HALF_TRAVEL_MM = (float)BUF_SIZE_MM / 2.0f; }
-        else if (!strcmp(base_param, "JOIN_RATE")) JOIN_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
-        else if (!strcmp(base_param, "PRESS_RATE")) PRESS_SPS = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
-        else if (!strcmp(base_param, "TRAILING_RATE")) TRAILING_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
-        else if (!strcmp(base_param, "BUF_STAB_RATE")) BUF_STAB_SPS = clamp_i(mm_per_min_to_sps(fv), 10, 10000);
+        else if (!strcmp(base_param, "JOIN_RATE")) JOIN_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 200, 50000));
+        else if (!strcmp(base_param, "PRESS_RATE")) PRESS_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 200, 50000));
+        else if (!strcmp(base_param, "TRAILING_RATE")) TRAILING_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 10, 10000));
+        else if (!strcmp(base_param, "BUF_STAB_RATE")) BUF_STAB_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 10, 10000));
         else if (!strcmp(base_param, "BASELINE_ALPHA")) g_baseline_alpha = clamp_f(fv, 0.0f, 1.0f);
         else if (!strcmp(base_param, "EST_ALPHA_MIN")) EST_ALPHA_MIN = clamp_f(fv, 0.01f, 1.0f);
         else if (!strcmp(base_param, "EST_ALPHA_MAX")) EST_ALPHA_MAX = clamp_f(fv, 0.01f, 1.0f);
@@ -363,7 +362,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "DRIVER_HSTRT")) { SET_LANE({ TMC_HSTRT[idx] = clamp_i(iv, 0, 7); }); }
         else if (!strcmp(base_param, "DRIVER_HEND")) { SET_LANE({ TMC_HEND[idx] = clamp_i(iv, -3, 12); }); }
         else if (!strcmp(base_param, "FOLLOW_MS")) { SET_LANE({ FOLLOW_TIMEOUT_MS[idx] = clamp_i(iv, 1000, 60000); }); }
-        else if (!strcmp(base_param, "BASELINE_RATE")) g_baseline_sps = clamp_i(mm_per_min_to_sps(fv), 200, 50000);
+        else if (!strcmp(base_param, "BASELINE_RATE")) g_baseline_sps = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 200, 50000));
         else if (!strcmp(base_param, "BUF_SENSOR")) BUF_SENSOR_TYPE = clamp_i(iv, 0, 1);
         else if (!strcmp(base_param, "BUF_NEUTRAL")) BUF_NEUTRAL = clamp_f(fv, 0.0f, 1.0f);
         else if (!strcmp(base_param, "BUF_RANGE")) BUF_RANGE = clamp_f(fv, 0.01f, 0.5f);
@@ -391,7 +390,10 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
 
         #undef SET_LANE
 
-        if (handled) cmd_reply("OK", NULL);
+        if (handled) {
+            motion_limit_runtime_rates(true);
+            cmd_reply("OK", NULL);
+        }
         else cmd_reply("ER", "SET:UNKNOWN_PARAM");
     } else if (!strcmp(cmd, "GET")) {
         char out[64];
@@ -413,7 +415,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "REV_RATE")) snprintf(out, sizeof(out), "REV_RATE:%.1f", (double)sps_to_mm_per_min_idx(REV_SPS, idx));
         else if (!strcmp(param, "AUTO_RATE")) snprintf(out, sizeof(out), "AUTO_RATE:%.1f", (double)sps_to_mm_per_min_idx(AUTO_SPS, idx));
         else if (!strcmp(param, "SYNC_MAX_RATE")) snprintf(out, sizeof(out), "SYNC_MAX_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_MAX_SPS, idx));
-        else if (!strcmp(param, "SYNC_HARD_MAX_RATE")) snprintf(out, sizeof(out), "SYNC_HARD_MAX_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_HARD_MAX_SPS, idx));
+        else if (!strcmp(param, "GLOBAL_MAX_RATE")) snprintf(out, sizeof(out), "GLOBAL_MAX_RATE:%.1f", (double)sps_to_mm_per_min_idx(GLOBAL_MAX_SPS, idx));
         else if (!strcmp(param, "SYNC_MIN_RATE")) snprintf(out, sizeof(out), "SYNC_MIN_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_MIN_SPS, idx));
         else if (!strcmp(param, "SYNC_UP_RATE")) snprintf(out, sizeof(out), "SYNC_UP_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_RAMP_UP_SPS, idx));
         else if (!strcmp(param, "SYNC_DN_RATE")) snprintf(out, sizeof(out), "SYNC_DN_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_RAMP_DN_SPS, idx));

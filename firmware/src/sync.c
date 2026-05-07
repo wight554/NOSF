@@ -259,7 +259,7 @@ static void buf_update(buf_state_t new_state, uint32_t now_ms) {
         float mmu_mm_s = mmu_avg_sps * MM_PER_STEP[idx];
         float extruder_mm_s = mmu_mm_s + g_buf.arm_vel_mm_s;
         float est_sps = extruder_mm_s / MM_PER_STEP[idx];
-        float max_est_sps = (float)SYNC_HARD_MAX_SPS;
+        float max_est_sps = (float)GLOBAL_MAX_SPS;
         if (est_sps < 0.0f) est_sps = 0.0f;
         if (est_sps > max_est_sps) est_sps = max_est_sps;
 
@@ -289,13 +289,8 @@ static void baseline_update_on_settle(uint32_t mid_dwell_ms) {
     }
 }
 
-static int sync_hard_max_sps(void) {
-    return SYNC_HARD_MAX_SPS;
-}
-
 int sync_clamp_max_sps(int requested_sps) {
-    int hard_max = sync_hard_max_sps();
-    return (requested_sps < hard_max) ? requested_sps : hard_max;
+    return motion_clamp_rate_sps(requested_sps);
 }
 
 void sync_disable(bool reset_estimator) {

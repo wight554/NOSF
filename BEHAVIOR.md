@@ -165,7 +165,7 @@ extruder-rate estimate.
 - `ADVANCE→TRAILING` and `TRAILING→ADVANCE` use full-buffer travel.
 - Half the hysteresis window is subtracted from dwell time before computing arm
   velocity so the estimate is not biased late.
-- The instantaneous estimate is clamped to `SYNC_HARD_MAX_RATE` and merged into
+- The instantaneous estimate is clamped to `GLOBAL_MAX_RATE` and merged into
   `extruder_est_sps` with an adaptive EMA bounded by `EST_ALPHA_MIN` and
   `EST_ALPHA_MAX`.
 - A fast `ADVANCE→TRAILING` transition overwrites the estimator directly so a
