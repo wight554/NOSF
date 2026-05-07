@@ -21,7 +21,8 @@ run_current:
 # hold_current:               # defaults to run_current / 2 if omitted
 # dir_invert: 0               # invert motor direction (0/1, comma-list ok)
 # interpolate: True
-# stealthchop_threshold: 0    # 0 = SpreadCycle always on (recommended for MMU)
+# stealthchop_threshold: 0    # 0 = SpreadCycle always on; any non-zero value enables StealthChop.
+#                             # Live GET:/SET: exposes this as 0/1, not a real threshold.
 
 # ─── TMC Chopper (per-lane capable) ─────────────────────────────────────────
 # driver_tbl: 2
@@ -45,25 +46,25 @@ run_current:
 
 # ─── Buffer Sync ─────────────────────────────────────────────────────────────
 # buf_hyst_ms: 30
-# sync_ramp_up_rate: 25
-# sync_ramp_dn_rate: 13
+# sync_ramp_up_rate: 40
+# sync_ramp_dn_rate: 12
 # sync_tick_ms: 20
-# baseline_rate: 2100        # starting sync speed (mm/min); set to your print feed rate
-# baseline_alpha: 0.15
+# baseline_rate: 1600        # starting sync speed (mm/min); set to your print feed rate
+# baseline_alpha: 0.02
 # buf_predict_thr_ms: 250
 # global_max_rate: 2500         # absolute ceiling for every commanded motor rate (mm/min)
-# sync_kp_rate: 1050
-# sync_overshoot_pct: 50         # Trailing-side trim as % of sync correction (0..200)
-# sync_reserve_pct: 30           # Reserve target as % of BUF_HALF_TRAVEL toward trailing
+# sync_kp_rate: 900
+# sync_overshoot_pct: 25         # Trailing-side trim as % of sync correction (0..200)
+# sync_reserve_pct: 40           # Reserve target as % of BUF_HALF_TRAVEL toward trailing
 # sync_auto_stop_ms: 5000          # Auto-mode only: disable auto-started sync after buffer
                                    # stays TRAILING this long.
 
 # ─── Smarter Sync (Estimator) ────────────────────────────────────────────────
-# est_alpha_min: 0.10          # Estimator responsiveness (slow drifts)
-# est_alpha_max: 0.60          # Estimator responsiveness (sharp jumps)
-# zone_bias_base_rate: 100     # Base centering pull (mm/min)
-# zone_bias_ramp_rate: 50      # Centering ramp (mm/min per second stuck in zone)
-# zone_bias_max_rate: 400      # Max centering correction (mm/min)
+# est_alpha_min: 0.12          # Estimator responsiveness (slow drifts)
+# est_alpha_max: 0.65          # Estimator responsiveness (sharp jumps)
+# zone_bias_base_rate: 90      # Base reserve-recovery correction (mm/min)
+# zone_bias_ramp_rate: 30      # Reserve-recovery ramp (mm/min per second stuck in zone)
+# zone_bias_max_rate: 600      # Max reserve-recovery correction (mm/min)
 # reload_lean_factor: 0.85     # RELOAD follow under-feed factor (0.0 to 1.0)
 
 # ─── Cutter / Servo ──────────────────────────────────────────────────────────

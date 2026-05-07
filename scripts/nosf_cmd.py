@@ -167,6 +167,9 @@ def format_dump_value(key, value):
         except ValueError:
             return value
 
+    if key == "stealthchop_threshold":
+        return "0" if value in ("0", "False", "false") else "999999"
+
     if key in BOOL_KEYS:
         return "True" if value not in ("0", "False", "false") else "False"
 
