@@ -58,6 +58,11 @@ static zone_event_t g_history[HISTORY_LEN] = {0};
 static int g_hist_idx = 0;
 static uint32_t buf_pos_last_ms = 0;
 static uint32_t sync_trailing_critical_since_ms = 0;
+static buf_state_t g_buf_stable_state = BUF_MID;
+static buf_state_t g_buf_pending_state = BUF_MID;
+static uint32_t g_buf_pending_since_ms = 0;
+
+static void buf_update(buf_state_t new_state, uint32_t now_ms);
 
 static int lane_motion_sps(lane_t *L) {
     if (!L) return 0;
@@ -272,27 +277,37 @@ buf_state_t buf_state_raw(void) {
 }
 
 static buf_state_t buf_read_stable(uint32_t now_ms) {
-    static buf_state_t cur = BUF_MID;
-    static buf_state_t pending = BUF_MID;
-    static uint32_t pend_since = 0;
-
     buf_state_t raw = buf_state_raw();
-    if (raw == cur) {
-        pend_since = 0;
-        return cur;
+    if (raw == g_buf_stable_state) {
+        g_buf_pending_since_ms = 0;
+        return g_buf_stable_state;
     }
 
-    if (raw != pending) {
-        pending = raw;
-        pend_since = now_ms;
-        return cur;
+    if (raw != g_buf_pending_state) {
+        g_buf_pending_state = raw;
+        g_buf_pending_since_ms = now_ms;
+        return g_buf_stable_state;
     }
 
-    if ((now_ms - pend_since) >= (uint32_t)BUF_HYST_MS) {
-        cur = pending;
-        pend_since = 0;
+    if ((now_ms - g_buf_pending_since_ms) >= (uint32_t)BUF_HYST_MS) {
+        g_buf_stable_state = g_buf_pending_state;
+        g_buf_pending_since_ms = 0;
     }
-    return cur;
+    return g_buf_stable_state;
+}
+
+static void buf_force_stable_state(buf_state_t state, uint32_t now_ms) {
+    g_buf_stable_state = state;
+    g_buf_pending_state = state;
+    g_buf_pending_since_ms = 0;
+
+    if (g_buf.state != state) {
+        buf_update(state, now_ms);
+        return;
+    }
+
+    g_buf.entered_ms = now_ms;
+    if (state == BUF_MID) g_buf_pos = 0.0f;
 }
 
 static void boot_stabilize_stop(void) {
@@ -413,6 +428,7 @@ void buffer_stabilize_tick(uint32_t now_ms) {
             return;
         }
     } else if (raw_state == BUF_MID) {
+        buf_force_stable_state(BUF_MID, now_ms);
         if (g_buffer_stabilize_emit_events) cmd_event("BUF_STAB", "DONE");
         boot_stabilize_stop();
         return;
