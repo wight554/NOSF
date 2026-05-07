@@ -18,6 +18,7 @@
 #define SYNC_TRAILING_COLLAPSE_RAMP_MULT 3
 #define SYNC_TRAILING_COLLAPSE_CAP_MS 600u
 #define SYNC_MID_TRAILING_TAPER_FRAC 0.5f
+#define SYNC_MID_TRAILING_FLOOR_FRAC 0.45f
 
 bool sync_enabled = false;
 bool sync_auto_started = false;
@@ -215,8 +216,14 @@ static int sync_apply_scaling(int base_sps) {
         if (target > TRAILING_SPS && taper_span_mm > 0.001f) {
             float overfill_mm = taper_start_mm - g_buf_pos;
             float taper_frac = clamp_f(overfill_mm / taper_span_mm, 0.0f, 1.0f);
-            if (g_buf.state == BUF_MID) taper_frac *= SYNC_MID_TRAILING_TAPER_FRAC;
+            int taper_floor_sps = TRAILING_SPS;
+            if (g_buf.state == BUF_MID) {
+                taper_frac *= SYNC_MID_TRAILING_TAPER_FRAC;
+                int dynamic_mid_floor = (int)(extruder_est_sps * SYNC_MID_TRAILING_FLOOR_FRAC);
+                if (dynamic_mid_floor > taper_floor_sps) taper_floor_sps = dynamic_mid_floor;
+            }
             float tapered = (float)target - ((float)(target - TRAILING_SPS) * taper_frac);
+            if (tapered < (float)taper_floor_sps) tapered = (float)taper_floor_sps;
             target = (int)tapered;
         }
     }
