@@ -17,6 +17,7 @@
 #define SYNC_TRAILING_COLLAPSE_DELAY_MS 250u
 #define SYNC_TRAILING_COLLAPSE_RAMP_MULT 3
 #define SYNC_TRAILING_COLLAPSE_CAP_MS 600u
+#define SYNC_MID_TRAILING_TAPER_FRAC 0.5f
 
 bool sync_enabled = false;
 bool sync_auto_started = false;
@@ -214,6 +215,7 @@ static int sync_apply_scaling(int base_sps) {
         if (target > TRAILING_SPS && taper_span_mm > 0.001f) {
             float overfill_mm = taper_start_mm - g_buf_pos;
             float taper_frac = clamp_f(overfill_mm / taper_span_mm, 0.0f, 1.0f);
+            if (g_buf.state == BUF_MID) taper_frac *= SYNC_MID_TRAILING_TAPER_FRAC;
             float tapered = (float)target - ((float)(target - TRAILING_SPS) * taper_frac);
             target = (int)tapered;
         }
