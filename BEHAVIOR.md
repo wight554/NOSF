@@ -188,8 +188,10 @@ draw and commanded MMU feed inside the physical travel envelope.
 
 The normal sync target is not `MID`. It is a buffered-reserve target on the
 trailing side set by `SYNC_RESERVE_PCT`, expressed as a percentage of
-`BUF_HALF_TRAVEL`. This keeps reserve in the buffer without hard-coding a deep
-hidden-margin target into firmware.
+`BUF_HALF_TRAVEL`. Firmware also keeps a small built-in center guard on top of
+that percentage target so steady sync stays slightly farther away from the
+advance-side switch. This keeps reserve in the buffer without hard-coding a
+deep hidden-margin target into firmware.
 
 `ZONE_BIAS_BASE` and `ZONE_BIAS_RAMP` provide a bounded reserve-recovery pull:
 
@@ -217,8 +219,8 @@ slightly wrong, while the estimator remains the dominant term.
 - The controller also computes a dynamic trailing-wall time from remaining
   physical margin and current relative push. If time-to-wall collapses while
   sync is still driving toward `TRAILING`, firmware adds urgency trim and can
-  briefly brake or early-stop AUTO sync instead of waiting for a long static
-  trailing dwell.
+  immediately auto-stop AUTO sync instead of waiting for a long static trailing
+  dwell once the condition becomes critically unsafe.
 
 On a direct `ADVANCE→TRAILING` transition, firmware arms a short fast-brake
 window. During that window the sync target is forced to 0 before normal

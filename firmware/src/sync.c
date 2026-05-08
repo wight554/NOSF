@@ -13,12 +13,12 @@
 #define SYNC_TRAILING_SOFT_WALL_MS 1200.0f
 #define SYNC_TRAILING_HARD_WALL_MS 350.0f
 #define SYNC_TRAILING_HARD_PUSH_MM_S 0.25f
-#define SYNC_TRAILING_HARD_BRAKE_MS 120u
 #define SYNC_TRAILING_COLLAPSE_DELAY_MS 250u
 #define SYNC_TRAILING_COLLAPSE_RAMP_MULT 3
 #define SYNC_TRAILING_COLLAPSE_CAP_MS 600u
 #define SYNC_MID_TRAILING_TAPER_FRAC 0.5f
 #define SYNC_MID_TRAILING_FLOOR_FRAC 0.45f
+#define SYNC_RESERVE_CENTER_GUARD_FRAC 0.05f
 #define SYNC_HIGH_FLOW_NEG_ASSIST_START_MM_MIN 1000.0f
 #define SYNC_HIGH_FLOW_NEG_ASSIST_FULL_MM_MIN 1400.0f
 #define SYNC_HIGH_FLOW_NEG_ASSIST_FRAC 0.75f
@@ -72,7 +72,6 @@ typedef struct {
 static zone_event_t g_history[HISTORY_LEN] = {0};
 static int g_hist_idx = 0;
 static uint32_t buf_pos_last_ms = 0;
-static uint32_t sync_trailing_critical_since_ms = 0;
 static buf_state_t g_buf_stable_state = BUF_MID;
 static buf_state_t g_buf_pending_state = BUF_MID;
 static uint32_t g_buf_pending_since_ms = 0;
@@ -115,6 +114,9 @@ static float buf_target_reserve_mm(void) {
     float physical_half = buf_physical_half_travel_mm();
     float pct = (float)SYNC_RESERVE_PCT / 100.0f;
     float target = -(threshold * pct);
+    float center_guard_mm = threshold * SYNC_RESERVE_CENTER_GUARD_FRAC;
+
+    if (pct > 0.0f) target -= center_guard_mm;
 
     float min_target = -physical_half + 0.5f;
     if (target < min_target) target = min_target;
@@ -572,7 +574,6 @@ void sync_disable(bool reset_estimator) {
     sync_current_sps = 0;
     sync_idle_since_ms = 0;
     sync_fast_brake_until_ms = 0;
-    sync_trailing_critical_since_ms = 0;
     sync_trailing_recovery_active = false;
     sync_trailing_floor_since_ms = 0;
     sync_post_trailing_boost_until_ms = 0;
@@ -848,18 +849,11 @@ void sync_tick(uint32_t now_ms) {
                                  trailing_push_mm_s > SYNC_TRAILING_HARD_PUSH_MM_S &&
                                  trailing_wall_ms < SYNC_TRAILING_HARD_WALL_MS;
     if (trailing_wall_critical) {
-        if (sync_trailing_critical_since_ms == 0) {
-            sync_trailing_critical_since_ms = now_ms;
-            sync_fast_brake_until_ms = now_ms + SYNC_TRAILING_HARD_BRAKE_MS;
-        } else {
-            sync_disable(true);
-            extruder_est_last_update_ms = now_ms;
-            sync_apply_to_active();
-            cmd_event("SYNC", "AUTO_STOP");
-            return;
-        }
-    } else {
-        sync_trailing_critical_since_ms = 0;
+        sync_disable(true);
+        extruder_est_last_update_ms = now_ms;
+        sync_apply_to_active();
+        cmd_event("SYNC", "AUTO_STOP");
+        return;
     }
 
     bool fast_brake_active = sync_fast_brake_until_ms != 0 && (int32_t)(sync_fast_brake_until_ms - now_ms) > 0;
