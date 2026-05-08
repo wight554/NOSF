@@ -297,10 +297,12 @@ Instead:
 
 - tail-assist auto-starts still stop if `BUF_TRAILING` persists for
   `SYNC_AUTO_STOP_MS`;
-- normal auto-started print sync only starts its `SYNC_AUTO_STOP_MS` timer
-  after trailing recovery has already collapsed to the minimum trailing-floor
-  speed, the buffer is still `BUF_TRAILING`, and the MMU is still positively
-  pushing into the trailing side.
+- normal auto-started print sync starts its floor timer only after trailing
+  recovery has already collapsed to the minimum trailing-floor speed and the
+  buffer is still `BUF_TRAILING`; if the MMU is still positively pushing into
+  trailing, the configured `SYNC_AUTO_STOP_MS` applies directly, and if the
+  model never shows positive push, a slower internal deadman still stops any
+  floor-hold that remains pinned much longer.
 
 The same low-speed stabilization helper used at boot can also be run on demand
 with `BS:` when the controller is idle.

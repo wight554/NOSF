@@ -14,6 +14,7 @@
 #define SYNC_TRAILING_HARD_WALL_MS 350.0f
 #define SYNC_TRAILING_HARD_PUSH_MM_S 0.25f
 #define SYNC_TRAILING_FLOOR_STOP_PUSH_MM_S 0.05f
+#define SYNC_TRAILING_FLOOR_DEADMAN_MULT 2u
 #define SYNC_TRAILING_COLLAPSE_DELAY_MS 250u
 #define SYNC_TRAILING_COLLAPSE_RAMP_MULT 3
 #define SYNC_TRAILING_COLLAPSE_CAP_MS 600u
@@ -888,9 +889,15 @@ void sync_tick(uint32_t now_ms) {
     if (sync_auto_started && !sync_tail_assist_active && s == BUF_TRAILING) {
         int trailing_floor_sps = sync_trailing_floor_sps();
         bool trailing_floor_stop_armed = trailing_push_mm_s > SYNC_TRAILING_FLOOR_STOP_PUSH_MM_S;
-        if (trailing_floor_stop_armed && sync_current_sps <= trailing_floor_sps) {
+        if (sync_current_sps <= trailing_floor_sps) {
             if (sync_trailing_floor_since_ms == 0) sync_trailing_floor_since_ms = now_ms;
-            if (SYNC_AUTO_STOP_MS > 0 && (now_ms - sync_trailing_floor_since_ms) > (uint32_t)SYNC_AUTO_STOP_MS) {
+            uint32_t floor_timeout_ms = (uint32_t)SYNC_AUTO_STOP_MS;
+            if (!trailing_floor_stop_armed) {
+                floor_timeout_ms *= SYNC_TRAILING_FLOOR_DEADMAN_MULT;
+            }
+
+            if (floor_timeout_ms > 0 &&
+                (now_ms - sync_trailing_floor_since_ms) > floor_timeout_ms) {
                 sync_disable(true);
                 extruder_est_last_update_ms = now_ms;
                 sync_apply_to_active();
