@@ -76,6 +76,7 @@ static uint32_t buf_pos_last_ms = 0;
 static buf_state_t g_buf_stable_state = BUF_MID;
 static buf_state_t g_buf_pending_state = BUF_MID;
 static uint32_t g_buf_pending_since_ms = 0;
+static float g_buf_physical_entry_pos_mm = 0.0f;
 
 static void buf_update(buf_state_t new_state, uint32_t now_ms);
 
@@ -337,6 +338,7 @@ static void buf_force_stable_state(buf_state_t state, uint32_t now_ms) {
     g_buf.entered_ms = now_ms;
     if (state == BUF_MID) {
         g_buf_pos = 0.0f;
+        g_buf_physical_entry_pos_mm = 0.0f;
         g_buf.arm_vel_mm_s = 0.0f;
         if (!sync_enabled) {
             extruder_est_sps = 0.0f;
@@ -502,13 +504,12 @@ static void buf_update(buf_state_t new_state, uint32_t now_ms) {
     buf_state_t old = g_buf.state;
     float threshold = buf_threshold_mm();
     float max_transition_mm = threshold * 2.0f;
-    float mid_pos_mm = clamp_f(g_buf_pos, -threshold, threshold);
 
     g_buf.arm_vel_mm_s = 0.0f;
 
     if (old == BUF_MID) {
-        if (new_state == BUF_ADVANCE) travel_mm = threshold - mid_pos_mm;
-        else if (new_state == BUF_TRAILING) travel_mm = -threshold - mid_pos_mm;
+        if (new_state == BUF_ADVANCE) travel_mm = threshold - g_buf_physical_entry_pos_mm;
+        else if (new_state == BUF_TRAILING) travel_mm = -threshold - g_buf_physical_entry_pos_mm;
     } else if (old == BUF_ADVANCE) {
         if (new_state == BUF_MID) travel_mm = 0.0f;
         else if (new_state == BUF_TRAILING) travel_mm = -max_transition_mm;
@@ -518,6 +519,15 @@ static void buf_update(buf_state_t new_state, uint32_t now_ms) {
     }
 
     travel_mm = clamp_f(travel_mm, -max_transition_mm, max_transition_mm);
+
+    if (new_state == BUF_ADVANCE) {
+        g_buf_physical_entry_pos_mm = threshold;
+    } else if (new_state == BUF_TRAILING) {
+        g_buf_physical_entry_pos_mm = -threshold;
+    } else if (new_state == BUF_MID) {
+        if (old == BUF_ADVANCE) g_buf_physical_entry_pos_mm = threshold;
+        else if (old == BUF_TRAILING) g_buf_physical_entry_pos_mm = -threshold;
+    }
 
     if (fabsf(travel_mm) > 0.001f && prev_dwell > (uint32_t)BUF_HYST_MS) {
         uint32_t effective_dwell = prev_dwell - (uint32_t)(BUF_HYST_MS / 2);
@@ -905,17 +915,16 @@ void sync_tick(uint32_t now_ms) {
             // Define a widened floor threshold to ignore PID hunting/noise
             int effective_floor_sps = sync_trailing_floor_sps() + PRE_RAMP_SPS; 
 
-            // Max time it should take to ramp down from 1600 mm/min to floor, plus safety margin
-            uint32_t max_recovery_time_ms = 3000u; 
+            uint32_t floor_timeout_ms = (uint32_t)SYNC_AUTO_STOP_MS;
 
-            // If we've given it enough time to ramp down from MAX speed,
-            // AND the speed has collapsed near the floor, the extruder is dead or ultra-slow.
-            if (trailing_dwell_ms > max_recovery_time_ms && sync_current_sps <= effective_floor_sps) {
-                sync_disable(true);
-                extruder_est_last_update_ms = now_ms;
-                sync_apply_to_active();
-                cmd_event("SYNC", "AUTO_STOP");
-                return;
+            if (floor_timeout_ms > 0 && trailing_dwell_ms > floor_timeout_ms) {
+                if (sync_current_sps <= effective_floor_sps) {
+                    sync_disable(true);
+                    extruder_est_last_update_ms = now_ms;
+                    sync_apply_to_active();
+                    cmd_event("SYNC", "AUTO_STOP");
+                    return;
+                }
             }
         } else {
             // ONLY reset the timer when the arm physically leaves the trailing switch
