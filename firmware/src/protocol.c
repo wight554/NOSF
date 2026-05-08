@@ -69,12 +69,16 @@ void cmd_event(const char *type, const char *data) {
 }
 
 static void status_dump(void) {
+    uint32_t drv1 = 0, drv2 = 0;
+    tmc_read(&g_tmc_l1, TMC_REG_DRV_STATUS, &drv1);
+    tmc_read(&g_tmc_l2, TMC_REG_DRV_STATUS, &drv2);
+
     char b[320];
     snprintf(b, sizeof(b),
         "LN:%d,TC:%s,L1T:%s,L2T:%s,"
         "I1:%d,O1:%d,I2:%d,O2:%d,"
         "TH:%d,YS:%d,BUF:%s,SPS:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,RELOAD:%d,"
-        "EST:%.1f,RE:%.2f,DP:%d,PR:%d,AV:%.2f,SC1:%.1f,SC2:%.1f",
+        "EST:%.1f,RE:%.2f,DP:%d,PR:%d,AV:%.2f,SC1:%.1f,SC2:%.1f,SA1:%d,SA2:%d",
         active_lane, tc_state_name(g_tc_ctx.state),
         task_name(g_lane_l1.task), task_name(g_lane_l2.task),
         lane_in_present(&g_lane_l1) ? 1 : 0,
@@ -98,7 +102,9 @@ static void status_dump(void) {
         sync_is_advance_predicted() ? 1 : 0,
         (double)g_buf.arm_vel_mm_s,
         (double)sps_to_mm_per_min_idx(TMC_STEALTHCHOP_SPS[0], 0),
-        (double)sps_to_mm_per_min_idx(TMC_STEALTHCHOP_SPS[1], 1));
+        (double)sps_to_mm_per_min_idx(TMC_STEALTHCHOP_SPS[1], 1),
+        (drv1 >> 30) & 1,
+        (drv2 >> 30) & 1);
 
     cmd_reply("OK", b);
 }
