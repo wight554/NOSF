@@ -483,16 +483,24 @@ static void buf_update(buf_state_t new_state, uint32_t now_ms) {
 
     float travel_mm = 0.0f;
     buf_state_t old = g_buf.state;
+    float threshold = buf_threshold_mm();
+    float max_transition_mm = threshold * 2.0f;
+    float mid_pos_mm = clamp_f(g_buf_pos, -threshold, threshold);
+
+    g_buf.arm_vel_mm_s = 0.0f;
+
     if (old == BUF_MID) {
-        if (new_state == BUF_ADVANCE) travel_mm = BUF_HALF_TRAVEL_MM;
-        else if (new_state == BUF_TRAILING) travel_mm = -BUF_HALF_TRAVEL_MM;
+        if (new_state == BUF_ADVANCE) travel_mm = threshold - mid_pos_mm;
+        else if (new_state == BUF_TRAILING) travel_mm = -threshold - mid_pos_mm;
     } else if (old == BUF_ADVANCE) {
-        if (new_state == BUF_MID) travel_mm = -BUF_HALF_TRAVEL_MM;
-        else if (new_state == BUF_TRAILING) travel_mm = -(BUF_HALF_TRAVEL_MM * 2.0f);
+        if (new_state == BUF_MID) travel_mm = 0.0f;
+        else if (new_state == BUF_TRAILING) travel_mm = -max_transition_mm;
     } else if (old == BUF_TRAILING) {
-        if (new_state == BUF_MID) travel_mm = BUF_HALF_TRAVEL_MM;
-        else if (new_state == BUF_ADVANCE) travel_mm = (BUF_HALF_TRAVEL_MM * 2.0f);
+        if (new_state == BUF_MID) travel_mm = 0.0f;
+        else if (new_state == BUF_ADVANCE) travel_mm = max_transition_mm;
     }
+
+    travel_mm = clamp_f(travel_mm, -max_transition_mm, max_transition_mm);
 
     if (fabsf(travel_mm) > 0.001f && prev_dwell > (uint32_t)BUF_HYST_MS) {
         uint32_t effective_dwell = prev_dwell - (uint32_t)(BUF_HYST_MS / 2);
