@@ -975,6 +975,25 @@ float sync_reserve_error_mm(void) {
 
 bool sync_is_positive_relaunch_damped(void) {
     if (sync_tail_assist_active) return false;
+
+    // Never keep relaunch damping while pinned on the empty-side endstop.
+    // In BUF_ADVANCE the virtual position is clamped at +threshold, so reserve
+    // recovery-based release can become self-locking.
+    if (sync_positive_relaunch_pending && g_buf.state == BUF_ADVANCE) {
+        sync_positive_relaunch_pending = false;
+        sync_recent_negative_until_ms = 0;
+        return false;
+    }
+
+    // If model error is clearly positive (too empty), let full positive
+    // correction act immediately instead of damping refill acceleration.
+    if (sync_positive_relaunch_pending &&
+        sync_reserve_error_mm() > buf_virtual_deadband_mm()) {
+        sync_positive_relaunch_pending = false;
+        sync_recent_negative_until_ms = 0;
+        return false;
+    }
+
     return sync_positive_relaunch_pending;
 }
 
