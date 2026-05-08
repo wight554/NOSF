@@ -339,14 +339,14 @@ void sync_tmc_settings(int lane) {
     MM_PER_STEP[idx] = TMC_ROTATION_DISTANCE[idx] / (float)(TMC_FULL_STEPS[idx] * TMC_GEAR_RATIO[idx] * TMC_MICROSTEPS[idx]);
 
     tmc_setup_chopconf(t, TMC_MICROSTEPS[idx], TMC_TOFF[idx], TMC_TBL[idx], TMC_HSTRT[idx], TMC_HEND[idx], TMC_INTERPOLATE[idx]);
-    tmc_set_stealthchop_sps(t, TMC_STEALTHCHOP_SPS[idx]);
+    tmc_set_stealthchop_sps(t, TMC_STEALTHCHOP_SPS[idx], TMC_MICROSTEPS[idx]);
 }
 
 static void tmc_apply_all(void) {
     tmc_set_pwmconf(&g_tmc_l1);
     tmc_set_pwmconf(&g_tmc_l2);
-    tmc_set_stealthchop_sps(&g_tmc_l1, TMC_STEALTHCHOP_SPS[0]);
-    tmc_set_stealthchop_sps(&g_tmc_l2, TMC_STEALTHCHOP_SPS[1]);
+    tmc_set_stealthchop_sps(&g_tmc_l1, TMC_STEALTHCHOP_SPS[0], TMC_MICROSTEPS[0]);
+    tmc_set_stealthchop_sps(&g_tmc_l2, TMC_STEALTHCHOP_SPS[1], TMC_MICROSTEPS[1]);
     tmc_setup_chopconf(&g_tmc_l1, TMC_MICROSTEPS[0], TMC_TOFF[0], TMC_TBL[0], TMC_HSTRT[0], TMC_HEND[0], TMC_INTERPOLATE[0]);
     tmc_setup_chopconf(&g_tmc_l2, TMC_MICROSTEPS[1], TMC_TOFF[1], TMC_TBL[1], TMC_HSTRT[1], TMC_HEND[1], TMC_INTERPOLATE[1]);
     tmc_set_run_current_ma(&g_tmc_l1, TMC_RUN_CURRENT_MA[0], TMC_HOLD_CURRENT_MA[0]);

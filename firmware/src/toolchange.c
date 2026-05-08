@@ -522,7 +522,8 @@ void tc_tick(uint32_t now_ms) {
                     motor_stop(&A->m);
                     A->current_sps = 0;
                     A->target_sps = 0;
-                    tmc_set_stealthchop_sps(A->tmc, TMC_STEALTHCHOP_SPS[A->lane_id - 1]);
+                    int idx = A->lane_id - 1;
+                    tmc_set_stealthchop_sps(A->tmc, TMC_STEALTHCHOP_SPS[idx], TMC_MICROSTEPS[idx]);
                 }
             }
 

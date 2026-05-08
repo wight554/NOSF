@@ -187,7 +187,8 @@ void lane_stop(lane_t *L) {
     L->current_sps = 0;
     L->target_sps = 0;
     motor_stop(&L->m);
-    tmc_set_stealthchop_sps(L->tmc, TMC_STEALTHCHOP_SPS[L->lane_id - 1]);
+    int idx = L->lane_id - 1;
+    tmc_set_stealthchop_sps(L->tmc, TMC_STEALTHCHOP_SPS[idx], TMC_MICROSTEPS[idx]);
 }
 
 void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_ms, float limit_mm) {
@@ -213,7 +214,7 @@ void lane_start(lane_t *L, task_t t, int sps, bool forward, uint32_t now_ms, flo
     motor_set_dir(&L->m, forward);
     motor_set_rate_sps(&L->m, L->current_sps);
     int idx = L->lane_id - 1;
-    tmc_set_stealthchop_sps(L->tmc, TMC_STEALTHCHOP_SPS[idx]);
+    tmc_set_stealthchop_sps(L->tmc, TMC_STEALTHCHOP_SPS[idx], TMC_MICROSTEPS[idx]);
     tmc_set_run_current_ma(L->tmc, TMC_RUN_CURRENT_MA[idx], TMC_HOLD_CURRENT_MA[idx]);
 }
 

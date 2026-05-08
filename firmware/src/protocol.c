@@ -81,6 +81,12 @@ static void status_dump(void) {
         r_pw = tmc_read(A->tmc, TMC_REG_PWMCONF, &pwmconf);
     }
     int idx = (active_lane == 2) ? 1 : 0;
+    uint32_t target_tp = 0;
+    if (TMC_STEALTHCHOP_SPS[idx] > 0) {
+        uint32_t scale = 256 / (uint32_t)TMC_MICROSTEPS[idx];
+        target_tp = 12000000 / ((uint32_t)TMC_STEALTHCHOP_SPS[idx] * scale);
+        if (target_tp > 0xFFFFF) target_tp = 0xFFFFF;
+    }
 
     char b[350];
     snprintf(b, sizeof(b),
@@ -114,7 +120,7 @@ static void status_dump(void) {
         (double)sps_to_mm_per_min_idx(TMC_STEALTHCHOP_SPS[idx], idx),
         (drv >> 30) & 1,
         (unsigned int)gconf,
-        (unsigned int)tpwmthrs,
+        (unsigned int)target_tp,
         (unsigned int)tstep,
         (unsigned int)pwmconf,
         r_drv, r_gconf, r_tp, r_ts, r_pw,

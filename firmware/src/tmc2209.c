@@ -248,7 +248,7 @@ bool tmc_set_spreadcycle(tmc_t *t, bool spreadcycle) {
     return tmc_write(t, TMC_REG_GCONF, gconf);
 }
 
-bool tmc_set_stealthchop_sps(tmc_t *t, int sps) {
+bool tmc_set_stealthchop_sps(tmc_t *t, int sps, int microsteps) {
     uint32_t gconf = (1u << 6) | (1u << 7) | (1u << 8);
     if (sps <= 0) {
         // Always SpreadCycle
@@ -265,9 +265,14 @@ bool tmc_set_stealthchop_sps(tmc_t *t, int sps) {
         tmc_write(t, TMC_REG_GCONF, gconf);
         busy_wait_us_32(100);
         
-        // TPWMTHRS = f_clk / SPS_threshold
-        uint32_t tpwmthrs = 12000000 / (uint32_t)sps;
+        // TSTEP is measured in units of internal 256-microsteps.
+        // If we send pulses at frequency 'sps' while in 'microsteps' mode,
+        // each pulse corresponds to (256/microsteps) internal units.
+        // TPWMTHRS = f_clk / (sps * (256 / microsteps))
+        uint32_t scale = 256 / (uint32_t)microsteps;
+        uint32_t tpwmthrs = 12000000 / ((uint32_t)sps * scale);
         if (tpwmthrs > 0xFFFFF) tpwmthrs = 0xFFFFF;
+        
         tmc_write(t, TMC_REG_TPWMTHRS, tpwmthrs);
         busy_wait_us_32(100);
 

@@ -31,7 +31,7 @@ uint8_t tmc_crc8(const uint8_t *data, uint8_t len);
 bool tmc_set_run_current_ma(tmc_t *t, int run_ma, int hold_ma);
 bool tmc_setup_chopconf(tmc_t *t, int microsteps, int toff, int tbl, int hstrt, int hend, bool intpol);
 bool tmc_set_spreadcycle(tmc_t *t, bool spreadcycle);
-bool tmc_set_stealthchop_sps(tmc_t *t, int sps);
+bool tmc_set_stealthchop_sps(tmc_t *t, int sps, int microsteps);
 bool tmc_set_sgthrs(tmc_t *t, uint8_t sgthrs);
 bool tmc_set_tcoolthrs(tmc_t *t, uint32_t v);
 bool tmc_set_pwmconf(tmc_t *t);
