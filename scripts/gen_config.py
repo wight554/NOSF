@@ -211,6 +211,7 @@ def main():
         tbl = int(gm("driver_tbl", "2"))
         hstrt = int(gm("driver_hstrt", "5"))
         hend = int(gm("driver_hend", "0"))
+        mm_per_step = rotation_distance / (full_steps * microsteps * gear_ratio) if rotation_distance > 0 else 0.0125
         stealthchop_threshold_mm_min = float(gm("stealthchop_threshold", "0"))
         stealthchop_sps = int(round(stealthchop_threshold_mm_min / 60.0 / mm_per_step)) if stealthchop_threshold_mm_min > 0 else 0
         
@@ -218,7 +219,6 @@ def main():
         dir_invert = int(gm("dir_invert", "0"))
         follow_timeout_ms = int(gm("follow_timeout_ms", "10000"))
 
-        mm_per_step = rotation_distance / (full_steps * microsteps * gear_ratio) if rotation_distance > 0 else 0.0125
         run_ma = int(round(run_current * 1000))
         hold_ma = int(round(hold_current * 1000))
 
