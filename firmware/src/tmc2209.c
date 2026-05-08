@@ -257,6 +257,7 @@ bool tmc_set_stealthchop_sps(tmc_t *t, int sps) {
         tmc_write(t, TMC_REG_TPWMTHRS, 0);
     } else {
         // StealthChop enabled, switching to SpreadCycle above threshold_sps
+        tmc_set_pwmconf(t); // Ensure PWMCONF is set for StealthChop
         tmc_write(t, TMC_REG_GCONF, gconf);
         
         // TPWMTHRS = f_clk / SPS_threshold

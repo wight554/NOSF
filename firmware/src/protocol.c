@@ -70,8 +70,13 @@ void cmd_event(const char *type, const char *data) {
 
 static void status_dump(void) {
     lane_t *A = lane_ptr(active_lane);
-    uint32_t drv = 0;
-    if (A) tmc_read(A->tmc, TMC_REG_DRV_STATUS, &drv);
+    uint32_t drv = 0, gconf = 0, tpwmthrs = 0, tstep = 0;
+    if (A) {
+        tmc_read(A->tmc, TMC_REG_DRV_STATUS, &drv);
+        tmc_read(A->tmc, TMC_REG_GCONF, &gconf);
+        tmc_read(A->tmc, TMC_REG_TPWMTHRS, &tpwmthrs);
+        tmc_read(A->tmc, 0x12, &tstep); // TSTEP
+    }
     int idx = (active_lane == 2) ? 1 : 0;
 
     char b[320];
@@ -79,7 +84,7 @@ static void status_dump(void) {
         "LN:%d,TC:%s,L1T:%s,L2T:%s,"
         "I1:%d,O1:%d,I2:%d,O2:%d,"
         "TH:%d,YS:%d,BUF:%s,SPS:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,RELOAD:%d,"
-        "EST:%.1f,RE:%.2f,DP:%d,PR:%d,AV:%.2f,SC:%.1f,SA:%d",
+        "EST:%.1f,RE:%.2f,DP:%d,PR:%d,AV:%.2f,SC:%.1f,SA:%d,GC:0x%X,TP:%u,TS:%u",
         active_lane, tc_state_name(g_tc_ctx.state),
         task_name(g_lane_l1.task), task_name(g_lane_l2.task),
         lane_in_present(&g_lane_l1) ? 1 : 0,
@@ -103,7 +108,10 @@ static void status_dump(void) {
         sync_is_advance_predicted() ? 1 : 0,
         (double)g_buf.arm_vel_mm_s,
         (double)sps_to_mm_per_min_idx(TMC_STEALTHCHOP_SPS[idx], idx),
-        (drv >> 30) & 1);
+        (drv >> 30) & 1,
+        (unsigned int)gconf,
+        (unsigned int)tpwmthrs,
+        (unsigned int)tstep);
 
     cmd_reply("OK", b);
 }
