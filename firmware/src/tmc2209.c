@@ -248,6 +248,26 @@ bool tmc_set_spreadcycle(tmc_t *t, bool spreadcycle) {
     return tmc_write(t, TMC_REG_GCONF, gconf);
 }
 
+bool tmc_set_stealthchop_sps(tmc_t *t, int sps) {
+    uint32_t gconf = (1u << 6) | (1u << 7) | (1u << 8);
+    if (sps <= 0) {
+        // 0 = Always SpreadCycle
+        gconf |= (1u << 2);
+        tmc_write(t, TMC_REG_GCONF, gconf);
+        tmc_write(t, TMC_REG_TPWMTHRS, 0);
+    } else {
+        // StealthChop enabled, switching to SpreadCycle above threshold_sps
+        tmc_write(t, TMC_REG_GCONF, gconf);
+        
+        // TPWMTHRS = f_clk / SPS_threshold
+        // Using 12MHz as nominal internal clock.
+        uint32_t tpwmthrs = 12000000 / (uint32_t)sps;
+        if (tpwmthrs > 0xFFFFF) tpwmthrs = 0xFFFFF;
+        tmc_write(t, TMC_REG_TPWMTHRS, tpwmthrs);
+    }
+    return true;
+}
+
 bool tmc_set_pwmconf(tmc_t *t) {
     uint32_t val = 0;
     val |= (36u  & 0xFFu);

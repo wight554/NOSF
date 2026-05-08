@@ -384,7 +384,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "GEAR_RATIO")) { SET_LANE({ TMC_GEAR_RATIO[idx] = clamp_f(fv, 0.001f, 1000.0f); }); }
         else if (!strcmp(base_param, "FULL_STEPS")) { SET_LANE({ TMC_FULL_STEPS[idx] = (iv == 400 ? 400 : 200); }); }
         else if (!strcmp(base_param, "INTERPOLATE")) { SET_LANE({ TMC_INTERPOLATE[idx] = (iv != 0); }); }
-        else if (!strcmp(base_param, "STEALTHCHOP")) { SET_LANE({ TMC_SPREADCYCLE[idx] = (iv == 0); }); }
+        else if (!strcmp(base_param, "STEALTHCHOP")) { SET_LANE({ TMC_STEALTHCHOP_SPS[idx] = (iv == 0) ? 0 : mm_per_min_to_sps_idx(fv, idx); }); }
         else if (!strcmp(base_param, "DRIVER_TBL")) { SET_LANE({ TMC_TBL[idx] = clamp_i(iv, 0, 3); }); }
         else if (!strcmp(base_param, "DRIVER_TOFF")) { SET_LANE({ TMC_TOFF[idx] = clamp_i(iv, 0, 15); }); }
         else if (!strcmp(base_param, "DRIVER_HSTRT")) { SET_LANE({ TMC_HSTRT[idx] = clamp_i(iv, 0, 7); }); }
@@ -507,7 +507,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "RELOAD_LEAN")) snprintf(out, sizeof(out), "RELOAD_LEAN:%.2f", (double)RELOAD_LEAN_FACTOR);
         else if (!strcmp(param, "MICROSTEPS")) snprintf(out, sizeof(out), "MICROSTEPS:%d", TMC_MICROSTEPS[idx]);
         else if (!strcmp(param, "INTERPOLATE")) snprintf(out, sizeof(out), "INTERPOLATE:%d", TMC_INTERPOLATE[idx] ? 1 : 0);
-        else if (!strcmp(param, "STEALTHCHOP")) snprintf(out, sizeof(out), "STEALTHCHOP:%d", TMC_SPREADCYCLE[idx] ? 0 : 1);
+        else if (!strcmp(param, "STEALTHCHOP")) snprintf(out, sizeof(out), "STEALTHCHOP:%.1f", (double)sps_to_mm_per_min_idx(TMC_STEALTHCHOP_SPS[idx], idx));
         else if (!strcmp(param, "DRIVER_TBL")) snprintf(out, sizeof(out), "DRIVER_TBL:%d", TMC_TBL[idx]);
         else if (!strcmp(param, "DRIVER_TOFF")) snprintf(out, sizeof(out), "DRIVER_TOFF:%d", TMC_TOFF[idx]);
         else if (!strcmp(param, "DRIVER_HSTRT")) snprintf(out, sizeof(out), "DRIVER_HSTRT:%d", TMC_HSTRT[idx]);

@@ -14,7 +14,7 @@
 
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4e4f5346u
-#define SETTINGS_VERSION 42u
+#define SETTINGS_VERSION 43u
 
 typedef struct {
     uint32_t magic;
@@ -82,7 +82,7 @@ typedef struct {
     int tmc_microsteps[NUM_LANES];
     int tmc_tbl[NUM_LANES], tmc_toff[NUM_LANES], tmc_hstrt[NUM_LANES], tmc_hend[NUM_LANES];
     bool tmc_interpolate[NUM_LANES];
-    bool tmc_spreadcycle[NUM_LANES];
+    int tmc_stealthchop_sps[NUM_LANES];
     int tmc_run_current_ma[NUM_LANES], tmc_hold_current_ma[NUM_LANES];
 
     uint32_t crc32;
@@ -152,7 +152,7 @@ void settings_defaults(void) {
         TMC_RUN_CURRENT_MA[i] = (i == 0) ? CONF_L1_RUN_CURRENT_MA : CONF_L2_RUN_CURRENT_MA;
         TMC_HOLD_CURRENT_MA[i] = (i == 0) ? CONF_L1_HOLD_CURRENT_MA : CONF_L2_HOLD_CURRENT_MA;
         TMC_MICROSTEPS[i] = (i == 0) ? CONF_L1_MICROSTEPS : CONF_L2_MICROSTEPS;
-        TMC_SPREADCYCLE[i] = (i == 0) ? CONF_L1_SPREADCYCLE : CONF_L2_SPREADCYCLE;
+        TMC_STEALTHCHOP_SPS[i] = (i == 0) ? CONF_L1_STEALTHCHOP_THRESHOLD : CONF_L2_STEALTHCHOP_THRESHOLD;
     }
 
     SERVO_OPEN_US = CONF_SERVO_OPEN_US;
@@ -207,8 +207,8 @@ void settings_defaults(void) {
     TMC_HEND[1] = CONF_L2_HEND;
     TMC_INTERPOLATE[0] = CONF_L1_INTPOL;
     TMC_INTERPOLATE[1] = CONF_L2_INTPOL;
-    TMC_SPREADCYCLE[0] = CONF_L1_SPREADCYCLE;
-    TMC_SPREADCYCLE[1] = CONF_L2_SPREADCYCLE;
+    TMC_STEALTHCHOP_SPS[0] = CONF_L1_STEALTHCHOP_THRESHOLD;
+    TMC_STEALTHCHOP_SPS[1] = CONF_L2_STEALTHCHOP_THRESHOLD;
     TMC_RUN_CURRENT_MA[0] = CONF_L1_RUN_CURRENT_MA;
     TMC_RUN_CURRENT_MA[1] = CONF_L2_RUN_CURRENT_MA;
     TMC_HOLD_CURRENT_MA[0] = CONF_L1_HOLD_CURRENT_MA;
@@ -314,7 +314,7 @@ void settings_save(void) {
         s.tmc_hstrt[i] = TMC_HSTRT[i];
         s.tmc_hend[i] = TMC_HEND[i];
         s.tmc_interpolate[i] = TMC_INTERPOLATE[i];
-        s.tmc_spreadcycle[i] = TMC_SPREADCYCLE[i];
+        s.tmc_stealthchop_sps[i] = TMC_STEALTHCHOP_SPS[i];
         s.tmc_run_current_ma[i] = TMC_RUN_CURRENT_MA[i];
         s.tmc_hold_current_ma[i] = TMC_HOLD_CURRENT_MA[i];
     }
@@ -339,14 +339,14 @@ void sync_tmc_settings(int lane) {
     MM_PER_STEP[idx] = TMC_ROTATION_DISTANCE[idx] / (float)(TMC_FULL_STEPS[idx] * TMC_GEAR_RATIO[idx] * TMC_MICROSTEPS[idx]);
 
     tmc_setup_chopconf(t, TMC_MICROSTEPS[idx], TMC_TOFF[idx], TMC_TBL[idx], TMC_HSTRT[idx], TMC_HEND[idx], TMC_INTERPOLATE[idx]);
-    tmc_set_spreadcycle(t, TMC_SPREADCYCLE[idx]);
+    tmc_set_stealthchop_sps(t, TMC_STEALTHCHOP_SPS[idx]);
 }
 
 static void tmc_apply_all(void) {
     tmc_set_pwmconf(&g_tmc_l1);
     tmc_set_pwmconf(&g_tmc_l2);
-    tmc_set_spreadcycle(&g_tmc_l1, TMC_SPREADCYCLE[0]);
-    tmc_set_spreadcycle(&g_tmc_l2, TMC_SPREADCYCLE[1]);
+    tmc_set_stealthchop_sps(&g_tmc_l1, TMC_STEALTHCHOP_SPS[0]);
+    tmc_set_stealthchop_sps(&g_tmc_l2, TMC_STEALTHCHOP_SPS[1]);
     tmc_setup_chopconf(&g_tmc_l1, TMC_MICROSTEPS[0], TMC_TOFF[0], TMC_TBL[0], TMC_HSTRT[0], TMC_HEND[0], TMC_INTERPOLATE[0]);
     tmc_setup_chopconf(&g_tmc_l2, TMC_MICROSTEPS[1], TMC_TOFF[1], TMC_TBL[1], TMC_HSTRT[1], TMC_HEND[1], TMC_INTERPOLATE[1]);
     tmc_set_run_current_ma(&g_tmc_l1, TMC_RUN_CURRENT_MA[0], TMC_HOLD_CURRENT_MA[0]);
@@ -431,7 +431,7 @@ void settings_load(void) {
         TMC_HSTRT[i] = s->tmc_hstrt[i];
         TMC_HEND[i] = s->tmc_hend[i];
         TMC_INTERPOLATE[i] = s->tmc_interpolate[i];
-        TMC_SPREADCYCLE[i] = s->tmc_spreadcycle[i];
+        TMC_STEALTHCHOP_SPS[i] = s->tmc_stealthchop_sps[i];
         TMC_RUN_CURRENT_MA[i] = s->tmc_run_current_ma[i];
         TMC_HOLD_CURRENT_MA[i] = s->tmc_hold_current_ma[i];
         MM_PER_STEP[i] = TMC_ROTATION_DISTANCE[i] / (float)(TMC_FULL_STEPS[i] * TMC_GEAR_RATIO[i] * TMC_MICROSTEPS[i]);
@@ -481,7 +481,7 @@ void settings_load(void) {
         TMC_HSTRT[i] = s->tmc_hstrt[i];
         TMC_HEND[i] = s->tmc_hend[i];
         TMC_INTERPOLATE[i] = s->tmc_interpolate[i];
-        TMC_SPREADCYCLE[i] = s->tmc_spreadcycle[i];
+        TMC_STEALTHCHOP_SPS[i] = s->tmc_stealthchop_sps[i];
         TMC_RUN_CURRENT_MA[i] = s->tmc_run_current_ma[i];
         TMC_HOLD_CURRENT_MA[i] = s->tmc_hold_current_ma[i];
     }

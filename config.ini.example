@@ -21,8 +21,9 @@ run_current:
 # hold_current:               # defaults to run_current / 2 if omitted
 # dir_invert: 0               # invert motor direction (0/1, comma-list ok)
 # interpolate: True
-# stealthchop_threshold: 0    # 0 = SpreadCycle always on; any non-zero value enables StealthChop.
-#                             # Live GET:/SET: exposes this as 0/1, not a real threshold.
+# stealthchop_threshold: 0    # Speed threshold (mm/min) for StealthChop.
+#                             # 0 = SpreadCycle always on.
+#                             # Non-zero = StealthChop active below this speed.
 
 # ─── TMC Chopper (per-lane capable) ─────────────────────────────────────────
 # driver_tbl: 2

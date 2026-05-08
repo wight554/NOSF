@@ -142,6 +142,7 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `POST_PRINT_STAB_MS` | `post_print_stab_delay_ms` | Delay before idle+`TRAILING` recovery starts; once triggered, the low-speed post-print stabilization move settles the buffer back to `MID` and only falls back to the advance-side handoff if it overshoots center. `0` starts immediately | 0 |
 | `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |
 | `RELOAD_JOIN_MS` | `reload_join_delay_ms` | Extra RELOAD-only settling delay after tail and Y clear before `RELOAD:JOINING` starts | 500 |
+| `STEALTHCHOP` | `stealthchop_threshold` | Velocity threshold (mm/min) for StealthChop. 0 = always SpreadCycle. | 0 |
 
 `BASELINE_RATE` remains a persistent bootstrap target. AUTO sync no longer rewrites it during startup.
 

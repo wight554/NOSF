@@ -211,7 +211,8 @@ def main():
         tbl = int(gm("driver_tbl", "2"))
         hstrt = int(gm("driver_hstrt", "5"))
         hend = int(gm("driver_hend", "0"))
-        spreadcycle = (gm("stealthchop_threshold", "0") == "0")
+        stealthchop_threshold_mm_min = float(gm("stealthchop_threshold", "0"))
+        stealthchop_sps = int(round(stealthchop_threshold_mm_min / 60.0 / mm_per_step)) if stealthchop_threshold_mm_min > 0 else 0
         
         # Direction
         dir_invert = int(gm("dir_invert", "0"))
@@ -234,7 +235,7 @@ def main():
             "hstrt": hstrt,
             "hend": hend,
             "mm_per_step": mm_per_step,
-            "spreadcycle": spreadcycle,
+            "stealthchop_sps": stealthchop_sps,
             "dir_invert": dir_invert,
             "follow_timeout_ms": follow_timeout_ms
         }
@@ -267,7 +268,7 @@ def main():
         f"#define CONF_L1_HSTRT              {l1['hstrt']}",
         f"#define CONF_L1_HEND               {l1['hend']}",
         f"#define CONF_L1_INTPOL             {'true' if l1['interpolate'] else 'false'}",
-        f"#define CONF_L1_SPREADCYCLE        {'true' if l1['spreadcycle'] else 'false'}",
+        f"#define CONF_L1_STEALTHCHOP_THRESHOLD {l1['stealthchop_sps']}",
         f"#define CONF_L1_FOLLOW_TIMEOUT_MS  {l1['follow_timeout_ms']}",
         "",
         "// --- Lane 2 parameters ---",
@@ -283,7 +284,7 @@ def main():
         f"#define CONF_L2_HSTRT              {l2['hstrt']}",
         f"#define CONF_L2_HEND               {l2['hend']}",
         f"#define CONF_L2_INTPOL             {'true' if l2['interpolate'] else 'false'}",
-        f"#define CONF_L2_SPREADCYCLE        {'true' if l2['spreadcycle'] else 'false'}",
+        f"#define CONF_L2_STEALTHCHOP_THRESHOLD {l2['stealthchop_sps']}",
         f"#define CONF_L2_FOLLOW_TIMEOUT_MS  {l2['follow_timeout_ms']}",
         "",
         "// --- Direction Inverts ---",
