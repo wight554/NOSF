@@ -299,7 +299,8 @@ Instead:
   `SYNC_AUTO_STOP_MS`;
 - normal auto-started print sync only starts its `SYNC_AUTO_STOP_MS` timer
   after trailing recovery has already collapsed to the minimum trailing-floor
-  speed and the buffer is still `BUF_TRAILING`.
+  speed, the buffer is still `BUF_TRAILING`, and the MMU is still positively
+  pushing into the trailing side.
 
 The same low-speed stabilization helper used at boot can also be run on demand
 with `BS:` when the controller is idle.
