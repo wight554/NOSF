@@ -305,8 +305,9 @@ with `BS:` when the controller is idle.
 In idle loaded states, firmware also runs a negative-sync / retract-sync flow:
 if the raw buffer state is `TRAILING`, it can wait `POST_PRINT_STAB_MS`
 (legacy name, now used as the idle trailing delay), then reverse slowly until
-the raw buffer reaches `ADVANCE`. At that point it switches to the normal
-gentle stabilization move and settles the buffer back toward `MID`.
+the raw buffer reaches `MID`. If the move somehow overshoots before the
+control loop catches that center crossing, firmware falls back to the
+advance-side handoff and then settles the buffer back toward `MID`.
 
 **AUTO sync sequence:**
 

@@ -452,6 +452,13 @@ void buffer_stabilize_tick(uint32_t now_ms) {
 
     buf_state_t raw_state = buf_state_raw();
     if (g_buffer_service_mode == BUFFER_SERVICE_NEG_SYNC) {
+        if (raw_state == BUF_MID) {
+            buf_force_stable_state(BUF_MID, now_ms);
+            if (g_buffer_stabilize_emit_events) cmd_event("BUF_STAB", "DONE");
+            boot_stabilize_stop();
+            return;
+        }
+
         if (raw_state == BUF_ADVANCE) {
             g_buffer_service_mode = BUFFER_SERVICE_STABILIZE;
             g_boot_stabilize_deadline_ms = now_ms + 10000u;

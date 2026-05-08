@@ -139,7 +139,7 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `RUNOUT_COOLDOWN_MS` | `runout_cooldown_ms` | Cooldown before another runout can be reported on the same lane | 12000 |
 | `SYNC_OVERSHOOT_PCT` | `sync_overshoot_pct` | Extra trailing-side trim as percent of sync correction after reserve overshoots full (0..200) | 25 |
 | `SYNC_AUTO_STOP` | `sync_auto_stop_ms` | Auto-mode only: tail-assist stop after sustained `TRAILING`, and normal print-sync stop only after `TRAILING` recovery has already collapsed to the minimum sync floor for X ms | 5000 |
-| `POST_PRINT_STAB_MS` | `post_print_stab_delay_ms` | Legacy name for the idle trailing negative-sync delay; once idle+`TRAILING` is detected, reverse until `ADVANCE` and then stabilize to `MID`. `0` starts immediately | 0 |
+| `POST_PRINT_STAB_MS` | `post_print_stab_delay_ms` | Delay before idle+`TRAILING` recovery starts; once triggered, the low-speed post-print stabilization move settles the buffer back to `MID` and only falls back to the advance-side handoff if it overshoots center. `0` starts immediately | 0 |
 | `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |
 | `RELOAD_JOIN_MS` | `reload_join_delay_ms` | Extra RELOAD-only settling delay after tail and Y clear before `RELOAD:JOINING` starts | 500 |
 
