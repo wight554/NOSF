@@ -14,7 +14,6 @@
 #define SYNC_TRAILING_HARD_WALL_MS 350.0f
 #define SYNC_TRAILING_HARD_PUSH_MM_S 0.25f
 #define SYNC_TRAILING_HARD_BRAKE_MS 120u
-#define SYNC_TRAILING_LATCH_STOP_MS 200u
 #define SYNC_TRAILING_COLLAPSE_DELAY_MS 250u
 #define SYNC_TRAILING_COLLAPSE_RAMP_MULT 3
 #define SYNC_TRAILING_COLLAPSE_CAP_MS 600u
@@ -836,17 +835,6 @@ void sync_tick(uint32_t now_ms) {
         }
         if (recovery_cap < trailing_floor_sps) recovery_cap = trailing_floor_sps;
         if (target_sps > recovery_cap) target_sps = recovery_cap;
-    }
-
-    bool trailing_switch_stuck = BUF_SENSOR_TYPE == 0 && s == BUF_TRAILING && !sync_tail_assist_active &&
-                                (now_ms - g_buf.entered_ms) >= SYNC_TRAILING_LATCH_STOP_MS &&
-                                sync_current_sps > sync_trailing_floor_sps();
-    if (trailing_switch_stuck) {
-        sync_disable(true);
-        extruder_est_last_update_ms = now_ms;
-        sync_apply_to_active();
-        cmd_event("SYNC", "AUTO_STOP");
-        return;
     }
 
     bool trailing_wall_critical = BUF_SENSOR_TYPE == 0 && s == BUF_TRAILING &&
