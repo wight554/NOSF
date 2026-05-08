@@ -330,11 +330,18 @@ static void buf_force_stable_state(buf_state_t state, uint32_t now_ms) {
 
     if (g_buf.state != state) {
         buf_update(state, now_ms);
-        return;
     }
 
     g_buf.entered_ms = now_ms;
-    if (state == BUF_MID) g_buf_pos = 0.0f;
+    if (state == BUF_MID) {
+        g_buf_pos = 0.0f;
+        g_buf.arm_vel_mm_s = 0.0f;
+        if (!sync_enabled) {
+            extruder_est_sps = 0.0f;
+            extruder_est_prev_sps = 0.0f;
+            extruder_est_last_update_ms = now_ms;
+        }
+    }
 }
 
 static void boot_stabilize_stop(void) {
