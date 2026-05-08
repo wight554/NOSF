@@ -308,12 +308,12 @@ Instead:
 
 - tail-assist auto-starts still stop if `BUF_TRAILING` persists for
   `SYNC_AUTO_STOP_MS`;
-- normal auto-started print sync starts its floor timer only after trailing
-  recovery has already collapsed to the minimum trailing-floor speed and the
-  buffer is still `BUF_TRAILING`; if the MMU is still positively pushing into
-  trailing, the configured `SYNC_AUTO_STOP_MS` applies directly, and if the
-  model never shows positive push, a slower internal deadman still stops any
-  floor-hold that remains pinned much longer.
+- normal auto-started print sync requires **continuous `TRAILING` dwell** exceeding 
+  `SYNC_AUTO_STOP_MS` **and** that the recovery speed has collapsed to the minimum 
+  trailing-floor speed (ignoring micro-fluctuations). If the MMU is still positively 
+  pushing into trailing, the configured `SYNC_AUTO_STOP_MS` applies directly; if the 
+  model never shows positive push, a slower internal deadman multiplier allows 
+  more time but still safely stops any infinite floor-hold.
 
 The same low-speed stabilization helper used at boot can also be run on demand
 with `BS:` when the controller is idle.
@@ -341,8 +341,8 @@ advance-side handoff and then settles the buffer back toward `MID`.
 6. During tail assist, sustained `BUF_TRAILING` for `SYNC_AUTO_STOP_MS`
   disables sync.
 7. During normal auto-started print sync, sustained `BUF_TRAILING` only
-  disables sync after the controller has already reached the trailing-floor
-  speed and remained stuck there for `SYNC_AUTO_STOP_MS`.
+   disables sync after the continuous dwell exceeds `SYNC_AUTO_STOP_MS`
+   and the controller speed has collapsed to the trailing-floor limit.
 8. The next eligible `BUF_ADVANCE` event bootstraps sync again.
 
 ---
