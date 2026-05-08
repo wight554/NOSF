@@ -40,7 +40,6 @@ static uint32_t sync_continuous_trailing_since_ms = 0;
 static uint32_t sync_post_trailing_boost_until_ms = 0;
 static uint32_t sync_recent_negative_until_ms = 0;
 static bool sync_positive_relaunch_pending = false;
-astatic float g_buf_physical_entry_pos_mm = 0.0f;
 
 buf_tracker_t g_buf = { .state = BUF_MID };
 
@@ -338,7 +337,6 @@ static void buf_force_stable_state(buf_state_t state, uint32_t now_ms) {
     g_buf.entered_ms = now_ms;
     if (state == BUF_MID) {
         g_buf_pos = 0.0f;
-        g_buf_physical_entry_pos_mm = 0.0f;
         g_buf.arm_vel_mm_s = 0.0f;
         if (!sync_enabled) {
             extruder_est_sps = 0.0f;
@@ -509,8 +507,6 @@ static void buf_update(buf_state_t new_state, uint32_t now_ms) {
     g_buf.arm_vel_mm_s = 0.0f;
 
     if (old == BUF_MID) {
-        if (new_state == BUF_ADVANCE) travel_mm = threshold - g_buf_physical_entry_pos_mm;
-        else if (new_state == BUF_TRAILING) travel_mm = -threshold - g_buf_physical_entry_pos_mm;
         if (new_state == BUF_ADVANCE) travel_mm = threshold - mid_pos_mm;
         else if (new_state == BUF_TRAILING) travel_mm = -threshold - mid_pos_mm;
     } else if (old == BUF_ADVANCE) {
@@ -522,15 +518,6 @@ static void buf_update(buf_state_t new_state, uint32_t now_ms) {
     }
 
     travel_mm = clamp_f(travel_mm, -max_transition_mm, max_transition_mm);
-
-    if (new_state == BUF_ADVANCE) {
-        g_buf_physical_entry_pos_mm = threshold;
-    } else if (new_state == BUF_TRAILING) {
-        g_buf_physical_entry_pos_mm = -threshold;
-    } else if (new_state == BUF_MID) {
-        if (old == BUF_ADVANCE) g_buf_physical_entry_pos_mm = threshold;
-        else if (old == BUF_TRAILING) g_buf_physical_entry_pos_mm = -threshold;
-    }
 
     if (fabsf(travel_mm) > 0.001f && prev_dwell > (uint32_t)BUF_HYST_MS) {
         uint32_t effective_dwell = prev_dwell - (uint32_t)(BUF_HYST_MS / 2);
@@ -906,9 +893,6 @@ void sync_tick(uint32_t now_ms) {
 
     sync_current_sps = clamp_i(sync_current_sps, 0, max_sps);
 
-    if (sync_auto_started && !sync_tail_assist_active && s == BUF_TRAILING) {
-        if (sync_continuous_trailing_since_ms == 0) sync_continuous_trailing_since_ms = now_ms;
-        uint32_t trailing_dwell_ms = now_ms - sync_continuous_trailing_since_ms;
     if (sync_auto_started && !sync_tail_assist_active) {
         if (s == BUF_TRAILING) {
             // Start or maintain the continuous physical dwell timer
@@ -918,13 +902,9 @@ void sync_tick(uint32_t now_ms) {
             
             uint32_t trailing_dwell_ms = now_ms - sync_continuous_trailing_since_ms;
 
-        int effective_floor_sps = sync_trailing_floor_sps() + PRE_RAMP_SPS;
-        uint32_t floor_timeout_ms = (uint32_t)SYNC_AUTO_STOP_MS;
             // Define a widened floor threshold to ignore PID hunting/noise
             int effective_floor_sps = sync_trailing_floor_sps() + PRE_RAMP_SPS; 
 
-        if (floor_timeout_ms > 0 && trailing_dwell_ms > floor_timeout_ms) {
-            if (sync_current_sps <= effective_floor_sps) {
             // Max time it should take to ramp down from 1600 mm/min to floor, plus safety margin
             uint32_t max_recovery_time_ms = 3000u; 
 
@@ -941,8 +921,6 @@ void sync_tick(uint32_t now_ms) {
             // ONLY reset the timer when the arm physically leaves the trailing switch
             sync_continuous_trailing_since_ms = 0;
         }
-    } else {
-        sync_continuous_trailing_since_ms = 0;
     }
 
     sync_apply_to_active();
