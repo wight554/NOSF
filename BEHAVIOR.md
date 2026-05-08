@@ -310,10 +310,9 @@ Instead:
   `SYNC_AUTO_STOP_MS`;
 - normal auto-started print sync requires **continuous `TRAILING` dwell** exceeding 
   `SYNC_AUTO_STOP_MS` **and** that the recovery speed has collapsed to the minimum 
-  trailing-floor speed (ignoring micro-fluctuations). If the MMU is still positively 
-  pushing into trailing, the configured `SYNC_AUTO_STOP_MS` applies directly; if the 
-  model never shows positive push, a slower internal deadman multiplier allows 
-  more time but still safely stops any infinite floor-hold.
+  trailing-floor speed (ignoring micro-fluctuations). The configured `SYNC_AUTO_STOP_MS` 
+  applies directly without relying on an internal deadman multiplier since the 
+  dwell timer no longer falsely resets.
 
 The same low-speed stabilization helper used at boot can also be run on demand
 with `BS:` when the controller is idle.

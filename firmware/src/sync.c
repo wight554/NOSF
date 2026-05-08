@@ -13,8 +13,6 @@
 #define SYNC_TRAILING_SOFT_WALL_MS 1200.0f
 #define SYNC_TRAILING_HARD_WALL_MS 350.0f
 #define SYNC_TRAILING_HARD_PUSH_MM_S 0.25f
-#define SYNC_TRAILING_FLOOR_STOP_PUSH_MM_S 0.05f
-#define SYNC_TRAILING_FLOOR_DEADMAN_MULT 2u
 #define SYNC_TRAILING_COLLAPSE_DELAY_MS 250u
 #define SYNC_TRAILING_COLLAPSE_RAMP_MULT 3
 #define SYNC_TRAILING_COLLAPSE_CAP_MS 600u
@@ -900,11 +898,7 @@ void sync_tick(uint32_t now_ms) {
         uint32_t trailing_dwell_ms = now_ms - sync_continuous_trailing_since_ms;
 
         int effective_floor_sps = sync_trailing_floor_sps() + PRE_RAMP_SPS;
-        bool trailing_floor_stop_armed = trailing_push_mm_s > SYNC_TRAILING_FLOOR_STOP_PUSH_MM_S;
         uint32_t floor_timeout_ms = (uint32_t)SYNC_AUTO_STOP_MS;
-        if (!trailing_floor_stop_armed) {
-            floor_timeout_ms *= SYNC_TRAILING_FLOOR_DEADMAN_MULT;
-        }
 
         if (floor_timeout_ms > 0 && trailing_dwell_ms > floor_timeout_ms) {
             if (sync_current_sps <= effective_floor_sps) {
