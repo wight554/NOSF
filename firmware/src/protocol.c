@@ -70,21 +70,25 @@ void cmd_event(const char *type, const char *data) {
 
 static void status_dump(void) {
     lane_t *A = lane_ptr(active_lane);
-    uint32_t drv = 0, gconf = 0, tpwmthrs = 0, tstep = 0;
+    uint32_t drv = 0, gconf = 0, tpwmthrs = 0, tstep = 0, pwmconf = 0;
+    bool r_drv = false, r_gconf = false, r_tp = false, r_ts = false, r_pw = false;
+
     if (A) {
-        tmc_read(A->tmc, TMC_REG_DRV_STATUS, &drv);
-        tmc_read(A->tmc, TMC_REG_GCONF, &gconf);
-        tmc_read(A->tmc, TMC_REG_TPWMTHRS, &tpwmthrs);
-        tmc_read(A->tmc, 0x12, &tstep); // TSTEP
+        r_drv = tmc_read(A->tmc, TMC_REG_DRV_STATUS, &drv);
+        r_gconf = tmc_read(A->tmc, TMC_REG_GCONF, &gconf);
+        r_tp = tmc_read(A->tmc, TMC_REG_TPWMTHRS, &tpwmthrs);
+        r_ts = tmc_read(A->tmc, 0x12, &tstep);
+        r_pw = tmc_read(A->tmc, TMC_REG_PWMCONF, &pwmconf);
     }
     int idx = (active_lane == 2) ? 1 : 0;
 
-    char b[320];
+    char b[350];
     snprintf(b, sizeof(b),
         "LN:%d,TC:%s,L1T:%s,L2T:%s,"
         "I1:%d,O1:%d,I2:%d,O2:%d,"
         "TH:%d,YS:%d,BUF:%s,MM:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,RELOAD:%d,"
-        "EST:%.1f,RE:%.2f,DP:%d,PR:%d,AV:%.2f,SC:%.1f,SA:%d,GC:0x%X,TP:%u,TS:%u",
+        "EST:%.1f,RE:%.2f,DP:%d,PR:%d,AV:%.2f,SC:%.1f,SA:%d,GC:0x%X,TP:%u,TS:%u,PW:0x%X,"
+        "RS:%d%d%d%d%d,SS:%d",
         active_lane, tc_state_name(g_tc_ctx.state),
         task_name(g_lane_l1.task), task_name(g_lane_l2.task),
         lane_in_present(&g_lane_l1) ? 1 : 0,
@@ -111,7 +115,10 @@ static void status_dump(void) {
         (drv >> 30) & 1,
         (unsigned int)gconf,
         (unsigned int)tpwmthrs,
-        (unsigned int)tstep);
+        (unsigned int)tstep,
+        (unsigned int)pwmconf,
+        r_drv, r_gconf, r_tp, r_ts, r_pw,
+        TMC_STEALTHCHOP_SPS[idx]);
 
     cmd_reply("OK", b);
 }
@@ -588,6 +595,19 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
                 cmd_reply("OK", out);
             } else {
                 cmd_reply("ER", "TR:NO_RESPONSE");
+            }
+        } else {
+            cmd_reply("ER", "ARG");
+        }
+    } else if (!strcmp(cmd, "TW")) {
+        int ln, reg;
+        uint32_t val;
+        if (sscanf(p, "%d:%d:%li", &ln, &reg, &val) == 3 && (ln == 1 || ln == 2) && reg >= 0 && reg <= 127) {
+            tmc_t *t = (ln == 1) ? &g_tmc_l1 : &g_tmc_l2;
+            if (tmc_write(t, (uint8_t)reg, val)) {
+                cmd_reply("OK", NULL);
+            } else {
+                cmd_reply("ER", "TW:FAIL");
             }
         } else {
             cmd_reply("ER", "ARG");
