@@ -753,6 +753,12 @@ void sync_tick(uint32_t now_ms) {
         A->task == TASK_FEED && A->fault == FAULT_NONE &&
         buf_near_target && sync_current_sps > 0) {
         extruder_est_sps += 0.05f * ((float)lane_motion_sps(A) - extruder_est_sps);
+    } else if (s == BUF_TRAILING && (now_ms - g_buf.entered_ms) > SYNC_TRAILING_COLLAPSE_DELAY_MS) {
+        // If pinned against the physical wall, the MMU is definitively out-pacing the extruder.
+        // If the estimator thinks the extruder is still pulling fast, it is blind. Drag it down.
+        if (extruder_est_sps > (float)sync_current_sps) {
+            extruder_est_sps += 0.05f * ((float)sync_current_sps - extruder_est_sps);
+        }
     }
 
     float reserve_target_mm = buf_target_reserve_mm();
