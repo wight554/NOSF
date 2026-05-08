@@ -16,6 +16,7 @@
 #define SYNC_TRAILING_COLLAPSE_DELAY_MS 250u
 #define SYNC_TRAILING_COLLAPSE_RAMP_MULT 3
 #define SYNC_TRAILING_COLLAPSE_CAP_MS 600u
+#define SYNC_EST_FRESH_MS 3000u
 #define SYNC_MID_TRAILING_TAPER_FRAC 0.5f
 #define SYNC_MID_TRAILING_FLOOR_FRAC 0.45f
 #define SYNC_RESERVE_CENTER_GUARD_FRAC 0.05f
@@ -599,15 +600,26 @@ void sync_disable(bool reset_estimator) {
 }
 
 static int sync_bootstrap_sps(void) {
-    int startup_sps = baseline_control_floor_sps();
-    if (startup_sps < BUF_STAB_SPS) startup_sps = BUF_STAB_SPS;
     int max_sps = sync_clamp_max_sps(SYNC_MAX_SPS);
-    int res = clamp_i(startup_sps, TRAILING_SPS, max_sps);
-    g_baseline_sps = res;
-    extruder_est_sps = (float)res;
-    extruder_est_prev_sps = (float)res;
+    int startup_floor_sps = TRAILING_SPS + PRE_RAMP_SPS;
+    if (startup_floor_sps < BUF_STAB_SPS) startup_floor_sps = BUF_STAB_SPS;
+
+    bool est_fresh = extruder_est_last_update_ms != 0 &&
+                     (g_now_ms - extruder_est_last_update_ms) < SYNC_EST_FRESH_MS &&
+                     extruder_est_sps >= (float)startup_floor_sps;
+
+    int res;
+    if (est_fresh) {
+        res = clamp_i((int)extruder_est_sps, startup_floor_sps, max_sps);
+    } else {
+        res = clamp_i(startup_floor_sps, TRAILING_SPS, max_sps);
+        extruder_est_sps = (float)res;
+        extruder_est_prev_sps = (float)res;
+    }
+
     extruder_est_last_update_ms = g_now_ms;
     sync_fast_brake_until_ms = 0;
+    sync_continuous_trailing_since_ms = 0;
     return res;
 }
 
