@@ -41,6 +41,7 @@ static bool sync_trailing_recovery_active = false;
 static uint32_t sync_trailing_floor_since_ms = 0;
 static uint32_t sync_post_trailing_boost_until_ms = 0;
 static uint32_t sync_recent_negative_until_ms = 0;
+static bool sync_positive_relaunch_pending = false;
 
 buf_tracker_t g_buf = { .state = BUF_MID };
 
@@ -579,6 +580,8 @@ void sync_disable(bool reset_estimator) {
     sync_trailing_recovery_active = false;
     sync_trailing_floor_since_ms = 0;
     sync_post_trailing_boost_until_ms = 0;
+    sync_recent_negative_until_ms = 0;
+    sync_positive_relaunch_pending = false;
 
     if (reset_estimator) {
         extruder_est_sps = 0.0f;
@@ -749,6 +752,12 @@ void sync_tick(uint32_t now_ms) {
     float reserve_error_mm = g_buf_pos - reserve_target_mm;
     if (reserve_error_mm < -reserve_deadband_mm) {
         sync_recent_negative_until_ms = now_ms + SYNC_RECENT_NEGATIVE_HOLD_MS;
+        sync_positive_relaunch_pending = true;
+    } else if (sync_positive_relaunch_pending &&
+               reserve_error_mm <= reserve_deadband_mm &&
+               (int32_t)(now_ms - sync_recent_negative_until_ms) >= 0) {
+        sync_recent_negative_until_ms = 0;
+        sync_positive_relaunch_pending = false;
     }
     bool damp_positive_relaunch = sync_is_positive_relaunch_damped();
     int kp_window = sync_effective_kp_sps(s);
@@ -929,8 +938,7 @@ float sync_reserve_error_mm(void) {
 
 bool sync_is_positive_relaunch_damped(void) {
     if (sync_tail_assist_active) return false;
-    if (sync_recent_negative_until_ms == 0) return false;
-    return (int32_t)(sync_recent_negative_until_ms - g_now_ms) > 0;
+    return sync_positive_relaunch_pending;
 }
 
 bool sync_is_advance_predicted(void) {

@@ -206,6 +206,17 @@ deep hidden-margin target into firmware.
 This bias keeps the arm near the desired reserve target when the estimator is
 slightly wrong, while the estimator remains the dominant term.
 
+After a deep negative reserve excursion, firmware also latches a
+positive-relaunch damp state. During that state, positive reserve correction
+and positive zone bias stay reduced until two conditions are both true:
+
+- the minimum relaunch hold time has elapsed
+- reserve error has actually unwound back near the reserve target
+
+This avoids a late refill re-acceleration when real print slowdowns or
+retractions produce a long recovery that would otherwise outlive the old
+fixed-time damp window.
+
 #### Scaling, brake, and baseline adaptation
 
 `sync_apply_scaling()` is a limiter on top of the estimator target:
