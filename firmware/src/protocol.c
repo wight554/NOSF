@@ -602,7 +602,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
     } else if (!strcmp(cmd, "TW")) {
         int ln, reg;
         uint32_t val;
-        if (sscanf(p, "%d:%d:%li", &ln, &reg, &val) == 3 && (ln == 1 || ln == 2) && reg >= 0 && reg <= 127) {
+        if (sscanf(p, "%d:%d:%u", &ln, &reg, &val) == 3 && (ln == 1 || ln == 2) && reg >= 0 && reg <= 127) {
             tmc_t *t = (ln == 1) ? &g_tmc_l1 : &g_tmc_l2;
             if (tmc_write(t, (uint8_t)reg, val)) {
                 cmd_reply("OK", NULL);
