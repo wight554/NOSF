@@ -852,8 +852,7 @@ void sync_tick(uint32_t now_ms) {
         uint32_t trailing_recovery_ms = now_ms - g_buf.entered_ms;
         int trailing_floor_sps = sync_trailing_floor_sps();
         int recovery_cap = (int)extruder_est_sps - kp_window;
-        bool trailing_collapse_urgent = trailing_wall_ms < SYNC_TRAILING_SOFT_WALL_MS;
-        if (trailing_collapse_urgent && trailing_recovery_ms > SYNC_TRAILING_COLLAPSE_DELAY_MS) {
+        if (trailing_recovery_ms > SYNC_TRAILING_COLLAPSE_DELAY_MS) {
             uint32_t collapse_ms = trailing_recovery_ms - SYNC_TRAILING_COLLAPSE_DELAY_MS;
             if (collapse_ms > SYNC_TRAILING_COLLAPSE_CAP_MS) collapse_ms = SYNC_TRAILING_COLLAPSE_CAP_MS;
             int extra_trim = (int)(((uint64_t)collapse_ms * (uint64_t)(kp_window + PRE_RAMP_SPS)) /
@@ -886,8 +885,7 @@ void sync_tick(uint32_t now_ms) {
     int ramp_dn_sps = SYNC_RAMP_DN_SPS;
     if (!fast_brake_active && sync_trailing_recovery_active && s == BUF_TRAILING) {
         uint32_t trailing_recovery_ms = now_ms - g_buf.entered_ms;
-        if (trailing_wall_ms < SYNC_TRAILING_SOFT_WALL_MS &&
-            trailing_recovery_ms > SYNC_TRAILING_COLLAPSE_DELAY_MS) {
+        if (trailing_recovery_ms > SYNC_TRAILING_COLLAPSE_DELAY_MS) {
             ramp_dn_sps *= SYNC_TRAILING_COLLAPSE_RAMP_MULT;
         }
     }
