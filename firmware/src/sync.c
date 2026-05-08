@@ -761,15 +761,24 @@ void sync_tick(uint32_t now_ms) {
     }
 
     bool buf_near_target = fabsf(g_buf_pos - buf_target_reserve_mm()) < (buf_virtual_deadband_mm() * 2.0f);
-    if (s == BUF_MID && (now_ms - g_buf.entered_ms) > 2000u &&
+    if (s == BUF_ADVANCE && (now_ms - g_buf.entered_ms) > SYNC_TRAILING_COLLAPSE_DELAY_MS) {
+        // Mirror the trailing bleed-down logic: if the arm stays pinned at the
+        // advance wall, a conservative bootstrap estimate is now too low.
+        if (extruder_est_sps < (float)sync_current_sps) {
+            extruder_est_sps += 0.05f * ((float)sync_current_sps - extruder_est_sps);
+            extruder_est_last_update_ms = now_ms;
+        }
+    } else if (s == BUF_MID && (now_ms - g_buf.entered_ms) > 2000u &&
         A->task == TASK_FEED && A->fault == FAULT_NONE &&
         buf_near_target && sync_current_sps > 0) {
         extruder_est_sps += 0.05f * ((float)lane_motion_sps(A) - extruder_est_sps);
+        extruder_est_last_update_ms = now_ms;
     } else if (s == BUF_TRAILING && (now_ms - g_buf.entered_ms) > SYNC_TRAILING_COLLAPSE_DELAY_MS) {
         // If pinned against the physical wall, the MMU is definitively out-pacing the extruder.
         // If the estimator thinks the extruder is still pulling fast, it is blind. Drag it down.
         if (extruder_est_sps > (float)sync_current_sps) {
             extruder_est_sps += 0.05f * ((float)sync_current_sps - extruder_est_sps);
+            extruder_est_last_update_ms = now_ms;
         }
     }
 
