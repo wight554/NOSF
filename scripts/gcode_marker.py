@@ -10,6 +10,7 @@ import sys
 import re
 import os
 import math
+import tempfile
 
 # Regular expressions
 MOVE_RE = re.compile(r"([Gg][0123])\s*(.*)")
@@ -136,11 +137,20 @@ def main():
                         help="Klipper gcode_shell_command name for --emit mark/both")
     
     args = parser.parse_args()
-    output = args.output or f"{os.path.splitext(args.input)[0]}_lean{os.path.splitext(args.input)[1]}"
-    
-    if process_gcode(args.input, output, args.dia, args.every_layer, args.emit, args.shell_cmd):
-        sys.exit(0)
-    sys.exit(1)
+    in_place = args.output is None
+    if in_place:
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".gcode", dir=os.path.dirname(os.path.abspath(args.input)))
+        os.close(tmp_fd)
+        output = tmp_path
+    else:
+        output = args.output
+
+    ok = process_gcode(args.input, output, args.dia, args.every_layer, args.emit, args.shell_cmd)
+    if ok and in_place:
+        os.replace(tmp_path, args.input)
+    elif not ok and in_place and os.path.exists(tmp_path):
+        os.unlink(tmp_path)
+    sys.exit(0 if ok else 1)
 
 if __name__ == "__main__":
     main()
