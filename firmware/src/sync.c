@@ -983,28 +983,34 @@ void sync_tick(uint32_t now_ms) {
         sync_current_sps > 0) {
 
         float thr = buf_threshold_mm();
-        bool model_pinned_trailing = (g_buf_pos <= -thr + 0.01f);
-        bool model_pinned_advance = (g_buf_pos >= thr - 0.01f);
+        /* Use raw g_buf_pos to detect model stalls, ignoring any drift correction. */
+        bool model_stalled_trailing = (g_buf_pos <= -thr + 0.01f);
+        bool model_stalled_advance  = (g_buf_pos >= thr - 0.01f);
 
-        if (buf_near_target) {
-            extruder_est_sps += 0.05f * ((float)lane_motion_sps(A) - extruder_est_sps);
-            extruder_est_last_update_ms = now_ms;
-        } else if (model_pinned_trailing) {
-            /* Escape trailing pin: extruder must be faster than current MMU rate.
-             * Bleed UP toward current rate + a small bump. */
-            float target_rate = (float)lane_motion_sps(A) + 2.0f; // ~50mm/min bump
+        if (model_stalled_trailing) {
+            /* Model thinks we are full, but we are physically in MID.
+             * Extruder MUST be faster than current MMU rate.
+             * Bleed EST up aggressively to "pull" the model out of the wall. */
+            float margin = 4.0f; // ~100mm/min
+            float target_rate = (float)lane_motion_sps(A) + margin;
             if (extruder_est_sps < target_rate) {
-                extruder_est_sps += 0.01f * (target_rate - extruder_est_sps);
+                extruder_est_sps += 0.05f * (target_rate - extruder_est_sps);
                 extruder_est_last_update_ms = now_ms;
             }
-        } else if (model_pinned_advance) {
-            /* Escape advance pin: extruder must be slower than current MMU rate. */
-            float target_rate = (float)lane_motion_sps(A) - 2.0f;
+        } else if (model_stalled_advance) {
+            /* Model thinks we are empty, but we are physically in MID.
+             * Extruder MUST be slower than current MMU rate. */
+            float margin = 4.0f;
+            float target_rate = (float)lane_motion_sps(A) - margin;
             if (target_rate < 0.0f) target_rate = 0.0f;
             if (extruder_est_sps > target_rate) {
-                extruder_est_sps += 0.01f * (target_rate - extruder_est_sps);
+                extruder_est_sps += 0.05f * (target_rate - extruder_est_sps);
                 extruder_est_last_update_ms = now_ms;
             }
+        } else if (buf_near_target) {
+            /* Normal proportional tracking bleed */
+            extruder_est_sps += 0.05f * ((float)lane_motion_sps(A) - extruder_est_sps);
+            extruder_est_last_update_ms = now_ms;
         }
     } else if (s == BUF_TRAILING && (now_ms - g_buf.entered_ms) > SYNC_TRAILING_COLLAPSE_DELAY_MS) {
         // If pinned against the physical wall, the MMU is definitively out-pacing the extruder.
