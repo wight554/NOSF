@@ -230,6 +230,9 @@ extern int SYNC_ADVANCE_DWELL_STOP_MS;
 extern int SYNC_ADVANCE_RAMP_DELAY_MS;
 extern int SYNC_OVERSHOOT_MID_EXTEND;
 extern float SYNC_TRAILING_BIAS_FRAC;
+extern int MID_CREEP_TIMEOUT_MS;
+extern int MID_CREEP_RATE_SPS_PER_S;
+extern int MID_CREEP_CAP_FRAC;
 extern float SYNC_RESERVE_INTEGRAL_GAIN;
 extern float SYNC_RESERVE_INTEGRAL_CLAMP_MM;
 extern int   SYNC_RESERVE_INTEGRAL_DECAY_MS;
@@ -285,6 +288,7 @@ extern float extruder_est_sps;
 extern float g_buf_pos;
 extern bool g_boot_stabilizing;
 
+extern int sync_mid_creep_sps(void);
 int mm_per_min_to_sps_idx(float mm_per_min, int idx);
 int mm_per_min_to_sps(float mm_per_min);
 float sps_to_mm_per_min_idx(int sps, int idx);

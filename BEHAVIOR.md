@@ -243,6 +243,8 @@ deep hidden-margin target into firmware.
 This bias keeps the arm near the desired reserve target when the estimator is
 slightly wrong, while the estimator remains the dominant term.
 
+Phase 2.7.1 adds **mid-zone creep** for active wall-seek. If the arm dwells in the `MID` zone longer than `MID_CREEP_TIMEOUT_MS`, a synthetic push velocity is gradually added (`MID_CREEP_RATE`) to gently force the arm back to the trailing wall to restore confidence. This creep is capped by `MID_CREEP_CAP` (% of the measured extruder rate) and resets immediately if the arm reaches an endstop.
+
 The `RT:` and `RD:` fields in `?:` status expose the current reserve target
 and deadband in mm, so tuning of `SYNC_RESERVE_PCT`, `BUF_HALF_TRAVEL`, and
 `SYNC_KP_RATE` can be observed in real time. `AD:` and `TD:` expose how long

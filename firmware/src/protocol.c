@@ -484,6 +484,9 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "SYNC_RESERVE_PCT")) SYNC_RESERVE_PCT = clamp_i(iv, 0, 150);
         else if (!strcmp(base_param, "TRAIL_BIAS_FRAC")) SYNC_TRAILING_BIAS_FRAC = clamp_f(fv, 0.0f, 0.7f);
         else if (!strcmp(base_param, "SYNC_AUTO_STOP")) SYNC_AUTO_STOP_MS = clamp_i(iv, 0, 30000);
+        else if (!strcmp(base_param, "MID_CREEP_TIMEOUT_MS")) MID_CREEP_TIMEOUT_MS = clamp_i(iv, 0, 60000);
+        else if (!strcmp(base_param, "MID_CREEP_RATE")) MID_CREEP_RATE_SPS_PER_S = clamp_i(iv, 0, 1000);
+        else if (!strcmp(base_param, "MID_CREEP_CAP")) MID_CREEP_CAP_FRAC = clamp_i(iv, 0, 100);
         else if (!strcmp(base_param, "SYNC_ADV_STOP_MS")) SYNC_ADVANCE_DWELL_STOP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "SYNC_ADV_RAMP_MS")) SYNC_ADVANCE_RAMP_DELAY_MS = clamp_i(iv, 0, 5000);
         else if (!strcmp(base_param, "SYNC_OVERSHOOT_MID_EXT")) SYNC_OVERSHOOT_MID_EXTEND = clamp_i(iv, 0, 1);

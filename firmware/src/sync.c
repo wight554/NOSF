@@ -51,6 +51,8 @@ static float g_buf_pos_sigma_accum_mm = 0.0f;
 static float g_buf_sigma_mm = 0.0f;
 static uint32_t g_buf_est_low_cf_emit_ms = 0;
 static uint32_t g_buf_adv_dwell_warn_emit_ms = 0;
+static int g_mid_creep_sps = 0;
+static uint32_t g_mid_creep_last_advance_ms = 0;
 static bool g_buf_est_fallback_emitted = false;
 
 /* Phase 2.6: residual drift observer */
@@ -247,6 +249,43 @@ float sync_trailing_wall_time_ms(lane_t *L) {
     float toward_trailing = sync_trailing_wall_velocity_mm_s(L);
     if (!L || g_buf_signal.kind != BUF_SRC_VIRTUAL_ENDSTOP || toward_trailing < 0.05f) return 1000000000.0f;
     return (sync_trailing_wall_remaining_mm() / toward_trailing) * 1000.0f;
+}
+
+static void mid_creep_update(buf_state_t s, lane_t *A, uint32_t now_ms) {
+    if (MID_CREEP_TIMEOUT_MS == 0 || MID_CREEP_RATE_SPS_PER_S == 0) {
+        g_mid_creep_sps = 0;
+        return;
+    }
+    
+    // Only active in MID.
+    if (s == BUF_ADVANCE || s == BUF_TRAILING) return;
+    
+    // Seed on boot/start if we missed an ADVANCE edge.
+    if (g_mid_creep_last_advance_ms == 0) {
+        g_mid_creep_last_advance_ms = now_ms;
+    }
+
+    uint32_t dwell_ms = now_ms - g_mid_creep_last_advance_ms;
+    if (dwell_ms > (uint32_t)MID_CREEP_TIMEOUT_MS) {
+        uint32_t active_ms = dwell_ms - MID_CREEP_TIMEOUT_MS;
+        float active_s = (float)active_ms / 1000.0f;
+        
+        int max_creep = (int)((extruder_est_sps * (float)MID_CREEP_CAP_FRAC) / 100.0f);
+        int raw_creep = (int)(active_s * (float)MID_CREEP_RATE_SPS_PER_S);
+        
+        if (raw_creep >= max_creep) {
+            g_mid_creep_sps = max_creep;
+            static uint32_t cap_warn_ms = 0;
+            if (now_ms - cap_warn_ms >= 5000) {
+                cap_warn_ms = now_ms;
+                cmd_event("SYNC", "MID_CREEP_CAP");
+            }
+        } else {
+            g_mid_creep_sps = raw_creep;
+        }
+    } else {
+        g_mid_creep_sps = 0;
+    }
 }
 
 static int sync_apply_scaling(int base_sps, float effective_target_mm, float bp_eff_mm) {
@@ -767,6 +806,7 @@ static void sync_on_transition(buf_state_t prev, buf_state_t now_state, uint32_t
 
     if (!sync_tail_assist_active) {
         if (now_state == BUF_TRAILING) {
+            g_mid_creep_sps = 0;
             sync_trailing_recovery_active = true;
             sync_continuous_trailing_since_ms = 0;
             sync_post_trailing_boost_until_ms = 0;

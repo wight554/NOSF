@@ -101,6 +101,9 @@ typedef struct {
     float buf_drift_apply_min_cf;
 
     float sync_trailing_bias_frac;
+    int mid_creep_timeout_ms;
+    int mid_creep_rate_sps_per_s;
+    int mid_creep_cap_frac;
 
     uint32_t crc32;
 } settings_t;
@@ -210,6 +213,12 @@ void settings_defaults(void) {
     BUF_DRIFT_APPLY_THR_MM = CONF_BUF_DRIFT_APPLY_THR_MM;
     BUF_DRIFT_CLAMP_MM = CONF_BUF_DRIFT_CLAMP_MM;
     BUF_DRIFT_APPLY_MIN_CF = CONF_BUF_DRIFT_APPLY_MIN_CF;
+    
+    SYNC_TRAILING_BIAS_FRAC = clamp_f(CONF_SYNC_TRAILING_BIAS_FRAC, 0.0f, 0.7f);
+    MID_CREEP_TIMEOUT_MS = CONF_MID_CREEP_TIMEOUT_MS;
+    MID_CREEP_RATE_SPS_PER_S = CONF_MID_CREEP_RATE_SPS_PER_S;
+    MID_CREEP_CAP_FRAC = CONF_MID_CREEP_CAP_FRAC;
+
     BUF_STAB_SPS = clamp_i(CONF_BUF_STAB_SPS, 10, 10000);
     JOIN_SPS = CONF_JOIN_SPS;
     PRESS_SPS = CONF_PRESS_SPS;
@@ -344,6 +353,11 @@ void settings_save(void) {
     s.buf_drift_apply_thr_mm = BUF_DRIFT_APPLY_THR_MM;
     s.buf_drift_clamp_mm = BUF_DRIFT_CLAMP_MM;
     s.buf_drift_apply_min_cf = BUF_DRIFT_APPLY_MIN_CF;
+
+    s.sync_trailing_bias_frac = SYNC_TRAILING_BIAS_FRAC;
+    s.mid_creep_timeout_ms = MID_CREEP_TIMEOUT_MS;
+    s.mid_creep_rate_sps_per_s = MID_CREEP_RATE_SPS_PER_S;
+    s.mid_creep_cap_frac = MID_CREEP_CAP_FRAC;
 
     for (int i = 0; i < NUM_LANES; i++) {
         s.tmc_rotation_distance[i] = TMC_ROTATION_DISTANCE[i];
@@ -522,6 +536,11 @@ void settings_load(void) {
     BUF_DRIFT_APPLY_THR_MM = clamp_f(s->buf_drift_apply_thr_mm, 0.0f, 5.0f);
     BUF_DRIFT_CLAMP_MM = clamp_f(s->buf_drift_clamp_mm, 0.0f, BUF_DRIFT_CLAMP_LIMIT_MM);
     BUF_DRIFT_APPLY_MIN_CF = clamp_f(s->buf_drift_apply_min_cf, 0.0f, 1.0f);
+
+    SYNC_TRAILING_BIAS_FRAC = clamp_f(s->sync_trailing_bias_frac, 0.0f, 0.7f);
+    MID_CREEP_TIMEOUT_MS = clamp_i(s->mid_creep_timeout_ms, 0, 60000);
+    MID_CREEP_RATE_SPS_PER_S = clamp_i(s->mid_creep_rate_sps_per_s, 0, 1000);
+    MID_CREEP_CAP_FRAC = clamp_i(s->mid_creep_cap_frac, 0, 100);
 
     RELOAD_MODE = s->reload_mode ? 1 : 0;
     CUT_TIMEOUT_SETTLE_MS = s->cutter_settle_ms;
