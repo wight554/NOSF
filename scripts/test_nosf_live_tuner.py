@@ -92,6 +92,7 @@ def test_adv_risk_freeze_and_rollback():
     with tempfile.TemporaryDirectory() as td:
         clock = Clock()
         t, fake = make_tuner(os.path.join(td, "state.json"), clock)
+        t.allow_baseline_writes = True
         b = tuner_mod.Bucket(
             label="PERIMETER_v40",
             x=1900.0,
@@ -131,6 +132,7 @@ def test_rate_limit_three_sets_per_window():
     with tempfile.TemporaryDirectory() as td:
         clock = Clock()
         t, fake = make_tuner(os.path.join(td, "state.json"), clock)
+        t.allow_baseline_writes = True
         b = tuner_mod.Bucket(label="PERIMETER_v40", x=1100.0, P=50.0, n=250, last_set_x=1000.0)
         for _ in range(5):
             clock.step(3.0)
@@ -139,6 +141,25 @@ def test_rate_limit_three_sets_per_window():
         baseline_sets = [w for w in fake.writes if w.startswith("SET:BASELINE_SPS:")]
         assert len(baseline_sets) == 3, fake.writes
         return "rate limit allows only 3 SETs per 30 s window"
+
+
+def test_baseline_writes_disabled_by_default():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t, fake = make_tuner(os.path.join(td, "state.json"), clock)
+        b = tuner_mod.Bucket(
+            label="PERIMETER_v40",
+            x=1300.0,
+            P=50.0,
+            n=250,
+            bias=0.4,
+            last_set_x=1600.0,
+            last_set_bias=0.4,
+        )
+        clock.step(3.0)
+        t._maybe_emit_set(b, clock.now())
+        assert not [w for w in fake.writes if w.startswith("SET:BASELINE_SPS:")], fake.writes
+        return "baseline SETs are opt-in only"
 
 
 def test_commit_idle_requires_activity():
@@ -189,6 +210,7 @@ def main():
         ("adv-risk", test_adv_risk_freeze_and_rollback),
         ("halt", test_adv_dwell_stop_halts),
         ("rate-limit", test_rate_limit_three_sets_per_window),
+        ("baseline-off", test_baseline_writes_disabled_by_default),
         ("idle-arm", test_commit_idle_requires_activity),
         ("mk-marker", test_status_mk_marker_fallback),
     ]

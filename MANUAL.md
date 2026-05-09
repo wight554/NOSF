@@ -256,8 +256,13 @@ r causing extruder stall.
 `STATUS`/`EV:` output plus `NOSF_TUNE` marker tags, learns per
 `feature_v_fil` buckets, and live-adjusts only:
 
-- `BASELINE_SPS` / `BASELINE_RATE` equivalent runtime baseline
 - `TRAIL_BIAS_FRAC`
+
+It records learned bucket `x` values in the state file for review, but live
+`BASELINE_SPS` writes are disabled by default. `EST` is a live flow estimate,
+not a safe global baseline target during an active print. Use
+`--allow-baseline-writes` only for controlled experiments after validating the
+measurement stream on the specific machine.
 
 Start it during a tuning print:
 
@@ -301,7 +306,7 @@ python3 scripts/nosf_live_tuner.py --machine-id myprinter --state-info
 
 Convergence rule:
 
-1. Run 1: tuner emits bounded live `SET:` writes and locks populated buckets.
+1. Run 1: tuner emits bounded live bias `SET:` writes and locks populated buckets.
 2. Run 2: locked buckets warm-start; matching buckets should emit no new writes.
 3. Run 3: if the same profile again emits no writes, treat the tune as stable.
 
@@ -316,6 +321,10 @@ Review the patch, merge the values into `config.ini`, regenerate `tune.h`, and
 build/flash as usual. With `--commit-on-idle`, the tuner unlocks the firmware,
 sends `SV:`, emits `/tmp/nosf-patch.ini`, logs the patch path to stderr, and
 exits after the print has been idle for at least 30 s.
+
+The emitted baseline suggestion is commented as experimental. Do not apply it
+blindly; keep the live baseline near the known-good value unless a separate
+manual test confirms the new target.
 
 If a serial write fails, the tuner waits 1 s and attempts to reopen the same
 port up to five times. If the port cannot be reopened, it exits non-zero and

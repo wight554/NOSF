@@ -11,9 +11,12 @@ Usage examples:
 
 The live loop reads NOSF status and marker lines, learns per
 (feature, v_fil_bin) buckets, and writes bounded SET updates for
-BASELINE_SPS and TRAIL_BIAS_FRAC. If a serial write fails, the tuner
-waits 1 s and attempts to reopen the configured port up to five times.
-If reconnect fails, it exits non-zero without modifying the state file.
+TRAIL_BIAS_FRAC. Runtime BASELINE_SPS writes are disabled by default
+because the status EST field is a live flow estimate, not a safe global
+baseline target; use --allow-baseline-writes only for controlled
+experiments. If a serial write fails, the tuner waits 1 s and attempts
+to reopen the configured port up to five times. If reconnect fails, it
+exits non-zero without modifying the state file.
 
 Config patch emission uses recency-weighted bucket means:
     weight = n / (1 + age_seconds / 86400)
@@ -158,6 +161,8 @@ class Tuner:
         self.debug = False
         self.recent_sets = deque()
         self.last_rate_limit_warn_t = -999.0
+        self.allow_baseline_writes = False
+        self.last_baseline_skip_warn_t = -999.0
         self._load_state()
 
     def _load_state(self) -> None:
@@ -382,13 +387,21 @@ class Tuner:
         if b.P > 4.0 * P_STABLE_THR:
             return
         if abs(b.x - b.last_set_x) >= SET_DEADBAND_SPS:
-            if self._rate_limited(now):
+            if not self.allow_baseline_writes:
+                if self.debug and now - self.last_baseline_skip_warn_t >= 30.0:
+                    print(
+                        "[tuner] baseline write skipped; pass --allow-baseline-writes to enable",
+                        file=sys.stderr,
+                    )
+                    self.last_baseline_skip_warn_t = now
+            else:
+                if self._rate_limited(now):
+                    return
+                self._engage_lock()
+                self._send(f"SET:BASELINE_SPS:{int(round(b.x))}")
+                b.last_set_x = b.x
+                self.last_set_t = now
                 return
-            self._engage_lock()
-            self._send(f"SET:BASELINE_SPS:{int(round(b.x))}")
-            b.last_set_x = b.x
-            self.last_set_t = now
-            return
         if abs(b.bias - b.last_set_bias) >= BIAS_DEADBAND:
             if self._rate_limited(now):
                 return
@@ -398,10 +411,11 @@ class Tuner:
             self.last_set_t = now
 
     def _maybe_lock(self, b: Bucket, now: float) -> None:
+        x_stable = (not self.allow_baseline_writes) or abs(b.x - b.last_set_x) < SET_DEADBAND_SPS
         stable = (
             b.P < P_STABLE_THR
             and b.n >= N_MIN_SAMPLES
-            and abs(b.x - b.last_set_x) < SET_DEADBAND_SPS
+            and x_stable
             and abs(b.bias - b.last_set_bias) < BIAS_DEADBAND
         )
         if not stable:
@@ -424,7 +438,7 @@ class Tuner:
         if not b or b.locked or b.state == "LOCKED":
             return
         b.P = max(b.P, 1e4)
-        if b.last_set_x:
+        if self.allow_baseline_writes and b.last_set_x:
             self._send(f"SET:BASELINE_SPS:{int(round(b.last_set_x))}")
 
     def print_idle_ready(self, idle_s: float = 30.0) -> bool:
@@ -601,7 +615,10 @@ def emit_patch(state_path: str, machine_id: str, out_path: str) -> None:
                 f"bias={float(raw.get('bias', 0.4)):.3f} "
                 f"n={int(raw.get('n', 0))} weight={weights[label]:.1f}\n"
             )
-        fh.write(f"baseline_rate_sps_suggestion: {int(round(baseline))}\n")
+        fh.write(
+            f"# baseline_rate_sps_suggestion: {int(round(baseline))} "
+            "(experimental; verify manually before applying)\n"
+        )
         fh.write(f"sync_trailing_bias_frac: {bias:.3f}\n")
     print(f"[tuner] wrote patch: {out_path}", file=sys.stderr)
 
@@ -663,6 +680,7 @@ def run_loop(args) -> None:
         threading.Thread(target=reader, args=(ser, lines), daemon=True).start()
         tuner = Tuner(ser, args.state, args.machine_id, port=args.port, baud=args.baud)
         tuner.debug = args.debug
+        tuner.allow_baseline_writes = args.allow_baseline_writes
         poll_interval = 1.0 / args.poll_hz
         next_poll = time.monotonic()
         while True:
@@ -737,6 +755,11 @@ def main() -> None:
     ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, unlock, SV:, emit /tmp/nosf-patch.ini, and exit")
     ap.add_argument("--klipper-log", help="Tail klippy.log for NOSF_TUNE marker echoes while tuning")
     ap.add_argument("--marker-file", help="Tail local marker file written by scripts/nosf_marker.py")
+    ap.add_argument(
+        "--allow-baseline-writes",
+        action="store_true",
+        help="Experimental: allow live SET:BASELINE_SPS writes from learned buckets",
+    )
     ap.add_argument("--debug", action="store_true", help="Print marker and commit diagnostics to stderr")
     args = ap.parse_args()
     if args.state is None:

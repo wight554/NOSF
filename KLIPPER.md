@@ -258,8 +258,9 @@ stream internal state to a CSV file for offline analysis.
 
 Phase 2.8 adds `scripts/nosf_live_tuner.py` for online bucket learning during
 tuning prints. It consumes the same `NOSF_TUNE` markers as the logger, learns
-per `feature_v_fil` buckets, and writes guarded live `SET:` updates for the
-sync baseline and trailing bias.
+per `feature_v_fil` buckets, and writes guarded live `SET:` updates for
+trailing bias. Runtime baseline writes are disabled by default because `EST` is
+a live flow estimate, not a safe global baseline target during a print.
 
 Recommended tuning-print invocation:
 
@@ -272,7 +273,8 @@ python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
 `--commit-on-idle` waits until NOSF reports idle for at least 30 s, then sends
 `SET:LIVE_TUNE_LOCK:0`, sends `SV:`, emits `/tmp/nosf-patch.ini`, logs that path
 to stderr, and exits. Review the patch before merging it into repo
-`config.ini`.
+`config.ini`. The emitted baseline suggestion is commented as experimental;
+keep the known-good baseline unless you validate a new target manually.
 
 For live tuning, preprocess with file markers so Klipper never opens the NOSF
 USB serial port for marker delivery:
