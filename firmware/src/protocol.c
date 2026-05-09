@@ -633,6 +633,12 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "SYNC_KP_RATE")) snprintf(out, sizeof(out), "SYNC_KP_RATE:%.1f", (double)sps_to_mm_per_min(SYNC_KP_SPS));
         else if (!strcmp(param, "SYNC_OVERSHOOT_PCT")) snprintf(out, sizeof(out), "SYNC_OVERSHOOT_PCT:%d", SYNC_OVERSHOOT_PCT);
         else if (!strcmp(param, "SYNC_RESERVE_PCT")) snprintf(out, sizeof(out), "SYNC_RESERVE_PCT:%d", SYNC_RESERVE_PCT);
+        else if (!strcmp(param, "TRAIL_BIAS_FRAC")) snprintf(out, sizeof(out), "TRAIL_BIAS_FRAC:%.3f", (double)SYNC_TRAILING_BIAS_FRAC);
+        else if (!strcmp(param, "MID_CREEP_TIMEOUT_MS")) snprintf(out, sizeof(out), "MID_CREEP_TIMEOUT_MS:%d", MID_CREEP_TIMEOUT_MS);
+        else if (!strcmp(param, "MID_CREEP_RATE") || !strcmp(param, "MID_CREEP_RATE_SPS_PER_S")) snprintf(out, sizeof(out), "%s:%d", param, MID_CREEP_RATE_SPS_PER_S);
+        else if (!strcmp(param, "MID_CREEP_CAP") || !strcmp(param, "MID_CREEP_CAP_FRAC")) snprintf(out, sizeof(out), "%s:%d", param, MID_CREEP_CAP_FRAC);
+        else if (!strcmp(param, "VAR_BLEND_FRAC") || !strcmp(param, "BUF_VARIANCE_BLEND_FRAC")) snprintf(out, sizeof(out), "%s:%.3f", param, (double)BUF_VARIANCE_BLEND_FRAC);
+        else if (!strcmp(param, "VAR_BLEND_REF_MM") || !strcmp(param, "BUF_VARIANCE_BLEND_REF_MM")) snprintf(out, sizeof(out), "%s:%.3f", param, (double)BUF_VARIANCE_BLEND_REF_MM);
         else if (!strcmp(param, "SYNC_AUTO_STOP")) snprintf(out, sizeof(out), "SYNC_AUTO_STOP:%d", SYNC_AUTO_STOP_MS);
         else if (!strcmp(param, "SYNC_ADV_STOP_MS")) snprintf(out, sizeof(out), "SYNC_ADV_STOP_MS:%d", SYNC_ADVANCE_DWELL_STOP_MS);
         else if (!strcmp(param, "SYNC_ADV_RAMP_MS")) snprintf(out, sizeof(out), "SYNC_ADV_RAMP_MS:%d", SYNC_ADVANCE_RAMP_DELAY_MS);

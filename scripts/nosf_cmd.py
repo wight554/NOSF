@@ -90,6 +90,12 @@ DUMP_PARAMS = [
     ("SYNC_KP_RATE",      "sync_kp_rate",            False),
     ("SYNC_OVERSHOOT_PCT", "sync_overshoot_pct",     False),
     ("SYNC_RESERVE_PCT",  "sync_reserve_pct",        False),
+    ("TRAIL_BIAS_FRAC",   "sync_trailing_bias_frac", False),
+    ("MID_CREEP_TIMEOUT_MS", "mid_creep_timeout_ms", False),
+    ("MID_CREEP_RATE",    "mid_creep_rate_sps_per_s", False),
+    ("MID_CREEP_CAP",     "mid_creep_cap_frac",      False),
+    ("VAR_BLEND_FRAC",    "buf_variance_blend_frac", False),
+    ("VAR_BLEND_REF_MM",  "buf_variance_blend_ref_mm", False),
     ("SYNC_AUTO_STOP",    "sync_auto_stop_ms",       False),
     ("POST_PRINT_STAB_MS", "post_print_stab_delay_ms", False),
     # --- Phase 1 — Advance Hardening ---
