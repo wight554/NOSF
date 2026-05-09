@@ -392,6 +392,13 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         cmd_reply("OK", CONF_FW_VERSION);
     } else if (!strcmp(cmd, "?")) {
         status_dump();
+    } else if (!strcmp(cmd, "MARK")) {
+        size_t n = strlen(p);
+        if (n >= sizeof(g_marker_tag)) n = sizeof(g_marker_tag) - 1;
+        memcpy(g_marker_tag, p, n);
+        g_marker_tag[n] = '\0';
+        g_marker_seq++;
+        cmd_reply("OK", "MARK");
     } else if (!strcmp(cmd, "SET")) {
         char param[32];
         char val_str[32];

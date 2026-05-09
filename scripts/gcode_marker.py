@@ -24,7 +24,27 @@ HEIGHT_RE = re.compile(r"^;HEIGHT:([-+]?\d*\.?\d*)")
 LHEIGHT_RE = re.compile(r"^;layer_height=([-+]?\d*\.?\d*)")
 LAYER_RE = re.compile(r"^;LAYER:(\d+)")
 
-def process_gcode(input_path, output_path, filament_dia=1.75, every_layer=False):
+def compact_feature(name, max_len=18):
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", name.strip()).strip("_")
+    return (slug or "Unknown")[:max_len]
+
+def marker_lines(tag, emit="m118", shell_cmd="nosf"):
+    lines = []
+    if emit in ("m118", "both"):
+        lines.append(f"M118 {tag}\n")
+    if emit in ("mark", "both"):
+        if tag.startswith("NOSF_TUNE:FINISH"):
+            mark_tag = "FINISH"
+        else:
+            m = re.match(r"NOSF_TUNE:(?P<feature>[^:]+):V(?P<vfil>[^:]+):", tag)
+            if not m:
+                return lines
+            mark_tag = f"NT:{compact_feature(m.group('feature'))}:V{float(m.group('vfil')):.0f}"
+        lines.append(f"RUN_SHELL_COMMAND CMD={shell_cmd} PARAMS=\"MARK:{mark_tag}\"\n")
+    return lines
+
+def process_gcode(input_path, output_path, filament_dia=1.75, every_layer=False,
+                  emit="m118", shell_cmd="nosf"):
     if not os.path.exists(input_path):
         print(f"Error: Input file {input_path} not found.")
         return False
@@ -52,7 +72,8 @@ def process_gcode(input_path, output_path, filament_dia=1.75, every_layer=False)
                 layer_match = LAYER_RE.match(raw_line)
                 if layer_match:
                     layer_n = layer_match.group(1)
-                    fout.write(f"M118 NOSF_TUNE:LAYER:{layer_n}:0:0\n")
+                    for marker in marker_lines(f"NOSF_TUNE:LAYER:{layer_n}:0:0", emit, shell_cmd):
+                        fout.write(marker)
                     injected_count += 1
 
             # Capture Metadata
@@ -81,7 +102,9 @@ def process_gcode(input_path, output_path, filament_dia=1.75, every_layer=False)
                     if (abs(v_fil - last_reported_v_fil) > (last_reported_v_fil * 0.05) or
                         current_w != last_reported_w or current_h != last_reported_h):
                         
-                        fout.write(f"M118 NOSF_TUNE:{current_feature}:V{v_fil:.1f}:W{current_w:.2f}:H{current_h:.2f}\n")
+                        tag = f"NOSF_TUNE:{current_feature}:V{v_fil:.1f}:W{current_w:.2f}:H{current_h:.2f}"
+                        for marker in marker_lines(tag, emit, shell_cmd):
+                            fout.write(marker)
                         last_reported_v_fil = v_fil
                         last_reported_w = current_w
                         last_reported_h = current_h
@@ -91,7 +114,8 @@ def process_gcode(input_path, output_path, filament_dia=1.75, every_layer=False)
         
         # Final finish marker
         fout.write("\n; --- NOSF TUNING FINISH ---\n")
-        fout.write("M118 NOSF_TUNE:FINISH:0:0:0\n")
+        for marker in marker_lines("NOSF_TUNE:FINISH:0:0:0", emit, shell_cmd):
+            fout.write(marker)
 
     print(f"[*] Done. Injected {injected_count} lean sync markers.")
     return True
@@ -102,11 +126,15 @@ def main():
     parser.add_argument("--output", help="Output path")
     parser.add_argument("--dia", type=float, default=1.75, help="Filament diameter")
     parser.add_argument("--every-layer", action="store_true", help="Inject marker on every layer boundary")
+    parser.add_argument("--emit", choices=["m118", "mark", "both"], default="m118",
+                        help="Marker output: M118 echo, direct NOSF MARK shell command, or both")
+    parser.add_argument("--shell-cmd", default="nosf",
+                        help="Klipper gcode_shell_command name for --emit mark/both")
     
     args = parser.parse_args()
     output = args.output or f"{os.path.splitext(args.input)[0]}_lean{os.path.splitext(args.input)[1]}"
     
-    if process_gcode(args.input, output, args.dia, args.every_layer):
+    if process_gcode(args.input, output, args.dia, args.every_layer, args.emit, args.shell_cmd):
         sys.exit(0)
     sys.exit(1)
 

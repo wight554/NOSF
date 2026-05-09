@@ -71,6 +71,7 @@ MARK_RE = re.compile(r"MK:(?P<seq>\d+):(?P<tag>[^,]*)")
 M118_RE = re.compile(
     r"NOSF_TUNE:(?P<feature>[^:]+):V(?P<vfil>[^:]+):W(?P<w>[^:]+):H(?P<h>[^:\s]+)"
 )
+COMPACT_MARK_RE = re.compile(r"NT:(?P<feature>[^:]+):V(?P<vfil>[^:\s]+)")
 
 
 @dataclass
@@ -256,7 +257,7 @@ class Tuner:
         return False
 
     def on_m118(self, raw: str) -> None:
-        if "NOSF_TUNE:FINISH" in raw:
+        if raw.strip() == "FINISH" or "NOSF_TUNE:FINISH" in raw:
             self.seen_print_activity = True
             self.finish_seen = True
             self.last_marker_t = self.now_fn()
@@ -265,6 +266,8 @@ class Tuner:
                 print("[tuner] marker FINISH", file=sys.stderr)
             return
         m = M118_RE.search(raw)
+        if not m:
+            m = COMPACT_MARK_RE.search(raw)
         if not m:
             return
         self.seen_print_activity = True

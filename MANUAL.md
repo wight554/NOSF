@@ -68,6 +68,7 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 | `TS:<0\|1>`| OK | **Toolhead Sensor** — report toolhead filament status (sent by host). |
 | `SM:<0\|1>`| OK | **Sync Mode** — manually toggle buffer sync. |
 | `BI:<0\|1>`| OK | **Buffer Invert** — invert buffer endstop logic. |
+| `MARK:<tag>` | `OK:MARK` | **Telemetry Marker** — stores a short host marker in firmware. Subsequent status replies expose it as `MK:<seq>:<tag>`. |
 | `SV:` | OK | **Save Settings** — persist current runtime parameters to flash. Rejected with `ER:PERSIST_BUSY` while motion, toolchange, cutter activity, or buffer stabilization is active. |
 | `LD:` | OK | **Load Settings** — reload persisted settings from flash. Rejected with `ER:PERSIST_BUSY` while motion, toolchange, cutter activity, or buffer stabilization is active. |
 | `RS:` | OK | **Reset Settings** — restore defaults and save them to flash. Rejected with `ER:PERSIST_BUSY` while motion, toolchange, cutter activity, or buffer stabilization is active. |
@@ -268,14 +269,20 @@ For normal tuning runs, prefer automatic end-of-print commit:
 
 ```bash
 python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
-    --machine-id myprinter --commit-on-idle \
-    --klipper-log ~/printer_data/logs/klippy.log
+    --machine-id myprinter --commit-on-idle
 ```
 
-`--klipper-log` is recommended when `NOSF_TUNE` appears as `echo:` lines in the
-Klipper console. The tuner also understands firmware `MK:` status markers when
-the marker-forwarding macro sends `MARK:` to NOSF. With `--commit-on-idle`, the
-tuner waits for the final `NOSF_TUNE:FINISH` marker before considering the print
+For this mode, preprocess G-code with direct firmware markers:
+
+```bash
+python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode --emit mark
+```
+
+`--emit mark` inserts `RUN_SHELL_COMMAND CMD=nosf PARAMS="MARK:..."` lines.
+The tuner reads those markers back from the firmware `MK:` status field.
+`--emit m118` remains available for passive console/log workflows, and
+`--emit both` emits both marker forms for debugging. With `--commit-on-idle`,
+the tuner waits for the final `MARK:FINISH` marker before considering the print
 done.
 
 The tuner first sends `SET:LIVE_TUNE_LOCK:1` before writing live tuning values.
