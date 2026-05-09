@@ -228,6 +228,27 @@ This avoids a late refill re-acceleration when real print slowdowns or
 retractions produce a long recovery that would otherwise outlive the old
 fixed-time damp window.
 
+The damp predicate is now stateless — it is derived purely from the hold
+timer and current conditions, with no write-back on read. This makes it
+safe to call from status dumps and other observers without affecting control
+state.
+
+#### Advance-dwell guard
+
+If the buffer arm is continuously pinned at the advance endstop for longer
+than `SYNC_ADV_RAMP_MS` (default 400 ms), the sync controller bypasses the
+estimator ceiling and forces the target speed toward `SYNC_MAX_RATE`. This
+prevents the circular estimator ceiling that could otherwise stall refill
+when the extruder is outpacing the MMU.
+
+If the arm remains pinned for longer than `SYNC_ADV_STOP_MS` (default 6000
+ms), sync auto-stops with `EV:SYNC,ADV_DWELL_STOP`. This is the safety net
+for genuine extruder-overload conditions where no amount of speed increase
+will refill the buffer. `SYNC_ADV_STOP_MS: 0` disables the hard stop.
+
+The `AD:` status field exposes the current advance-dwell timer in real time
+for tuning and regression monitoring.
+
 #### Scaling, brake, and baseline adaptation
 
 `sync_apply_scaling()` is a limiter on top of the estimator target:

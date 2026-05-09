@@ -138,7 +138,10 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `RELOAD_MODE`| `reload_mode` | Enable autonomous RELOAD behavior (Auto-Swap) | 0 |
 | `RUNOUT_COOLDOWN_MS` | `runout_cooldown_ms` | Cooldown before another runout can be reported on the same lane | 12000 |
 | `SYNC_OVERSHOOT_PCT` | `sync_overshoot_pct` | Extra trailing-side trim as percent of sync correction after reserve overshoots full (0..200) | 25 |
+| `SYNC_OVERSHOOT_MID_EXT` | `sync_overshoot_mid_extend` | Feature flag: extend trailing overshoot trim into `BUF_MID` when virtual position is below the deadband. Default OFF; only enable after A/B evidence from long-run logs. | 0 |
 | `SYNC_AUTO_STOP` | `sync_auto_stop_ms` | Auto-mode only: tail-assist stop after sustained `TRAILING`; in normal print sync, stops if continuous `TRAILING` dwell exceeds the timeout and recovery speed has collapsed to the minimum sync floor. | 5000 |
+| `SYNC_ADV_STOP_MS` | `sync_advance_dwell_stop_ms` | Hard stop if continuously pinned at advance endstop for this many ms. 0 = disable. | 6000 |
+| `SYNC_ADV_RAMP_MS` | `sync_advance_ramp_delay_ms` | Grace window before refill-assist overrides target to `SYNC_MAX_RATE`, bypassing the estimator ceiling. 0 = disable. | 400 |
 | `POST_PRINT_STAB_MS` | `post_print_stab_delay_ms` | Delay before idle+`TRAILING` recovery starts; once triggered, the low-speed post-print stabilization move settles the buffer back to `MID` and only falls back to the advance-side handoff if it overshoots center. `0` starts immediately | 0 |
 | `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |
 | `RELOAD_JOIN_MS` | `reload_join_delay_ms` | Extra RELOAD-only settling delay after tail and Y clear before `RELOAD:JOINING` starts | 500 |
@@ -184,7 +187,7 @@ These fields are appended after `SS:` in the `?:` response. They are additive an
 | `MOVE_DONE` | `lane` | Exact move completed. |
 | `ACTIVE` | `lane\|NONE`| Reported when the active lane changes. |
 | `FAULT:DRY_SPIN`| `lane` | Motor spinning > 8s without filament (`IN` clear). |
-| `SYNC` | `AUTO_START\|AUTO_STOP` | Automatic sync state transitions. |
+| `SYNC` | `AUTO_START\|AUTO_STOP\|ADV_DWELL_STOP` | Automatic sync state transitions. `ADV_DWELL_STOP` fires when the buffer arm has been continuously pinned at the advance endstop for longer than `SYNC_ADV_STOP_MS`. |
 | `BUF_STAB` | `START\|DONE\|TIMEOUT` | Buffer neutralization started, reached `MID`, or hit its safety timeout. |
 | `BS` | Mode-specific snapshot | Periodic buffer/sync status event used during sync and RELOAD follow. |
 | `TC:*` | Phase-specific | Toolchange progress events such as `TC:UNLOADING`, `TC:SWAPPING`, `TC:LOADING`, `TC:DONE`, `TC:ERROR`. |

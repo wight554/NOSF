@@ -14,7 +14,7 @@
 
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4e4f5346u
-#define SETTINGS_VERSION 43u
+#define SETTINGS_VERSION 44u
 
 typedef struct {
     uint32_t magic;
@@ -84,6 +84,10 @@ typedef struct {
     bool tmc_interpolate[NUM_LANES];
     int tmc_stealthchop_sps[NUM_LANES];
     int tmc_run_current_ma[NUM_LANES], tmc_hold_current_ma[NUM_LANES];
+
+    int sync_advance_dwell_stop_ms;
+    int sync_advance_ramp_delay_ms;
+    int sync_overshoot_mid_extend;
 
     uint32_t crc32;
 } settings_t;
@@ -181,6 +185,9 @@ void settings_defaults(void) {
     SYNC_OVERSHOOT_PCT = clamp_i(CONF_SYNC_OVERSHOOT_PCT, 0, 200);
     SYNC_RESERVE_PCT = clamp_i(CONF_SYNC_RESERVE_PCT, 0, 150);
     TS_BUF_FALLBACK_MS = CONF_TS_BUF_FALLBACK_MS;
+    SYNC_ADVANCE_DWELL_STOP_MS = CONF_SYNC_ADVANCE_DWELL_STOP_MS;
+    SYNC_ADVANCE_RAMP_DELAY_MS = CONF_SYNC_ADVANCE_RAMP_DELAY_MS;
+    SYNC_OVERSHOOT_MID_EXTEND = CONF_SYNC_OVERSHOOT_MID_EXTEND;
     BUF_STAB_SPS = clamp_i(CONF_BUF_STAB_SPS, 10, 10000);
     JOIN_SPS = CONF_JOIN_SPS;
     PRESS_SPS = CONF_PRESS_SPS;
@@ -303,6 +310,9 @@ void settings_save(void) {
     }
 
     s.buf_stab_sps = BUF_STAB_SPS;
+    s.sync_advance_dwell_stop_ms = SYNC_ADVANCE_DWELL_STOP_MS;
+    s.sync_advance_ramp_delay_ms = SYNC_ADVANCE_RAMP_DELAY_MS;
+    s.sync_overshoot_mid_extend = SYNC_OVERSHOOT_MID_EXTEND;
 
     for (int i = 0; i < NUM_LANES; i++) {
         s.tmc_rotation_distance[i] = TMC_ROTATION_DISTANCE[i];
@@ -463,6 +473,9 @@ void settings_load(void) {
     SYNC_OVERSHOOT_PCT = clamp_i(s->sync_overshoot_pct, 0, 200);
     SYNC_RESERVE_PCT = clamp_i(s->sync_reserve_pct, 0, 150);
     TS_BUF_FALLBACK_MS = s->ts_buf_fallback_ms;
+    SYNC_ADVANCE_DWELL_STOP_MS = clamp_i(s->sync_advance_dwell_stop_ms, 0, 30000);
+    SYNC_ADVANCE_RAMP_DELAY_MS = clamp_i(s->sync_advance_ramp_delay_ms, 0, 5000);
+    SYNC_OVERSHOOT_MID_EXTEND = clamp_i(s->sync_overshoot_mid_extend, 0, 1);
 
     RELOAD_MODE = s->reload_mode ? 1 : 0;
     CUT_TIMEOUT_SETTLE_MS = s->cutter_settle_ms;

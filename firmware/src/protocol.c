@@ -453,6 +453,9 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "SYNC_OVERSHOOT_PCT")) SYNC_OVERSHOOT_PCT = clamp_i(iv, 0, 200);
         else if (!strcmp(base_param, "SYNC_RESERVE_PCT")) SYNC_RESERVE_PCT = clamp_i(iv, 0, 150);
         else if (!strcmp(base_param, "SYNC_AUTO_STOP")) SYNC_AUTO_STOP_MS = clamp_i(iv, 0, 30000);
+        else if (!strcmp(base_param, "SYNC_ADV_STOP_MS")) SYNC_ADVANCE_DWELL_STOP_MS = clamp_i(iv, 0, 30000);
+        else if (!strcmp(base_param, "SYNC_ADV_RAMP_MS")) SYNC_ADVANCE_RAMP_DELAY_MS = clamp_i(iv, 0, 5000);
+        else if (!strcmp(base_param, "SYNC_OVERSHOOT_MID_EXT")) SYNC_OVERSHOOT_MID_EXTEND = clamp_i(iv, 0, 1);
         else if (!strcmp(base_param, "TS_BUF_MS")) TS_BUF_FALLBACK_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "STARTUP_MS")) MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "SERVO_OPEN")) SERVO_OPEN_US = clamp_i(iv, 400, 2600);
@@ -543,6 +546,9 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "SYNC_OVERSHOOT_PCT")) snprintf(out, sizeof(out), "SYNC_OVERSHOOT_PCT:%d", SYNC_OVERSHOOT_PCT);
         else if (!strcmp(param, "SYNC_RESERVE_PCT")) snprintf(out, sizeof(out), "SYNC_RESERVE_PCT:%d", SYNC_RESERVE_PCT);
         else if (!strcmp(param, "SYNC_AUTO_STOP")) snprintf(out, sizeof(out), "SYNC_AUTO_STOP:%d", SYNC_AUTO_STOP_MS);
+        else if (!strcmp(param, "SYNC_ADV_STOP_MS")) snprintf(out, sizeof(out), "SYNC_ADV_STOP_MS:%d", SYNC_ADVANCE_DWELL_STOP_MS);
+        else if (!strcmp(param, "SYNC_ADV_RAMP_MS")) snprintf(out, sizeof(out), "SYNC_ADV_RAMP_MS:%d", SYNC_ADVANCE_RAMP_DELAY_MS);
+        else if (!strcmp(param, "SYNC_OVERSHOOT_MID_EXT")) snprintf(out, sizeof(out), "SYNC_OVERSHOOT_MID_EXT:%d", SYNC_OVERSHOOT_MID_EXTEND);
         else if (!strcmp(param, "TS_BUF_MS")) snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
         else if (!strcmp(param, "STARTUP_MS")) snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
         else if (!strcmp(param, "EST_ALPHA_MIN")) snprintf(out, sizeof(out), "EST_ALPHA_MIN:%.3f", (double)EST_ALPHA_MIN);

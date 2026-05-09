@@ -40,7 +40,6 @@ static bool sync_trailing_recovery_active = false;
 static uint32_t sync_continuous_trailing_since_ms = 0;
 static uint32_t sync_post_trailing_boost_until_ms = 0;
 static uint32_t sync_recent_negative_until_ms = 0;
-static bool sync_positive_relaunch_pending = false;
 static uint32_t sync_advance_pin_since_ms = 0;
 
 buf_tracker_t g_buf = { .state = BUF_MID };
@@ -591,7 +590,6 @@ void sync_disable(bool reset_estimator) {
     sync_continuous_trailing_since_ms = 0;
     sync_post_trailing_boost_until_ms = 0;
     sync_recent_negative_until_ms = 0;
-    sync_positive_relaunch_pending = false;
     sync_advance_pin_since_ms = 0;
 
     if (reset_estimator) {
@@ -795,12 +793,6 @@ void sync_tick(uint32_t now_ms) {
     float reserve_error_mm = g_buf_pos - reserve_target_mm;
     if (reserve_error_mm < -reserve_deadband_mm) {
         sync_recent_negative_until_ms = now_ms + SYNC_RECENT_NEGATIVE_HOLD_MS;
-        sync_positive_relaunch_pending = true;
-    } else if (sync_positive_relaunch_pending &&
-               reserve_error_mm <= reserve_deadband_mm &&
-               (int32_t)(now_ms - sync_recent_negative_until_ms) >= 0) {
-        sync_recent_negative_until_ms = 0;
-        sync_positive_relaunch_pending = false;
     }
     bool damp_positive_relaunch = sync_is_positive_relaunch_damped();
     int kp_window = sync_effective_kp_sps(s);
@@ -858,7 +850,10 @@ void sync_tick(uint32_t now_ms) {
 
     bool advance_predicted = !damp_positive_relaunch && predict_advance_coming();
     int overshoot_trim = 0;
-    if (s == BUF_TRAILING && SYNC_OVERSHOOT_PCT > 0) {
+    bool apply_mid_overshoot = SYNC_OVERSHOOT_MID_EXTEND &&
+                               s == BUF_MID &&
+                               reserve_error_mm < -reserve_deadband_mm;
+    if ((s == BUF_TRAILING || apply_mid_overshoot) && SYNC_OVERSHOOT_PCT > 0) {
         int negative_correction = -reserve_correction;
         if (zone_bias < 0) negative_correction += -zone_bias;
         if (negative_correction < 0) negative_correction = 0;
@@ -875,6 +870,23 @@ void sync_tick(uint32_t now_ms) {
 
     int target_sps = (int)extruder_est_sps + reserve_correction + zone_bias + slope_bias - overshoot_trim - wall_trim;
     if (advance_predicted) target_sps += PRE_RAMP_SPS;
+
+    if (s == BUF_ADVANCE && sync_advance_pin_since_ms != 0) {
+        uint32_t adv_dwell_ms = now_ms - sync_advance_pin_since_ms;
+        if (SYNC_ADVANCE_DWELL_STOP_MS > 0 &&
+            adv_dwell_ms >= (uint32_t)SYNC_ADVANCE_DWELL_STOP_MS) {
+            sync_disable(true);
+            extruder_est_last_update_ms = now_ms;
+            sync_apply_to_active();
+            cmd_event("SYNC", "ADV_DWELL_STOP");
+            return;
+        }
+        if (SYNC_ADVANCE_RAMP_DELAY_MS > 0 &&
+            adv_dwell_ms >= (uint32_t)SYNC_ADVANCE_RAMP_DELAY_MS) {
+            int max_sps = sync_clamp_max_sps(SYNC_MAX_SPS);
+            if (target_sps < max_sps) target_sps = max_sps;
+        }
+    }
 
     target_sps = sync_apply_scaling(target_sps);
 
@@ -983,26 +995,24 @@ float sync_reserve_error_mm(void) {
 
 bool sync_is_positive_relaunch_damped(void) {
     if (sync_tail_assist_active) return false;
+    // Never damp while the buffer is empty — refill must be unrestricted.
+    if (g_buf.state == BUF_ADVANCE) return false;
+    if (sync_recent_negative_until_ms == 0) return false;
 
-    // Never keep relaunch damping while pinned on the empty-side endstop.
-    // In BUF_ADVANCE the virtual position is clamped at +threshold, so reserve
-    // recovery-based release can become self-locking.
-    if (sync_positive_relaunch_pending && g_buf.state == BUF_ADVANCE) {
-        sync_positive_relaunch_pending = false;
-        sync_recent_negative_until_ms = 0;
-        return false;
-    }
+    uint32_t now_ms = g_now_ms;
+    // Window has expired naturally.
+    if ((int32_t)(now_ms - sync_recent_negative_until_ms) >= 0) return false;
 
-    // If model error is clearly positive (too empty), let full positive
-    // correction act immediately instead of damping refill acceleration.
-    if (sync_positive_relaunch_pending &&
-        sync_reserve_error_mm() > buf_virtual_deadband_mm()) {
-        sync_positive_relaunch_pending = false;
-        sync_recent_negative_until_ms = 0;
-        return false;
-    }
+    // Release damping 300 ms before the window expires to avoid a sharp step.
+    uint32_t window_start_ms = sync_recent_negative_until_ms - SYNC_RECENT_NEGATIVE_HOLD_MS;
+    uint32_t elapsed_in_window = now_ms - window_start_ms;
+    if (elapsed_in_window >= (uint32_t)(SYNC_RECENT_NEGATIVE_HOLD_MS - 300u)) return false;
 
-    return sync_positive_relaunch_pending;
+    // If reserve error is clearly positive the buffer is already refilling —
+    // stop damping so the correction can run at full strength.
+    if (sync_reserve_error_mm() > buf_virtual_deadband_mm() * 0.5f) return false;
+
+    return true;
 }
 
 bool sync_is_advance_predicted(void) {

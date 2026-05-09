@@ -62,6 +62,12 @@ run_current:
                                    # recovery has already hit the minimum floor.
 # post_print_stab_delay_ms: 0      # Legacy name: idle trailing negative-sync delay.
                                    # 0 = start immediately when idle+TRAILING.
+# sync_advance_dwell_stop_ms: 6000 # Hard stop if continuously pinned at advance endstop
+                                   # for this many ms. 0 = disable.
+# sync_advance_ramp_delay_ms: 400  # Grace window before refill-assist forces target to
+                                   # SYNC_MAX regardless of estimator.
+# sync_overshoot_mid_extend: 0     # Feature flag: extend trailing overshoot trim into
+                                   # BUF_MID when reserve is below deadband. 0=off.
 
 # ─── Smarter Sync (Estimator) ────────────────────────────────────────────────
 # est_alpha_min: 0.12          # Estimator responsiveness (slow drifts)
