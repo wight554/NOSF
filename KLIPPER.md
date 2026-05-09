@@ -249,6 +249,30 @@ stream internal state to a CSV file for offline analysis.
    python3 scripts/nosf_analyze.py --in run1.csv --out patch.ini
    ```
 
+## Closed-Loop Live Tuning
+
+Phase 2.8 adds `scripts/nosf_live_tuner.py` for online bucket learning during
+tuning prints. It consumes the same `NOSF_TUNE` markers as the logger, learns
+per `feature_v_fil` buckets, and writes guarded live `SET:` updates for the
+sync baseline and trailing bias.
+
+Recommended tuning-print invocation:
+
+```bash
+python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
+    --machine-id myprinter --commit-on-idle &
+```
+
+`--commit-on-idle` waits until NOSF reports idle for at least 30 s, then sends
+`SET:LIVE_TUNE_LOCK:0`, sends `SV:`, emits `/tmp/nosf-patch.ini`, logs that path
+to stderr, and exits. Review the patch before merging it into repo
+`config.ini`.
+
+`nosf_live_tuner.py` and `nosf_logger.py` both own the NOSF USB TTY. Do not run
+them against the same `/dev/ttyACM*` at the same time. Use the live tuner for
+tuning prints, and use `nosf_logger.py` for passive reference soaks or debugging
+runs where no online writes should occur.
+
 ---
 
 ## Troubleshooting

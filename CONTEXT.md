@@ -2,6 +2,8 @@
 
 Deep ref for firmware work. Architectural source of truth for agents; `TASK.md` is task log, may have stale notes.
 
+Phase 2.8 adds host-side live tuner; firmware delta is the `LIVE_TUNE_LOCK` flag in `protocol.c`. No settings version change.
+
 ---
 
 ## Firmware Architecture
