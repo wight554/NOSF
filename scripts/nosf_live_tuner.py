@@ -19,13 +19,14 @@ If reconnect fails, it exits non-zero without modifying the state file.
 import argparse
 import json
 import os
+import platform
 import queue
 import re
 import sys
 import threading
 import time
 from collections import deque
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Dict, Optional
 
 try:
@@ -111,6 +112,7 @@ class Tuner:
         port: Optional[str] = None,
         baud: int = 115200,
         now_fn=time.monotonic,
+        wall_fn=time.time,
     ):
         self.ser = ser
         self.state_path = state_path
@@ -118,6 +120,7 @@ class Tuner:
         self.port = port
         self.baud = baud
         self.now_fn = now_fn
+        self.wall_fn = wall_fn
         self.buckets: Dict[str, Bucket] = {}
         self.active_label: Optional[str] = None
         self.last_status_t = 0.0
@@ -281,11 +284,12 @@ class Tuner:
             return
 
         label = bucket_label(self.last_feature, self.last_v_fil)
-        b = self.buckets.setdefault(label, Bucket(label=label, x=est, first_seen=now))
+        wall_now = self.wall_fn()
+        b = self.buckets.setdefault(label, Bucket(label=label, x=est, first_seen=wall_now))
         self.active_label = label
-        b.last_seen = now
+        b.last_seen = wall_now
         if b.first_seen == 0.0:
-            b.first_seen = now
+            b.first_seen = wall_now
 
         if self.last_status_t == 0.0:
             self.last_status_t = now
@@ -375,6 +379,108 @@ def reader(ser, lines: queue.Queue) -> None:
             lines.put(line.decode("utf-8", errors="replace").strip())
 
 
+def lock_path_for_state(state_path: str) -> str:
+    parent = os.path.dirname(os.path.abspath(state_path))
+    stem = os.path.basename(state_path)
+    return os.path.join(parent, f".{stem}.lock")
+
+
+def pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if platform.system().lower() == "linux" and os.path.exists("/proc"):
+        return os.path.exists(f"/proc/{pid}")
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def acquire_state_lock(state_path: str) -> str:
+    lock_path = lock_path_for_state(state_path)
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    if os.path.exists(lock_path):
+        try:
+            with open(lock_path) as fh:
+                pid = int((fh.read().strip() or "0").split()[0])
+        except (OSError, ValueError, IndexError):
+            pid = 0
+        if pid_alive(pid):
+            print(f"[tuner] refusing to start: state lock held by PID {pid} ({lock_path})", file=sys.stderr)
+            sys.exit(1)
+        print(f"[tuner] removing stale state lock: {lock_path}", file=sys.stderr)
+    tmp = lock_path + f".{os.getpid()}.tmp"
+    with open(tmp, "w") as fh:
+        fh.write(f"{os.getpid()}\n")
+    os.replace(tmp, lock_path)
+    return lock_path
+
+
+def release_state_lock(lock_path: Optional[str]) -> None:
+    if not lock_path:
+        return
+    try:
+        with open(lock_path) as fh:
+            pid = int((fh.read().strip() or "0").split()[0])
+    except (OSError, ValueError, IndexError):
+        pid = 0
+    if pid == os.getpid():
+        try:
+            os.unlink(lock_path)
+        except OSError:
+            pass
+
+
+def state_label(raw: dict) -> str:
+    if raw.get("locked") or raw.get("state") == "LOCKED":
+        return "LOCKED"
+    if raw.get("state"):
+        return str(raw.get("state"))
+    try:
+        if float(raw.get("P", 1e6)) < P_STABLE_THR and int(raw.get("n", 0)) >= N_MIN_SAMPLES:
+            return "STABLE"
+    except (TypeError, ValueError):
+        pass
+    return "TRACKING"
+
+
+def print_state_info(state_path: str, machine_id: str) -> None:
+    if not os.path.exists(state_path):
+        print(f"[tuner] no state file: {state_path}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        with open(state_path) as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"[tuner] state file unreadable: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if data.get("_schema") != SCHEMA_VERSION:
+        print(
+            f"[tuner] state file schema mismatch: got {data.get('_schema')!r}, expected {SCHEMA_VERSION}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    buckets = data.get(machine_id, {})
+    print(f"{'feature_v_fil':<18} {'x':>7} {'P':>8} {'n':>6} {'bias':>7} {'state':>8}")
+    locked = 0
+    total_n = 0
+    for label, raw in sorted(buckets.items()):
+        st = state_label(raw)
+        if st == "LOCKED":
+            locked += 1
+        n = int(raw.get("n", 0))
+        total_n += n
+        print(
+            f"{label:<18} {float(raw.get('x', 0.0)):>7.0f} "
+            f"{float(raw.get('P', 0.0)):>8.1f} {n:>6d} "
+            f"{float(raw.get('bias', 0.0)):>7.3f} {st:>8}"
+        )
+    print(f"TOTAL: {len(buckets)} buckets, {locked} locked, {total_n} samples")
+
+
 def emit_patch(state_path: str, machine_id: str, out_path: str) -> None:
     if not os.path.exists(state_path):
         print("[tuner] no state file", file=sys.stderr)
@@ -439,14 +545,14 @@ def open_serial(port: str, baud: int):
 
 
 def run_loop(args) -> None:
-    ser = open_serial(args.port, args.baud)
-    lines: queue.Queue = queue.Queue(maxsize=1024)
-    threading.Thread(target=reader, args=(ser, lines), daemon=True).start()
-    tuner = Tuner(ser, args.state, args.machine_id, port=args.port, baud=args.baud)
-    poll_interval = 1.0 / args.poll_hz
-    next_poll = time.monotonic()
-
+    lock_path = acquire_state_lock(args.state)
     try:
+        ser = open_serial(args.port, args.baud)
+        lines: queue.Queue = queue.Queue(maxsize=1024)
+        threading.Thread(target=reader, args=(ser, lines), daemon=True).start()
+        tuner = Tuner(ser, args.state, args.machine_id, port=args.port, baud=args.baud)
+        poll_interval = 1.0 / args.poll_hz
+        next_poll = time.monotonic()
         while True:
             now = time.monotonic()
             if now >= next_poll:
@@ -471,6 +577,8 @@ def run_loop(args) -> None:
     except KeyboardInterrupt:
         tuner._persist()
         print("[tuner] persisted state on exit", file=sys.stderr)
+    finally:
+        release_state_lock(lock_path)
 
 
 def main() -> None:
@@ -486,6 +594,7 @@ def main() -> None:
     ap.add_argument("--poll-hz", type=float, default=10.0)
     ap.add_argument("--emit-config-patch", metavar="PATH", help="Emit config.ini patch from locked state and exit")
     ap.add_argument("--unlock", metavar="FEATURE", help="Unlock matching bucket label or feature prefix and exit")
+    ap.add_argument("--state-info", action="store_true", help="Print state summary table and exit")
     ap.add_argument("--reset-runtime", action="store_true", help="Send LIVE_TUNE_LOCK:0 and LD:, then exit")
     args = ap.parse_args()
     if args.state is None:
@@ -493,6 +602,9 @@ def main() -> None:
 
     if args.emit_config_patch:
         emit_patch(args.state, args.machine_id, args.emit_config_patch)
+        return
+    if args.state_info:
+        print_state_info(args.state, args.machine_id)
         return
     if args.unlock:
         unlock_bucket(args.state, args.machine_id, args.unlock)
