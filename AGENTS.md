@@ -3,6 +3,8 @@
 This file is for AI agents (Claude, Gemini, Codex, etc.). Read it first, then
 read `TASK.md` (gitignored) before touching anything.
 
+**For AI environment setup (skills, MCPs), see [AI.md](./AI.md).**
+
 ## Session Start Protocol
 
 Before doing anything else, post this in chat:
@@ -109,6 +111,7 @@ the context budget for code reading instead.
    You do **not** need to repeat the model name in the chat or when listing tools.
 9. **MANDATORY: Analyze regression impact for new features** — Unless the user explicitly asks to change current behavior, every new feature must include a code-level impact review of the existing affected flows (for example preload, load, unload, toolchange, sync, RELOAD, persistence, protocol, and docs) and validation that those flows remain intact.
 10. **MANDATORY: Use shell git for commits and pushes** — Do not rely on Git MCP tooling for `git add`, `git commit`, or `git push`. Use non-interactive shell git commands in the terminal instead.
+11. **MANDATORY: Do NOT commit local AI config** — Never commit `.agents/`, `.claude/`, or `skills-lock.json` to this repository. All AI configuration must remain global as described in `AI.md`.
 
 ## Commit Format
 
