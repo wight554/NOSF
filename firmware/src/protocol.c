@@ -166,7 +166,9 @@ static void status_dump(void) {
             (int)(SYNC_TRAILING_BIAS_FRAC * 100.0f),
             sync_mid_creep_sps(),
             (int)(BUF_VARIANCE_BLEND_FRAC * 100.0f),
-            (int)(g_buf_pos * 100.0f));
+            (int)(g_buf_pos * 100.0f),
+            g_marker_seq,
+            g_marker_tag);
     }
 
     cmd_reply("OK", b);
