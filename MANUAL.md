@@ -149,9 +149,9 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `EST_LOW_CF_THR` | `est_low_cf_warn_threshold` | `EV:BUF,EST_LOW_CF` fires when estimator confidence falls below this threshold (runtime-only, not persisted). | 0.5 |
 | `EST_FALLBACK_THR` | `est_fallback_cf_threshold` | Integral centering freezes when confidence falls below this threshold. Also the floor below which `EV:BUF,EST_FALLBACK` is eligible (runtime-only). | 0.2 |
 | `BUF_DRIFT_TAU_MS` | `buf_drift_ewma_tau_ms` | EWMA time constant for per-transition residual drift estimate (ms). Longer = more stable; shorter = adapts faster. | 60000 |
-| `BUF_DRIFT_MIN_SMP` | `buf_drift_min_samples` | Minimum zone transitions before drift correction can engage. | 3 |
+| `BUF_DRIFT_MIN_SMP` | `buf_drift_min_samples` | Transition samples required for full-strength drift correction. When correction is explicitly enabled, it ramps in from the first sample to this count. | 3 |
 | `BUF_DRIFT_THR_MM` | `buf_drift_apply_thr_mm` | Minimum `|BPD|` required to apply correction (mm). **0.0 = disabled** (default-OFF). Enable only after confirming stable non-zero `BPD`. | 0.0 |
-| `BUF_DRIFT_CLAMP` | `buf_drift_clamp_mm` | Hard clamp on applied drift correction magnitude in mm. | 2.0 |
+| `BUF_DRIFT_CLAMP` | `buf_drift_clamp_mm` | Hard clamp on applied drift correction magnitude in mm. Runtime range: 0.0–8.0. | 2.0 |
 | `BUF_DRIFT_MIN_CF` | `buf_drift_apply_min_cf` | Minimum estimator confidence (`EC`/100) required to apply drift correction. Correction freezes (but EWMA continues accumulating) when below this. | 0.5 |
 | `ADV_RISK_WINDOW` | `adv_risk_window_ms` | Rolling window for `APX` advance-pin density (ms). Runtime-only, not persisted. | 60000 |
 | `ADV_RISK_THR` | `adv_risk_threshold` | `EV:SYNC,ADV_RISK_HIGH` fires when `APX >= this`. 0 = disable. Runtime-only, not persisted. | 4 |
@@ -191,7 +191,7 @@ These fields are appended after `SS:` in the `?:` response. They are additive an
 | `EC` | 0–100 | Estimator confidence based on sigma (independent of source `CF`). |
 | `BPR` | mm (signed) | Last per-transition residual: `g_buf_pos − switch_pos_mm` measured just before the virtual position snaps to the switch threshold. Non-zero values indicate virtual/physical mismatch at that crossing. |
 | `BPD` | mm (signed) | Drift EWMA — exponentially weighted average of `BPR` samples (time constant `BUF_DRIFT_TAU_MS`). A stable non-zero value indicates systematic virtual-position bias. |
-| `BPN` | int | Number of zone transitions sampled into `BPD`. Correction gates on `BPN >= BUF_DRIFT_MIN_SMP`. |
+| `BPN` | int | Number of zone transitions sampled into `BPD`. Drift correction ramps in until `BPN >= BUF_DRIFT_MIN_SMP`, then applies at full configured strength. |
 | `APX` | int | Count of `BUF_ADVANCE` pin entries within the last `ADV_RISK_WINDOW` ms. `EV:SYNC,ADV_RISK_HIGH` fires when this reaches `ADV_RISK_THR`. |
 | `RDC` | 0–100 | Drift-correction activity scalar: 0 = inactive or disabled, 100 = correction at full clamp (`BUF_DRIFT_CLAMP`). |
 

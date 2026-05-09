@@ -186,8 +186,8 @@ estimator sigma (uncertainty in mm) and confidence percentage. A large `EA:`
 value while the arm is in `BUF_MID` is normal; a large `EA:` while in `BUF_ADVANCE`
 may indicate the bleed path is the only update source.
 
-Phase 2.6 adds a residual drift observer. At every `MID → ADVANCE` and
-`MID → TRAILING` zone transition the virtual position (`g_buf_pos`) is measured
+Phase 2.6 adds a residual drift observer. At every `MID → ADVANCE` zone
+transition the virtual position (`g_buf_pos`) is measured
 against the known switch threshold *before* the position is snapped to that
 threshold. The difference `BPR = g_buf_pos − switch_pos_mm` is the literal
 mismatch between the virtual model and the physical arm at the one moment
@@ -197,14 +197,17 @@ residuals are accumulated into a slow EWMA (`BPD`, time constant
 virtual-position bias — the estimator is underestimating the net arm travel
 per cycle.
 
-When `BUF_DRIFT_THR_MM > 0` and at least `BUF_DRIFT_MIN_SMP` samples have
-accumulated, the controller substitutes `bp_eff = g_buf_pos − clamp(BPD, ±BUF_DRIFT_CLAMP)`
+When `BUF_DRIFT_THR_MM > 0` and at least one sample has accumulated, the
+controller substitutes `bp_eff = g_buf_pos − scaled_clamp(BPD, ±BUF_DRIFT_CLAMP)`
 in place of raw `g_buf_pos` for all control-law decisions in `sync_tick()`
-(reserve error, near-target check, taper scaling). The integration loop and
-re-anchoring always use the raw position; only the controller's *reaction* to
-the current position is corrected. `RDC:` (0–100) shows the correction activity
-level. The observer state resets on sync stop, `EST_FALLBACK`, and sensor
-hot-swap, emitting `EV:BUF,DRIFT_RESET`.
+(reserve error, near-target check, taper scaling). The correction ramps in
+linearly until `BUF_DRIFT_MIN_SMP` samples have accumulated; for example, with
+`BUF_DRIFT_MIN_SMP=3`, the first sample applies one third of the clamped
+correction and the third sample applies full correction. The integration loop
+and re-anchoring always use the raw position; only the controller's *reaction*
+to the current position is corrected. `RDC:` (0–100) shows the correction
+activity level. The observer state resets on sync stop, `EST_FALLBACK`, and
+sensor hot-swap, emitting `EV:BUF,DRIFT_RESET`.
 
 #### Zone bias and recovery behavior
 
@@ -249,9 +252,10 @@ pin occurs.
 
 Phase 2.6 adds a transition-residual drift correction layer (`RDC:`). When
 enabled (`BUF_DRIFT_THR_MM > 0`), the effective position seen by the control
-law is shifted by the signed EWMA of pre-snap residuals. When enabled and the
-integral is also active, the integral operates on the corrected position so
-both terms do not double-correct for the same bias. `APX:` counts recent
+law is shifted by the signed EWMA of pre-snap residuals, ramping from the first
+sample to full strength at `BUF_DRIFT_MIN_SMP`. When enabled and the integral
+is also active, the integral operates on the corrected position so both terms do
+not double-correct for the same bias. `APX:` counts recent
 advance-pin events; `EV:SYNC,ADV_RISK_HIGH` fires when the density exceeds
 `ADV_RISK_THR` in the `ADV_RISK_WINDOW` rolling window.
 

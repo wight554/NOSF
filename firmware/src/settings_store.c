@@ -512,7 +512,7 @@ void settings_load(void) {
     BUF_DRIFT_EWMA_TAU_MS = clamp_i(s->buf_drift_ewma_tau_ms, 5000, 600000);
     BUF_DRIFT_MIN_SAMPLES = clamp_i(s->buf_drift_min_samples, 1, 32);
     BUF_DRIFT_APPLY_THR_MM = clamp_f(s->buf_drift_apply_thr_mm, 0.0f, 5.0f);
-    BUF_DRIFT_CLAMP_MM = clamp_f(s->buf_drift_clamp_mm, 0.0f, 5.0f);
+    BUF_DRIFT_CLAMP_MM = clamp_f(s->buf_drift_clamp_mm, 0.0f, BUF_DRIFT_CLAMP_LIMIT_MM);
     BUF_DRIFT_APPLY_MIN_CF = clamp_f(s->buf_drift_apply_min_cf, 0.0f, 1.0f);
 
     RELOAD_MODE = s->reload_mode ? 1 : 0;

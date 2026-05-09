@@ -494,7 +494,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "BUF_DRIFT_TAU_MS")) BUF_DRIFT_EWMA_TAU_MS = clamp_i(iv, 5000, 600000);
         else if (!strcmp(base_param, "BUF_DRIFT_MIN_SMP")) BUF_DRIFT_MIN_SAMPLES = clamp_i(iv, 1, 32);
         else if (!strcmp(base_param, "BUF_DRIFT_THR_MM")) BUF_DRIFT_APPLY_THR_MM = clamp_f(fv, 0.0f, 5.0f);
-        else if (!strcmp(base_param, "BUF_DRIFT_CLAMP")) BUF_DRIFT_CLAMP_MM = clamp_f(fv, 0.0f, 5.0f);
+        else if (!strcmp(base_param, "BUF_DRIFT_CLAMP")) BUF_DRIFT_CLAMP_MM = clamp_f(fv, 0.0f, BUF_DRIFT_CLAMP_LIMIT_MM);
         else if (!strcmp(base_param, "BUF_DRIFT_MIN_CF")) BUF_DRIFT_APPLY_MIN_CF = clamp_f(fv, 0.0f, 1.0f);
         else if (!strcmp(base_param, "ADV_RISK_WINDOW")) ADV_RISK_WINDOW_MS = clamp_i(iv, 5000, 300000);
         else if (!strcmp(base_param, "ADV_RISK_THR")) ADV_RISK_THRESHOLD = clamp_i(iv, 0, 1000);

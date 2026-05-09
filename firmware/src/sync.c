@@ -907,12 +907,15 @@ void sync_tick(uint32_t now_ms) {
     /* Phase 2.6: effective buffer position with drift correction (default OFF) */
     float bp_eff = g_buf_pos;
     float drift_correction_mm = 0.0f;
+    int drift_min_samples = BUF_DRIFT_MIN_SAMPLES;
+    if (drift_min_samples < 1) drift_min_samples = 1;
     bool drift_apply_gate = (BUF_DRIFT_APPLY_THR_MM > 0.0f)
-        && ((int)g_bp_drift_samples >= BUF_DRIFT_MIN_SAMPLES)
+        && (g_bp_drift_samples > 0)
         && (fabsf(g_bp_drift_ewma_mm) >= BUF_DRIFT_APPLY_THR_MM)
         && (g_buf_signal.confidence >= BUF_DRIFT_APPLY_MIN_CF);
     if (drift_apply_gate) {
-        drift_correction_mm = clamp_f(g_bp_drift_ewma_mm, -BUF_DRIFT_CLAMP_MM, BUF_DRIFT_CLAMP_MM);
+        float sample_frac = clamp_f((float)g_bp_drift_samples / (float)drift_min_samples, 0.0f, 1.0f);
+        drift_correction_mm = clamp_f(g_bp_drift_ewma_mm, -BUF_DRIFT_CLAMP_MM, BUF_DRIFT_CLAMP_MM) * sample_frac;
         bp_eff = g_buf_pos - drift_correction_mm;
         /* Clamp so correction cannot push bp_eff past the endstop zone boundary */
         float thr = buf_threshold_mm();

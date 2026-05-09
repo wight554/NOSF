@@ -181,23 +181,24 @@ for **A** or **C**. Does not adapt to regime or wear.
 
 ### Candidate 2 — Auto-calibrating drift observer (recommended)
 **Mechanism.** Ground truth exists at exactly one moment per zone change:
-the switch fires. At each `MID → ADVANCE` and `MID → TRAILING` transition,
-compute `pos_mm_residual = pre_snap_pos_mm − switch_pos_mm` *before* the
-existing snap in `buf_anchor_virtual_position`. Maintain a per-direction
-EWMA `bp_drift_ewma_mm` with time constant `buf_drift_ewma_tau_ms`
-(default 60 000 ms). When (a) sample count ≥ `buf_drift_min_samples`,
-(b) `|ewma| > buf_drift_apply_threshold_mm`, (c) confidence
-≥ `buf_drift_apply_min_confidence`, (d) signs from MID→ADV and MID→TRL
-agree (systematic, not symmetric noise) — apply
-`bp_eff = g_buf_pos − clamp(bp_drift_ewma_mm, ±buf_drift_clamp_mm)` at all
-controller-side reads of `g_buf_pos`. Integration loop untouched.
+the switch fires. The shipped implementation samples the observed failing
+regime only: at each `MID → ADVANCE` transition, compute
+`pos_mm_residual = pre_snap_pos_mm − switch_pos_mm` *before* the existing snap
+in `buf_anchor_virtual_position`. Maintain an EWMA `bp_drift_ewma_mm` with
+time constant `buf_drift_ewma_tau_ms` (default 60 000 ms). When (a) at least
+one sample exists, (b) `|ewma| > buf_drift_apply_threshold_mm`, and
+(c) confidence ≥ `buf_drift_apply_min_confidence`, apply
+`bp_eff = g_buf_pos − scaled_clamp(bp_drift_ewma_mm, ±buf_drift_clamp_mm)` at
+all controller-side reads of `g_buf_pos`. The scale ramps linearly from the
+first sample to full strength at `buf_drift_min_samples`. Integration loop
+untouched.
 **Tunables.**
 | Key | Range | Default | Persistent |
 |---|---|---|---|
 | `buf_drift_ewma_tau_ms` | 5 000 – 600 000 | 60 000 | yes |
 | `buf_drift_min_samples` | 1 – 32 | 3 | yes |
 | `buf_drift_apply_threshold_mm` | 0.0 – 5.0 | **0.0 (OFF)** | yes |
-| `buf_drift_clamp_mm` | 0.0 – 5.0 | 2.0 | yes |
+| `buf_drift_clamp_mm` | 0.0 – 8.0 | 2.0 | yes |
 | `buf_drift_apply_min_confidence` | 0.0 – 1.0 | 0.5 | yes |
 **Failure modes.**
 - Single regime-change event biases EWMA. Mitigation: reset on
@@ -291,9 +292,9 @@ Each step labeled **[I]** = instrumentation only, no behavior change;
      compute `pos_mm_residual = g_buf_pos − switch_pos_mm` where
      `switch_pos_mm = ±buf_threshold_mm()` per direction.
    - Maintain `g_bp_drift_ewma_mm` (signed mm) and
-     `g_bp_drift_sample_count` (uint16). Update only on `MID → ADVANCE`
-     and `MID → TRAILING` (other transitions don't have ground truth at
-     a switch boundary). Use exponential decay
+     `g_bp_drift_sample_count` (uint16). Update only on `MID → ADVANCE`;
+     the trailing-side samples have the opposite sign on the observed rig
+     and dilute the advance-side correction signal. Use exponential decay
      `α = 1 − exp(−dt_ms / buf_drift_ewma_tau_ms)`.
    - Maintain rolling pin counter: a circular buffer of 60 ms-buckets
      (or simpler: a count + window-start timestamp).
@@ -336,7 +337,8 @@ Each step labeled **[I]** = instrumentation only, no behavior change;
 12. **[B, default-OFF]** `firmware/src/sync.c` —
     - Compute `bp_eff = g_buf_pos − bp_drift_correction_mm` where the
       correction is applied only when all gating predicates hold (see
-      §3 Candidate 2).
+      §3 Candidate 2), ramping from the first sample to full strength at
+      `buf_drift_min_samples`.
     - Replace controller-side reads of `g_buf_pos` with `bp_eff` *only*
       in `sync_tick()` consumers (`reserve_error`, `buf_near_target`,
       `sync_apply_scaling`'s threshold compares). The integration step
@@ -417,8 +419,9 @@ Each step labeled **[I]** = instrumentation only, no behavior change;
   (instrumentation must work even when behavior is disabled).
 - `RDC == 0` for the entire run.
 
-**Apply-on (`buf_drift_apply_threshold_mm = 0.5`, `min_samples = 4`,
-`clamp = 2.0`, `apply_min_confidence = 0.5`):**
+**Apply-on (`buf_drift_apply_threshold_mm = 0.5`, `min_samples = 3`,
+`clamp = 2.0` to `8.0` depending on measured residual,
+`apply_min_confidence = 0.5`):**
 - Max ADVANCE dwell (`AD:` peak) **< 1500 ms**; 95th-percentile
   `AD:` **< 500 ms**.
 - ADVANCE-pin frequency: in any 60-s rolling window after a 5-min
@@ -464,13 +467,11 @@ Each step labeled **[I]** = instrumentation only, no behavior change;
 2. Build & flash Phase 2.6.0; run a 5-minute baseline print.
 3. Inspect the captured `BPR` and `BPD`:
    - If mean `BPR` is consistently negative on `MID → ADVANCE`
-     transitions and consistently positive on `MID → TRAILING`
-     transitions ⇒ sign agreement ⇒ systematic drift, candidate for
-     correction.
-   - If signs disagree ⇒ symmetric noise, **do not enable apply**;
-     escalate to investigation (Cause A or C).
+     transitions ⇒ systematic advance-side drift, candidate for correction.
+   - If `BPD ≈ 0` after repeated ADVANCE crossings ⇒ drift observer is not
+     seeing the root cause; escalate to investigation (Cause A or C).
 4. If signs agree: `SET BUF_DRIFT_APPLY_THR_MM:0.5`,
-   `SET BUF_DRIFT_MIN_SAMPLES:4`. Run another 5-minute print. Verify
+   `SET BUF_DRIFT_MIN_SAMPLES:3`. Run another 5-minute print. Verify
    `RDC > 0` during steady feed and `|BPD|` stays bounded.
 5. If `APX` regularly exceeds 2 in a 60-s window, set
    `SET ADV_RISK_THRESHOLD:3` and observe `EV:SYNC,ADV_RISK_HIGH`

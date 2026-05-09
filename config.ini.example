@@ -85,10 +85,10 @@ run_current:
 # ─── Phase 2.6 — Drift Observer & ADVANCE-Risk Telemetry ─────────────────────
 # buf_drift_ewma_tau_ms: 60000        # EWMA time constant for per-transition residual drift (ms).
 #                                     # Longer = more stable estimate; shorter = faster adaptation.
-# buf_drift_min_samples: 3            # Min zone transitions before correction can engage.
+# buf_drift_min_samples: 3            # Samples before full correction; enabled correction ramps in earlier.
 # buf_drift_apply_thr_mm: 0.0         # Correction threshold in mm; 0.0 = feature disabled (default-OFF).
 #                                     # Enable after observing BPD convergence (e.g. set to 0.5).
-# buf_drift_clamp_mm: 2.0             # Hard clamp on the applied drift correction magnitude in mm.
+# buf_drift_clamp_mm: 2.0             # Hard clamp on the applied drift correction magnitude in mm (runtime max 8.0).
 # buf_drift_apply_min_cf: 0.5         # Min estimator confidence (EC:/100) required to apply correction.
 # adv_risk_window_ms: 60000           # Rolling window for ADVANCE-pin density warning (runtime-only).
 # adv_risk_threshold: 4               # EV:SYNC,ADV_RISK_HIGH fires when pin count >= this (runtime-only).
