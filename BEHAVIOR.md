@@ -197,7 +197,9 @@ residuals are accumulated into a slow EWMA (`BPD`, time constant
 virtual-position bias — the estimator is underestimating the net arm travel
 per cycle.
 
-When `BUF_DRIFT_THR_MM > 0` and at least one sample has accumulated, the
+By default, `BUF_DRIFT_THR_MM=2.0` enables correction only after meaningful
+observed drift; setting it to `0.0` disables correction. When
+`BUF_DRIFT_THR_MM > 0` and at least one sample has accumulated, the
 controller substitutes `bp_eff = g_buf_pos − scaled_clamp(BPD, ±BUF_DRIFT_CLAMP)`
 in place of raw `g_buf_pos` for all control-law decisions in `sync_tick()`
 (reserve error, near-target check, taper scaling). The correction ramps in

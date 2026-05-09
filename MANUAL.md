@@ -150,8 +150,8 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `EST_FALLBACK_THR` | `est_fallback_cf_threshold` | Integral centering freezes when confidence falls below this threshold. Also the floor below which `EV:BUF,EST_FALLBACK` is eligible (runtime-only). | 0.2 |
 | `BUF_DRIFT_TAU_MS` | `buf_drift_ewma_tau_ms` | EWMA time constant for per-transition residual drift estimate (ms). Longer = more stable; shorter = adapts faster. | 60000 |
 | `BUF_DRIFT_MIN_SMP` | `buf_drift_min_samples` | Transition samples required for full-strength drift correction. When correction is explicitly enabled, it ramps in from the first sample to this count. | 3 |
-| `BUF_DRIFT_THR_MM` | `buf_drift_apply_thr_mm` | Minimum `|BPD|` required to apply correction (mm). **0.0 = disabled** (default-OFF). Enable only after confirming stable non-zero `BPD`. | 0.0 |
-| `BUF_DRIFT_CLAMP` | `buf_drift_clamp_mm` | Hard clamp on applied drift correction magnitude in mm. Runtime range: 0.0–8.0. | 2.0 |
+| `BUF_DRIFT_THR_MM` | `buf_drift_apply_thr_mm` | Minimum `|BPD|` required to apply correction (mm). **0.0 = disabled**. Provisional print default applies correction only after meaningful observed drift. | 2.0 |
+| `BUF_DRIFT_CLAMP` | `buf_drift_clamp_mm` | Hard clamp on applied drift correction magnitude in mm. Runtime range: 0.0–8.0. | 3.0 |
 | `BUF_DRIFT_MIN_CF` | `buf_drift_apply_min_cf` | Minimum estimator confidence (`EC`/100) required to apply drift correction. Correction freezes (but EWMA continues accumulating) when below this. | 0.5 |
 | `ADV_RISK_WINDOW` | `adv_risk_window_ms` | Rolling window for `APX` advance-pin density (ms). Runtime-only, not persisted. | 60000 |
 | `ADV_RISK_THR` | `adv_risk_threshold` | `EV:SYNC,ADV_RISK_HIGH` fires when `APX >= this`. 0 = disable. Runtime-only, not persisted. | 4 |

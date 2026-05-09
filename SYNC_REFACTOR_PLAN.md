@@ -462,7 +462,9 @@ advance-side drift), accumulates residuals into a slow EWMA (`BPD`), and
 optionally applies a bounded correction (`bp_eff = g_buf_pos −
 scaled_clamp(BPD, ±BUF_DRIFT_CLAMP)`) to all controller-side reads of the
 virtual position. Correction ramps from the first explicit-enable sample to full
-strength at `BUF_DRIFT_MIN_SMP`. Default-OFF (`BUF_DRIFT_THR_MM = 0.0`).
+strength at `BUF_DRIFT_MIN_SMP`. After real-print validation, the provisional
+default enables correction at `BUF_DRIFT_THR_MM = 2.0`; set it to `0.0` to
+restore the original default-off behavior.
 
 Layered on top: a rolling advance-pin density counter (`APX`) with warn-only
 `EV:SYNC,ADV_RISK_HIGH` (rate-limited 1/30 s). Boost knob declared but not
@@ -478,15 +480,17 @@ implemented; ship as documentation placeholder.
 |---|---|---|---|
 | `BUF_DRIFT_TAU_MS` | 60000 | yes | EWMA time constant (ms) |
 | `BUF_DRIFT_MIN_SMP` | 3 | yes | Samples before full correction |
-| `BUF_DRIFT_THR_MM` | 0.0 | yes | Apply threshold; 0=OFF |
-| `BUF_DRIFT_CLAMP` | 2.0 | yes | Max correction magnitude (mm, runtime max 8.0) |
+| `BUF_DRIFT_THR_MM` | 2.0 | yes | Apply threshold; 0=OFF |
+| `BUF_DRIFT_CLAMP` | 3.0 | yes | Max correction magnitude (mm, runtime max 8.0) |
 | `BUF_DRIFT_MIN_CF` | 0.5 | yes | Min confidence to apply |
 | `ADV_RISK_WINDOW` | 60000 | runtime-only | Pin window (ms) |
 | `ADV_RISK_THR` | 4 | runtime-only | Pin count threshold |
 
 **Operator soak procedure:**
 1. Run ≥1 print; observe `BPD` and `BPN` in STATUS logs.
-2. If `|BPD|` converges to ≥ 0.3 mm consistently: `SET BUF_DRIFT_THR_MM:0.5`.
+2. If correction is too aggressive near a wall, lower `BUF_DRIFT_CLAMP` or
+   raise `BUF_DRIFT_THR_MM`; if still debugging baseline parity, set
+   `BUF_DRIFT_THR_MM:0`.
 3. If `BPD ≈ 0` after ≥5 transitions: drift is not the root cause; re-evaluate.
 
 ---

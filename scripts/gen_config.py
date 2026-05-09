@@ -72,8 +72,8 @@ DEFAULTS = {
     # Phase 2.6
     "buf_drift_ewma_tau_ms": "60000",
     "buf_drift_min_samples": "3",
-    "buf_drift_apply_thr_mm": "0.0",
-    "buf_drift_clamp_mm": "2.0",
+    "buf_drift_apply_thr_mm": "2.0",
+    "buf_drift_clamp_mm": "3.0",
     "buf_drift_apply_min_cf": "0.5",
     "adv_risk_window_ms": "60000",
     "adv_risk_threshold": "4",
