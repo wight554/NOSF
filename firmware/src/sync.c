@@ -41,6 +41,7 @@ static uint32_t sync_continuous_trailing_since_ms = 0;
 static uint32_t sync_post_trailing_boost_until_ms = 0;
 static uint32_t sync_recent_negative_until_ms = 0;
 static bool sync_positive_relaunch_pending = false;
+static uint32_t sync_advance_pin_since_ms = 0;
 
 buf_tracker_t g_buf = { .state = BUF_MID };
 
@@ -591,6 +592,7 @@ void sync_disable(bool reset_estimator) {
     sync_post_trailing_boost_until_ms = 0;
     sync_recent_negative_until_ms = 0;
     sync_positive_relaunch_pending = false;
+    sync_advance_pin_since_ms = 0;
 
     if (reset_estimator) {
         extruder_est_sps = 0.0f;
@@ -663,6 +665,12 @@ static void sync_apply_to_active(void) {
 static void sync_on_transition(buf_state_t prev, buf_state_t now_state, uint32_t now_ms) {
     if (prev == BUF_ADVANCE && now_state == BUF_TRAILING) {
         sync_fast_brake_until_ms = now_ms + 250u;
+    }
+
+    if (now_state == BUF_ADVANCE) {
+        sync_advance_pin_since_ms = now_ms;
+    } else if (prev == BUF_ADVANCE) {
+        sync_advance_pin_since_ms = 0;
     }
 
     if (!sync_tail_assist_active) {
@@ -999,4 +1007,22 @@ bool sync_is_positive_relaunch_damped(void) {
 
 bool sync_is_advance_predicted(void) {
     return !sync_is_positive_relaunch_damped() && predict_advance_coming();
+}
+
+float sync_reserve_target_mm(void) {
+    return buf_target_reserve_mm();
+}
+
+float sync_reserve_deadband_mm(void) {
+    return buf_virtual_deadband_mm();
+}
+
+uint32_t sync_advance_dwell_ms(uint32_t now_ms) {
+    if (sync_advance_pin_since_ms == 0 || g_buf.state != BUF_ADVANCE) return 0;
+    return now_ms - sync_advance_pin_since_ms;
+}
+
+uint32_t sync_est_age_ms(uint32_t now_ms) {
+    if (extruder_est_last_update_ms == 0) return 0;
+    return now_ms - extruder_est_last_update_ms;
 }

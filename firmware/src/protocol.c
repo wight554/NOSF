@@ -51,7 +51,7 @@ static bool cmd_event_permitted(void) {
 static void cmd_write_line(const char *prefix, const char *type, const char *data, bool best_effort) {
     if (best_effort && !cmd_event_permitted()) return;
 
-    char line[384];
+    char line[512];
     int len;
     if (data && *data) len = snprintf(line, sizeof(line), "%s%s:%s\n", prefix, type, data);
     else len = snprintf(line, sizeof(line), "%s%s\n", prefix, type);
@@ -88,8 +88,8 @@ static void status_dump(void) {
         if (target_tp > 0xFFFFF) target_tp = 0xFFFFF;
     }
 
-    char b[350];
-    snprintf(b, sizeof(b),
+    char b[512];
+    int blen = snprintf(b, sizeof(b),
         "LN:%d,TC:%s,L1T:%s,L2T:%s,"
         "I1:%d,O1:%d,I2:%d,O2:%d,"
         "TH:%d,YS:%d,BUF:%s,MM:%.1f,BL:%.1f,BP:%.2f,SM:%d,BI:%d,AP:%d,CU:%d,RELOAD:%d,"
@@ -125,6 +125,24 @@ static void status_dump(void) {
         (unsigned int)pwmconf,
         r_drv, r_gconf, r_tp, r_ts, r_pw,
         TMC_STEALTHCHOP_SPS[idx]);
+
+    if (blen > 0 && blen < (int)sizeof(b)) {
+        uint32_t now_ms = g_now_ms;
+        uint32_t ad_ms = sync_advance_dwell_ms(now_ms);
+        uint32_t td_ms = (g_buf.state == BUF_TRAILING && g_buf.entered_ms > 0)
+                         ? (now_ms - g_buf.entered_ms) : 0;
+        float tw_raw = sync_trailing_wall_time_ms(A);
+        uint32_t tw_ms = (tw_raw >= 99999.0f) ? 99999u : (uint32_t)tw_raw;
+        uint32_t ea_ms = sync_est_age_ms(now_ms);
+        snprintf(b + blen, sizeof(b) - (size_t)blen,
+            ",RT:%.2f,RD:%.2f,AD:%u,TD:%u,TW:%u,EA:%u",
+            (double)sync_reserve_target_mm(),
+            (double)sync_reserve_deadband_mm(),
+            (unsigned)ad_ms,
+            (unsigned)td_ms,
+            (unsigned)tw_ms,
+            (unsigned)ea_ms);
+    }
 
     cmd_reply("OK", b);
 }

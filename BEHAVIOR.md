@@ -180,6 +180,11 @@ If the buffer stays in MID for > 2 s, the estimator decays gently toward the
 current MMU speed. This keeps the feed-forward term sane during long steady
 sections where no new transitions arrive.
 
+The `EA:` field in the `?:` status response exposes the estimator age in
+milliseconds since the last meaningful update. A large `EA:` value while the
+arm is in `BUF_MID` is normal; a large `EA:` while in `BUF_ADVANCE` may
+indicate the bleed path is the only update source.
+
 #### Zone bias and recovery behavior
 
 In dual-endstop mode, firmware anchors the virtual position to the switch edge
@@ -205,6 +210,12 @@ deep hidden-margin target into firmware.
 
 This bias keeps the arm near the desired reserve target when the estimator is
 slightly wrong, while the estimator remains the dominant term.
+
+The `RT:` and `RD:` fields in `?:` status expose the current reserve target
+and deadband in mm, so tuning of `SYNC_RESERVE_PCT`, `BUF_HALF_TRAVEL`, and
+`SYNC_KP_RATE` can be observed in real time. `AD:` and `TD:` expose how long
+the arm has been continuously pinned at the advance or trailing endstop. `TW:`
+shows estimated time-to-trailing-wall in ms (99999 when not applicable).
 
 After a deep negative reserve excursion, firmware also latches a
 positive-relaunch damp state. During that state, positive reserve correction

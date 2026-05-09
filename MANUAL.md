@@ -155,6 +155,19 @@ Runtime status `BL` is the learned control baseline. `GET:` / `SET:` / `SV:` / `
 |-----------|------------------|-------------|---------|
 | `SERVO_BLOCK` | `servo_block_us` | Servo block position used between cutter phases | 950 |
 
+### Diagnostic Status Fields (tail-appended)
+
+These fields are appended after `SS:` in the `?:` response. They are additive and do not shift existing field positions.
+
+| Field | Unit | Description |
+|-------|------|-------------|
+| `RT` | mm (signed) | Reserve target position. Negative = trailing side. Set by `SYNC_RESERVE_PCT` and `BUF_HALF_TRAVEL`. |
+| `RD` | mm | Reserve deadband width around the target. |
+| `AD` | ms | Time the buffer arm has been continuously pinned at the advance-side switch. Zero when not in `BUF_ADVANCE`. |
+| `TD` | ms | Time the buffer arm has been continuously pinned at the trailing-side switch. Zero when not in `BUF_TRAILING`. |
+| `TW` | ms | Estimated time to trailing wall (remaining physical margin ÷ current net push velocity). Capped at 99999 when not applicable or well out of range. |
+| `EA` | ms | Age of the extruder velocity estimate — time since the estimator was last updated by a zone transition or bleed. |
+
 ---
 
 ## Events (`EV:`)
