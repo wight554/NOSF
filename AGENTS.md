@@ -90,10 +90,11 @@ Skip for doc-only edits, script changes, or build/config work — save context b
 5. **No mock/stub hardware** — all changes must compile against real Pico SDK target.
 6. **MANDATORY: Documentation Sync** — Every finished task must validate against all project docs (`MANUAL.md`, `BEHAVIOR.md`, etc.). Parameter name changes in code MUST update everywhere in docs.
 7. **MANDATORY: Runtime tunables live in `config.ini`** — No tuning defaults only in firmware C headers. Add/update keys in `config.ini` / `config.ini.example`, wire through `scripts/gen_config.py` into `firmware/include/tune.h`, consume `CONF_*` in firmware.
-8. **MANDATORY: Specify model in commit messages** — Always include exact model name in `Generated-By` footer. Examples: `Generated-By: Antigravity (Gemini 3.1 Flash)`. Creates audit trail. No need to repeat in chat.
-9. **MANDATORY: Analyze regression impact for new features** — Unless user asks to change current behavior, every new feature needs code-level impact review of affected flows (preload, load, unload, toolchange, sync, RELOAD, persistence, protocol, docs) and validation those flows stay intact.
-10. **MANDATORY: Use shell git for commits and pushes** — Don't use Git MCP for `git add`, `git commit`, or `git push`. Use non-interactive shell git instead.
-11. **MANDATORY: Do NOT commit local AI config** — Never commit `.agents/`, `.claude/`, or `skills-lock.json`. All AI config stays global per `AI.md`.
+8. **MANDATORY: Runtime tunable protocol parity** — Whenever adding or modifying any runtime/serial tunable, verify the full surface together: `SET:` handler, matching `GET:` handler, `scripts/nosf_cmd.py --dump` entry when it belongs in live dumps, and docs. Do not stop after `SET:` only.
+9. **MANDATORY: Specify model in commit messages** — Always include exact model name in `Generated-By` footer. Examples: `Generated-By: Antigravity (Gemini 3.1 Flash)`. Creates audit trail. No need to repeat in chat.
+10. **MANDATORY: Analyze regression impact for new features** — Unless user asks to change current behavior, every new feature needs code-level impact review of affected flows (preload, load, unload, toolchange, sync, RELOAD, persistence, protocol, docs) and validation those flows stay intact.
+11. **MANDATORY: Use shell git for commits and pushes** — Don't use Git MCP for `git add`, `git commit`, or `git push`. Use non-interactive shell git instead.
+12. **MANDATORY: Do NOT commit local AI config** — Never commit `.agents/`, `.claude/`, or `skills-lock.json`. All AI config stays global per `AI.md`.
 
 ## Commit Format
 
