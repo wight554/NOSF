@@ -93,6 +93,11 @@ run_current:
 # adv_risk_window_ms: 60000           # Rolling window for ADVANCE-pin density warning (runtime-only).
 # adv_risk_threshold: 4               # EV:SYNC,ADV_RISK_HIGH fires when pin count >= this (runtime-only).
 
+# ─── Phase 2.7 — Trailing-Bias Setpoint Shift & Adaptive Sync ─────────────────
+# sync_trailing_bias_frac: 0.0   # additional setpoint shift toward trailing.
+                                 # 0.0 = legacy behavior (SYNC_RESERVE_PCT only).
+                                 # 0.4 typical for slow-extrusion soak; 0.7 max.
+
 # ─── Smarter Sync (Estimator) ────────────────────────────────────────────────
 # est_alpha_min: 0.12          # Estimator responsiveness (slow drifts)
 # est_alpha_max: 0.65          # Estimator responsiveness (sharp jumps)

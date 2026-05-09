@@ -177,7 +177,8 @@ These fields are appended after `SS:` in the `?:` response. They are additive an
 
 | Field | Unit | Description |
 |-------|------|-------------|
-| `RT` | mm (signed) | Reserve target position. Negative = trailing side. Set by `SYNC_RESERVE_PCT` and `BUF_HALF_TRAVEL`. |
+| `RT` | mm (signed) | Reserve target position. Negative = trailing side. Set by `SYNC_RESERVE_PCT`, `TRAIL_BIAS_FRAC`, and `BUF_HALF_TRAVEL`. |
+| `TB` | % (int) | Trailing bias fraction × 100. |
 | `RD` | mm | Reserve deadband width around the target. |
 | `AD` | ms | Time the buffer arm has been continuously pinned at the advance-side switch. Zero when not in `BUF_ADVANCE`. |
 | `TD` | ms | Time the buffer arm has been continuously pinned at the trailing-side switch. Zero when not in `BUF_TRAILING`. |
@@ -223,3 +224,10 @@ These fields are appended after `SS:` in the `?:` response. They are additive an
 ### Fault Recovery
 Most faults (`TIMEOUT`, sensor-related faults) are transient and reset on the next command.
 **`FAULT:DRY_SPIN`** is sticky: it blocks automatic background tasks (Sync, RELOAD follow) to prevent motor wear. It clears automatically when a new spool is inserted (`IN` sensor triggers) or when a manual load command (`LO:`, `FL:`, etc.) is issued.
+
+### Trailing-Bias Tuning Quickstart (Phase 2.7)
+For slow-extrusion soak workflows, use this SET sequence to converge the baseline:
+1. `STATUS` to confirm baseline `RT:`, `BPV:` (or `BP:`).
+2. `SET:TRAIL_BIAS_FRAC:0.4`
+3. `SAVE`
+4. Soak 5+ minutes. Verify the post-blend position `BPV:` shifts ≥ 1.5 mm toward trailing without increasing `AD:` counts or causing extruder stall.

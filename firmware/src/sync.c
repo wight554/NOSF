@@ -146,10 +146,13 @@ static float buf_target_reserve_mm(void) {
     float threshold = buf_threshold_mm();
     float physical_half = buf_physical_half_travel_mm();
     float pct = (float)SYNC_RESERVE_PCT / 100.0f;
+    float bias = clamp_f(SYNC_TRAILING_BIAS_FRAC, 0.0f, 0.7f);
     float target = -(threshold * pct);
     float center_guard_mm = threshold * SYNC_RESERVE_CENTER_GUARD_FRAC;
 
     if (pct > 0.0f) target -= center_guard_mm;
+
+    target -= bias * threshold;
 
     float min_target = -physical_half + 0.5f;
     if (target < min_target) target = min_target;

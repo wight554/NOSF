@@ -224,7 +224,8 @@ draw and commanded MMU feed inside the physical travel envelope.
 
 The normal sync target is not `MID`. It is a buffered-reserve target on the
 trailing side set by `SYNC_RESERVE_PCT`, expressed as a percentage of
-`BUF_HALF_TRAVEL`. Firmware also keeps a small built-in center guard on top of
+`BUF_HALF_TRAVEL`. The `SYNC_TRAILING_BIAS_FRAC` tunable adds a further
+shift toward the trailing wall. Firmware also keeps a small built-in center guard on top of
 that percentage target so steady sync stays slightly farther away from the
 advance-side switch. This keeps reserve in the buffer without hard-coding a
 deep hidden-margin target into firmware.

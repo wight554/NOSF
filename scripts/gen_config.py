@@ -77,6 +77,8 @@ DEFAULTS = {
     "buf_drift_apply_min_cf": "0.5",
     "adv_risk_window_ms": "60000",
     "adv_risk_threshold": "4",
+    # Phase 2.7
+    "sync_trailing_bias_frac": "0.0",
     "est_alpha_min": "0.12",
     "est_alpha_max": "0.65",
     "zone_bias_base_rate": "90",
@@ -341,6 +343,7 @@ def main():
         f"#define CONF_SYNC_ADVANCE_RAMP_DELAY_MS {get('sync_advance_ramp_delay_ms')}",
         f"#define CONF_SYNC_OVERSHOOT_MID_EXTEND {get('sync_overshoot_mid_extend')}",
         f"#define CONF_SYNC_RESERVE_INTEGRAL_GAIN {get_float('sync_reserve_integral_gain')}f",
+        f"#define CONF_SYNC_TRAILING_BIAS_FRAC {get_float('sync_trailing_bias_frac')}f",
         f"#define CONF_SYNC_RESERVE_INTEGRAL_CLAMP_MM {get_float('sync_reserve_integral_clamp_mm')}f",
         f"#define CONF_SYNC_RESERVE_INTEGRAL_DECAY_MS {get('sync_reserve_integral_decay_ms')}",
         f"#define CONF_EST_SIGMA_HARD_CAP_MM {get_float('est_sigma_hard_cap_mm')}f",

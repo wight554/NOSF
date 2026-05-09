@@ -100,6 +100,8 @@ typedef struct {
     float buf_drift_clamp_mm;
     float buf_drift_apply_min_cf;
 
+    float sync_trailing_bias_frac;
+
     uint32_t crc32;
 } settings_t;
 
@@ -547,3 +549,4 @@ void settings_load(void) {
 
     tmc_apply_all();
 }
+
