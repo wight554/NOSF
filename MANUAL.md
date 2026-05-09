@@ -191,9 +191,9 @@ These fields are appended after `SS:` in the `?:` response. They are additive an
 | `EC` | 0–100 | Estimator confidence based on sigma (independent of source `CF`). |
 | `BPR` | mm (signed) | Last per-transition residual: `g_buf_pos − switch_pos_mm` measured just before the virtual position snaps to the switch threshold. Non-zero values indicate virtual/physical mismatch at that crossing. |
 | `BPD` | mm (signed) | Drift EWMA — exponentially weighted average of `BPR` samples (time constant `BUF_DRIFT_TAU_MS`). A stable non-zero value indicates systematic virtual-position bias. |
-| `BPN` | int | Number of zone transitions sampled into `BPD`. Drift correction ramps in until `BPN >= BUF_DRIFT_MIN_SMP`, then applies at full configured strength. |
+| `BPN` | int | Number of zone transitions sampled into `BPD`. Drift correction ramps in until `BPN >= BUF_DRIFT_MIN_SMP`, then can apply at full configured strength away from the opposite wall. |
 | `APX` | int | Count of `BUF_ADVANCE` pin entries within the last `ADV_RISK_WINDOW` ms. `EV:SYNC,ADV_RISK_HIGH` fires when this reaches `ADV_RISK_THR`. |
-| `RDC` | 0–100 | Drift-correction activity scalar: 0 = inactive or disabled, 100 = correction at full clamp (`BUF_DRIFT_CLAMP`). |
+| `RDC` | 0–100 | Drift-correction activity scalar after confidence gating, sample ramp, clamp, and opposite-wall taper. `100` means correction is applying at the configured clamp; values can drop near a physical endstop so correction cannot hide the wall. |
 
 ---
 

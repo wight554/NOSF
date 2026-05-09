@@ -205,9 +205,14 @@ linearly until `BUF_DRIFT_MIN_SMP` samples have accumulated; for example, with
 `BUF_DRIFT_MIN_SMP=3`, the first sample applies one third of the clamped
 correction and the third sample applies full correction. The integration loop
 and re-anchoring always use the raw position; only the controller's *reaction*
-to the current position is corrected. `RDC:` (0–100) shows the correction
-activity level. The observer state resets on sync stop, `EST_FALLBACK`, and
-sensor hot-swap, emitting `EV:BUF,DRIFT_RESET`.
+to the current position is corrected. Correction is also sign-aware tapered
+near the opposite physical endstop: negative drift correction fades out as the
+raw position approaches `TRAILING`, and positive drift correction fades out as
+the raw position approaches `ADVANCE`. This keeps drift compensation from
+masking a real wall contact. `RDC:` (0–100) shows the final correction activity
+after sample ramp, clamp, confidence gating, and wall taper. The observer state
+resets on sync stop, `EST_FALLBACK`, and sensor hot-swap, emitting
+`EV:BUF,DRIFT_RESET`.
 
 #### Zone bias and recovery behavior
 
@@ -253,9 +258,11 @@ pin occurs.
 Phase 2.6 adds a transition-residual drift correction layer (`RDC:`). When
 enabled (`BUF_DRIFT_THR_MM > 0`), the effective position seen by the control
 law is shifted by the signed EWMA of pre-snap residuals, ramping from the first
-sample to full strength at `BUF_DRIFT_MIN_SMP`. When enabled and the integral
-is also active, the integral operates on the corrected position so both terms do
-not double-correct for the same bias. `APX:` counts recent
+sample to full strength at `BUF_DRIFT_MIN_SMP`. The correction fades near the
+opposite endstop, so a learned bias can help through the mid-zone without
+hiding a physical wall. When enabled and the integral is also active, the
+integral operates on the corrected position so both terms do not double-correct
+for the same bias. `APX:` counts recent
 advance-pin events; `EV:SYNC,ADV_RISK_HIGH` fires when the density exceeds
 `ADV_RISK_THR` in the `ADV_RISK_WINDOW` rolling window.
 

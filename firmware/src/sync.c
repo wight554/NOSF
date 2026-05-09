@@ -916,9 +916,22 @@ void sync_tick(uint32_t now_ms) {
     if (drift_apply_gate) {
         float sample_frac = clamp_f((float)g_bp_drift_samples / (float)drift_min_samples, 0.0f, 1.0f);
         drift_correction_mm = clamp_f(g_bp_drift_ewma_mm, -BUF_DRIFT_CLAMP_MM, BUF_DRIFT_CLAMP_MM) * sample_frac;
+        float thr = buf_threshold_mm();
+        float wall_taper_mm = reserve_deadband_mm * 2.0f;
+        if (wall_taper_mm < 0.5f) wall_taper_mm = 0.5f;
+
+        if (drift_correction_mm < 0.0f) {
+            float dist_from_trailing_mm = g_buf_pos + thr;
+            float wall_frac = clamp_f(dist_from_trailing_mm / wall_taper_mm, 0.0f, 1.0f);
+            drift_correction_mm *= wall_frac;
+        } else if (drift_correction_mm > 0.0f) {
+            float dist_from_advance_mm = thr - g_buf_pos;
+            float wall_frac = clamp_f(dist_from_advance_mm / wall_taper_mm, 0.0f, 1.0f);
+            drift_correction_mm *= wall_frac;
+        }
+
         bp_eff = g_buf_pos - drift_correction_mm;
         /* Clamp so correction cannot push bp_eff past the endstop zone boundary */
-        float thr = buf_threshold_mm();
         bp_eff = clamp_f(bp_eff, -thr, thr);
     }
     g_bp_drift_correction_applied_mm = drift_correction_mm;
