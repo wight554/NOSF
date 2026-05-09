@@ -14,6 +14,12 @@ The live loop reads NOSF status and marker lines, learns per
 BASELINE_SPS and TRAIL_BIAS_FRAC. If a serial write fails, the tuner
 waits 1 s and attempts to reopen the configured port up to five times.
 If reconnect fails, it exits non-zero without modifying the state file.
+
+Config patch emission uses recency-weighted bucket means:
+    weight = n / (1 + age_seconds / 86400)
+where age_seconds is computed from each bucket's last_seen wall-clock
+timestamp. Recent locked buckets therefore carry full sample weight while
+older buckets decay gently over multi-day tuning cycles.
 """
 
 import argparse
@@ -142,6 +148,8 @@ class Tuner:
         self.lock_engaged = False
         self.last_feature = ""
         self.last_v_fil = 0.0
+        self.last_marker_t = 0.0
+        self.idle_since = 0.0
         self.recent_sets = deque()
         self._load_state()
 
@@ -246,6 +254,8 @@ class Tuner:
         m = M118_RE.search(raw)
         if not m:
             return
+        self.last_marker_t = self.now_fn()
+        self.idle_since = 0.0
         self.last_feature = m.group("feature").strip()
         try:
             self.last_v_fil = float(m.group("vfil"))
@@ -272,7 +282,10 @@ class Tuner:
             return
         tc = fields.get("TC", "")
         if tc and tc != "IDLE":
+            self.idle_since = 0.0
             return
+        if tc == "IDLE" and self.idle_since == 0.0:
+            self.idle_since = now
         apx = int(float(fields.get("APX", "0") or 0))
         if apx >= APX_THR:
             self.frozen_until = now + 10.0
@@ -373,6 +386,14 @@ class Tuner:
         b.P = max(b.P, 1e4)
         if b.last_set_x:
             self._send(f"SET:BASELINE_SPS:{int(round(b.last_set_x))}")
+
+    def print_idle_ready(self, idle_s: float = 30.0) -> bool:
+        now = self.now_fn()
+        if self.idle_since == 0.0 or now - self.idle_since < idle_s:
+            return False
+        if self.last_marker_t and now - self.last_marker_t < idle_s:
+            return False
+        return True
 
 
 def reader(ser, lines: queue.Queue) -> None:
@@ -509,17 +530,29 @@ def emit_patch(state_path: str, machine_id: str, out_path: str) -> None:
     if not locked:
         print("[tuner] no locked buckets to commit", file=sys.stderr)
         sys.exit(1)
-    total_n = sum(int(v.get("n", 0)) for v in locked.values()) or 1
-    baseline = sum(float(v.get("x", 0.0)) * int(v.get("n", 0)) for v in locked.values()) / total_n
-    bias = sum(float(v.get("bias", 0.4)) * int(v.get("n", 0)) for v in locked.values()) / total_n
+    now = time.time()
+    weights = {}
+    for label, raw in locked.items():
+        n = max(1, int(raw.get("n", 0)))
+        try:
+            last_seen = float(raw.get("last_seen", now))
+        except (TypeError, ValueError):
+            last_seen = now
+        age_s = max(0.0, now - last_seen)
+        weights[label] = n / (1.0 + age_s / 86400.0)
+    total_w = sum(weights.values()) or 1.0
+    baseline = sum(float(v.get("x", 0.0)) * weights[k] for k, v in locked.items()) / total_w
+    bias = sum(float(v.get("bias", 0.4)) * weights[k] for k, v in locked.items()) / total_w
     with open(out_path, "w") as fh:
         fh.write("# nosf_live_tuner.py emitted patch\n")
         fh.write("# Apply to config.ini after review.\n")
+        fh.write("# recency weight: n / (1 + age_seconds / 86400)\n")
         fh.write(f"# locked buckets: {len(locked)}\n")
         for label, raw in sorted(locked.items()):
             fh.write(
                 f"#   {label}: x={float(raw.get('x', 0.0)):.0f} "
-                f"bias={float(raw.get('bias', 0.4)):.3f} n={int(raw.get('n', 0))}\n"
+                f"bias={float(raw.get('bias', 0.4)):.3f} "
+                f"n={int(raw.get('n', 0))} weight={weights[label]:.1f}\n"
             )
         fh.write(f"baseline_rate_sps_suggestion: {int(round(baseline))}\n")
         fh.write(f"sync_trailing_bias_frac: {bias:.3f}\n")
@@ -589,6 +622,14 @@ def run_loop(args) -> None:
                 tuner.on_event(line)
             elif "BUF:" in line and "BP:" in line:
                 tuner.on_status(line)
+                if args.commit_on_idle and tuner.print_idle_ready():
+                    tuner._send("SET:LIVE_TUNE_LOCK:0", count_rate=False)
+                    time.sleep(0.1)
+                    tuner._send("SV:", count_rate=False)
+                    tuner._persist()
+                    emit_patch(args.state, args.machine_id, "/tmp/nosf-patch.ini")
+                    print("[tuner] commit-on-idle patch: /tmp/nosf-patch.ini", file=sys.stderr)
+                    return
     except KeyboardInterrupt:
         tuner._persist()
         print("[tuner] persisted state on exit", file=sys.stderr)
@@ -611,6 +652,7 @@ def main() -> None:
     ap.add_argument("--unlock", metavar="FEATURE", help="Unlock matching bucket label or feature prefix and exit")
     ap.add_argument("--state-info", action="store_true", help="Print state summary table and exit")
     ap.add_argument("--reset-runtime", action="store_true", help="Send LIVE_TUNE_LOCK:0 and LD:, then exit")
+    ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, unlock, SV:, emit /tmp/nosf-patch.ini, and exit")
     args = ap.parse_args()
     if args.state is None:
         args.state = default_state_path(args.machine_id)
