@@ -141,6 +141,24 @@ def test_rate_limit_three_sets_per_window():
         return "rate limit allows only 3 SETs per 30 s window"
 
 
+def test_commit_idle_requires_activity():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        fake = FakeSerial()
+        t = tuner_mod.Tuner(fake, os.path.join(td, "state.json"), "test", now_fn=clock.now, wall_fn=clock.now)
+        for _ in range(50):
+            clock.step(1.0)
+            t.on_status(status(est=1800))
+        assert not t.print_idle_ready(), "idle should not commit before marker activity"
+        t.on_m118("echo: NOSF_TUNE:PERIMETER:V40:W0.45:H0.20")
+        clock.step(1.0)
+        t.on_status(status(est=1800))
+        clock.step(31.0)
+        t.on_status(status(est=1800))
+        assert t.print_idle_ready(), "idle should commit after marked print activity"
+        return "commit-on-idle arms only after marker activity"
+
+
 def main():
     tests = [
         ("warm-up", test_cold_start_no_set),
@@ -148,6 +166,7 @@ def main():
         ("adv-risk", test_adv_risk_freeze_and_rollback),
         ("halt", test_adv_dwell_stop_halts),
         ("rate-limit", test_rate_limit_three_sets_per_window),
+        ("idle-arm", test_commit_idle_requires_activity),
     ]
     print(f"{'case':<14} result")
     print(f"{'-' * 14} {'-' * 40}")

@@ -150,6 +150,7 @@ class Tuner:
         self.last_v_fil = 0.0
         self.last_marker_t = 0.0
         self.idle_since = 0.0
+        self.seen_print_activity = False
         self.recent_sets = deque()
         self._load_state()
 
@@ -254,6 +255,7 @@ class Tuner:
         m = M118_RE.search(raw)
         if not m:
             return
+        self.seen_print_activity = True
         self.last_marker_t = self.now_fn()
         self.idle_since = 0.0
         self.last_feature = m.group("feature").strip()
@@ -388,6 +390,8 @@ class Tuner:
             self._send(f"SET:BASELINE_SPS:{int(round(b.last_set_x))}")
 
     def print_idle_ready(self, idle_s: float = 30.0) -> bool:
+        if not self.seen_print_activity:
+            return False
         now = self.now_fn()
         if self.idle_since == 0.0 or now - self.idle_since < idle_s:
             return False
