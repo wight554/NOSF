@@ -352,6 +352,8 @@ def main():
         f"#define CONF_MID_CREEP_TIMEOUT_MS {get('mid_creep_timeout_ms')}",
         f"#define CONF_MID_CREEP_RATE_SPS_PER_S {get('mid_creep_rate_sps_per_s')}",
         f"#define CONF_MID_CREEP_CAP_FRAC {get('mid_creep_cap_frac')}",
+        f"#define CONF_BUF_VARIANCE_BLEND_FRAC {get_float('buf_variance_blend_frac')}f",
+        f"#define CONF_BUF_VARIANCE_BLEND_REF_MM {get_float('buf_variance_blend_ref_mm')}f",
         f"#define CONF_SYNC_RESERVE_INTEGRAL_CLAMP_MM {get_float('sync_reserve_integral_clamp_mm')}f",
         f"#define CONF_SYNC_RESERVE_INTEGRAL_DECAY_MS {get('sync_reserve_integral_decay_ms')}",
         f"#define CONF_EST_SIGMA_HARD_CAP_MM {get_float('est_sigma_hard_cap_mm')}f",

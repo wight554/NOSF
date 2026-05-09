@@ -286,6 +286,9 @@ extern int g_baseline_target_sps;
 extern int g_baseline_sps;
 extern float g_baseline_alpha;
 extern uint32_t sync_fast_brake_until_ms;
+extern char g_marker_tag[32];
+extern uint16_t g_marker_seq;
+
 extern buf_tracker_t g_buf;
 extern float extruder_est_sps;
 extern float g_buf_pos;

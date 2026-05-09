@@ -145,7 +145,7 @@ static void status_dump(void) {
         }
         snprintf(b + blen, sizeof(b) - (size_t)blen,
             ",RT:%.2f,RD:%.2f,AD:%u,TD:%u,TW:%u,EA:%u,SK:%u,CF:%.2f,RI:%.2f,RC:%d,ES:%.2f,EC:%d"
-            ",BPR:%.2f,BPD:%.2f,BPN:%d,APX:%d,RDC:%d,TB:%d,MC:%d,VB:%d,BPV:%d",
+            ",BPR:%.2f,BPD:%.2f,BPN:%d,APX:%d,RDC:%d,TB:%d,MC:%d,VB:%d,BPV:%d,MK:%u:%s",
             (double)sync_reserve_target_mm(),
             (double)sync_reserve_deadband_mm(),
             (unsigned)ad_ms,

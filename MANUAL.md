@@ -188,6 +188,7 @@ These fields are appended after `SS:` in the `?:` response. They are additive an
 | `MC` | SPS | Mid-zone creep component added to target rate |
 | `VB` | % (int) | Variance blend distrust percentage |
 | `BPV`| mm × 100 | Post-blend effective position used by control loops |
+| `MK` | seq:tag | Telemetry marker tag and sequence number set by the most recent `MARK:` command. |
 | `RD` | mm | Reserve deadband width around the target. |
 | `AD` | ms | Time the buffer arm has been continuously pinned at the advance-side switch. Zero when not in `BUF_ADVANCE`. |
 | `TD` | ms | Time the buffer arm has been continuously pinned at the trailing-side switch. Zero when not in `BUF_TRAILING`. |
@@ -240,4 +241,6 @@ For slow-extrusion soak workflows, use this SET sequence to converge the baselin
 2. `SET:TRAIL_BIAS_FRAC:0.4`
 3. `SAVE`
 4. Soak 5+ minutes. Verify the post-blend position `BPV:` shifts ≥ 1.5 mm toward trailing without increasing `AD:` counts or causing extruder stall.
+r causing extruder stall.
+or causing extruder stall.
 r causing extruder stall.

@@ -104,6 +104,8 @@ typedef struct {
     int mid_creep_timeout_ms;
     int mid_creep_rate_sps_per_s;
     int mid_creep_cap_frac;
+    float buf_variance_blend_frac;
+    float buf_variance_blend_ref_mm;
 
     uint32_t crc32;
 } settings_t;
@@ -569,13 +571,5 @@ void settings_load(void) {
     motion_limit_runtime_rates(false);
 
     tmc_apply_all();
-}
-
-time_rates(false);
-
-    tmc_apply_all();
-}
-
-
 }
 

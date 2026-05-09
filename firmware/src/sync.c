@@ -83,7 +83,11 @@ float extruder_est_prev_sps = 0.0f;
 uint32_t extruder_est_last_update_ms = 0;
 uint32_t last_slope_update_ms = 0;
 
+char g_marker_tag[32] = {0};
+uint16_t g_marker_seq = 0;
+
 float g_buf_pos = 0.0f;
+float g_buf_pos_raw_status = 0.0f;
 
 bool g_boot_stabilizing = false;
 uint32_t g_boot_stabilize_deadline_ms = 0;
@@ -1391,4 +1395,8 @@ int sync_adv_pin_window_count(uint32_t now_ms) {
 
 float sync_bp_drift_correction_applied_mm(void) {
     return g_bp_drift_correction_applied_mm;
+}
+
+int sync_mid_creep_sps(void) {
+    return g_mid_creep_sps;
 }
