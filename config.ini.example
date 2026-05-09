@@ -94,9 +94,14 @@ run_current:
 # adv_risk_threshold: 4               # EV:SYNC,ADV_RISK_HIGH fires when pin count >= this (runtime-only).
 
 # ─── Phase 2.7 — Trailing-Bias Setpoint Shift & Adaptive Sync ─────────────────
-# sync_trailing_bias_frac: 0.0   # additional setpoint shift toward trailing.
+# sync_trailing_bias_frac: 0.4   # additional setpoint shift toward trailing.
                                  # 0.0 = legacy behavior (SYNC_RESERVE_PCT only).
                                  # 0.4 typical for slow-extrusion soak; 0.7 max.
+# mid_creep_timeout_ms: 4000     # Mid-dwell wait before creep activates (ms). 0 disables.
+# mid_creep_rate_sps_per_s: 5    # Creep ramp slope. 0 disables.
+# mid_creep_cap_frac: 10         # Hard cap on creep as percentage of extruder_est_sps.
+# buf_variance_blend_frac: 0.5   # Max variance-aware blend fraction (0.0=OFF, 0.5 typical).
+# buf_variance_blend_ref_mm: 1.0 # Sigma value at which blend distrust saturates.
 
 # ─── Smarter Sync (Estimator) ────────────────────────────────────────────────
 # est_alpha_min: 0.12          # Estimator responsiveness (slow drifts)
