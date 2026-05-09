@@ -953,7 +953,7 @@ void sync_tick(uint32_t now_ms) {
          * This creates a gentle "feed pressure" that ensures we don't under-feed
          * while the model is drifting open-loop. This shift disappears as soon as
          * we hit a switch and restore confidence. */
-        float uncertainty_shift_mm = (1.0f - g_buf_signal.confidence) * (thr * 0.4f);
+        float uncertainty_shift_mm = (1.0f - g_buf_signal.confidence) * (thr * 0.8f);
         bp_eff += uncertainty_shift_mm;
 
         /* Clamp so correction cannot push bp_eff past the endstop zone boundary */
@@ -1004,7 +1004,7 @@ void sync_tick(uint32_t now_ms) {
             /* Model thinks we are full, but we are physically in MID.
              * Extruder MUST be faster than current MMU rate.
              * Bleed EST up aggressively to "pull" the model out of the wall. */
-            float margin = 4.0f; // ~100mm/min
+            float margin = 6.0f; // ~150mm/min optimism
             float target_rate = (float)lane_motion_sps(A) + margin;
             if (extruder_est_sps < target_rate) {
                 extruder_est_sps += 0.05f * (target_rate - extruder_est_sps);
@@ -1114,6 +1114,14 @@ void sync_tick(uint32_t now_ms) {
 
     int target_sps = (int)extruder_est_sps + reserve_correction + zone_bias + slope_bias - overshoot_trim - wall_trim;
     if (advance_predicted) target_sps += PRE_RAMP_SPS;
+
+    /* RAMPING BIAS: If we don't know where we are, raise speed a little bit
+     * until we touch trailing. This probe speed (up to ~150mm/min) ensures
+     * we gravitate toward the safe trailing wall rather than drifting toward advance. */
+    if (g_buf_signal.confidence < 1.0f && s == BUF_MID) {
+        float uncertainty = 1.0f - g_buf_signal.confidence;
+        target_sps += (int)(uncertainty * 6.0f);
+    }
 
     if (s == BUF_ADVANCE && sync_advance_pin_since_ms != 0) {
         uint32_t adv_dwell_ms = now_ms - sync_advance_pin_since_ms;
