@@ -685,6 +685,12 @@ void sync_disable(bool reset_estimator) {
 static int sync_bootstrap_sps(void) {
     int max_sps = sync_clamp_max_sps(SYNC_MAX_SPS);
     int startup_floor_sps = TRAILING_SPS + PRE_RAMP_SPS;
+
+    /* Adaptive floor: if we have a learned baseline, don't start way below it. */
+    if (g_baseline_sps > (startup_floor_sps * 2)) {
+        int adaptive_floor = g_baseline_sps / 2;
+        if (adaptive_floor > startup_floor_sps) startup_floor_sps = adaptive_floor;
+    }
     if (startup_floor_sps < BUF_STAB_SPS) startup_floor_sps = BUF_STAB_SPS;
 
     bool est_fresh = extruder_est_last_update_ms != 0 &&
@@ -942,6 +948,13 @@ void sync_tick(uint32_t now_ms) {
          * If we are physically at a wall, the controller must see it as at or beyond that wall. */
         if (s == BUF_TRAILING && bp_eff > -thr) bp_eff = -thr;
         else if (s == BUF_ADVANCE && bp_eff < thr) bp_eff = thr;
+
+        /* CONFIDENCE BIAS: If we are uncertain, shift bp_eff toward the ADVANCE side.
+         * This creates a gentle "feed pressure" that ensures we don't under-feed
+         * while the model is drifting open-loop. This shift disappears as soon as
+         * we hit a switch and restore confidence. */
+        float uncertainty_shift_mm = (1.0f - g_buf_signal.confidence) * (thr * 0.4f);
+        bp_eff += uncertainty_shift_mm;
 
         /* Clamp so correction cannot push bp_eff past the endstop zone boundary */
         bp_eff = clamp_f(bp_eff, -thr, thr);
@@ -1231,6 +1244,7 @@ void sync_tick(uint32_t now_ms) {
         cmd_event("BS", ev);
     }
 }
+
 float sync_reserve_error_mm(void) {
     return g_buf_pos - buf_target_reserve_mm();
 }
@@ -1313,4 +1327,3 @@ int sync_adv_pin_window_count(uint32_t now_ms) {
 float sync_bp_drift_correction_applied_mm(void) {
     return g_bp_drift_correction_applied_mm;
 }
-
