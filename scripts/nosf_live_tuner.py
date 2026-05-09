@@ -157,6 +157,7 @@ class Tuner:
         self.finish_seen = False
         self.debug = False
         self.recent_sets = deque()
+        self.last_rate_limit_warn_t = -999.0
         self._load_state()
 
     def _load_state(self) -> None:
@@ -252,7 +253,9 @@ class Tuner:
         while self.recent_sets and now - self.recent_sets[0] > 30.0:
             self.recent_sets.popleft()
         if len(self.recent_sets) >= 3:
-            print("[tuner] write rate limited: >3 SETs in 30 s", file=sys.stderr)
+            if now - self.last_rate_limit_warn_t >= 10.0:
+                print("[tuner] write rate limited: >3 SETs in 30 s", file=sys.stderr)
+                self.last_rate_limit_warn_t = now
             return True
         return False
 
@@ -374,19 +377,21 @@ class Tuner:
     def _maybe_emit_set(self, b: Bucket, now: float) -> None:
         if now - self.last_set_t < MIN_SET_SPACING:
             return
-        if self._rate_limited(now):
-            return
         if b.n < N_MIN_SAMPLES:
             return
         if b.P > 4.0 * P_STABLE_THR:
             return
         if abs(b.x - b.last_set_x) >= SET_DEADBAND_SPS:
+            if self._rate_limited(now):
+                return
             self._engage_lock()
             self._send(f"SET:BASELINE_SPS:{int(round(b.x))}")
             b.last_set_x = b.x
             self.last_set_t = now
             return
         if abs(b.bias - b.last_set_bias) >= BIAS_DEADBAND:
+            if self._rate_limited(now):
+                return
             self._engage_lock()
             self._send(f"SET:TRAIL_BIAS_FRAC:{b.bias:.3f}")
             b.last_set_bias = b.bias
