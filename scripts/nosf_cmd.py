@@ -92,6 +92,17 @@ DUMP_PARAMS = [
     ("SYNC_RESERVE_PCT",  "sync_reserve_pct",        False),
     ("SYNC_AUTO_STOP",    "sync_auto_stop_ms",       False),
     ("POST_PRINT_STAB_MS", "post_print_stab_delay_ms", False),
+    # --- Phase 1 — Advance Hardening ---
+    ("SYNC_ADV_STOP_MS",  "sync_advance_dwell_stop_ms", False),
+    ("SYNC_ADV_RAMP_MS",  "sync_advance_ramp_delay_ms", False),
+    ("SYNC_OVERSHOOT_MID_EXT", "sync_overshoot_mid_extend", False),
+    # --- Phase 2.5 — Integral Centering & Confidence ---
+    ("SYNC_INT_GAIN",     "sync_reserve_integral_gain", False),
+    ("SYNC_INT_CLAMP",    "sync_reserve_integral_clamp_mm", False),
+    ("SYNC_INT_DECAY_MS", "sync_reserve_integral_decay_ms", False),
+    ("EST_SIGMA_CAP",     "est_sigma_hard_cap_mm",     False),
+    ("EST_LOW_CF_THR",    "est_low_cf_warn_threshold", False),
+    ("EST_FALLBACK_THR",  "est_fallback_cf_threshold", False),
     # --- Smarter Sync ---
     ("EST_ALPHA_MIN",     "est_alpha_min",           False),
     ("EST_ALPHA_MAX",     "est_alpha_max",           False),
@@ -147,6 +158,8 @@ SECTION_BREAKS = {
     "feed_rate":           "# ─── Speeds (mm/min) ───────────────────────────────────────────────────────",
     "motion_startup_ms":   "# ─── Motion / Ramp ─────────────────────────────────────────────────────────",
     "buf_half_travel_mm":  "# ─── Buffer Sync ───────────────────────────────────────────────────────────",
+    "sync_advance_dwell_stop_ms": "# ─── Phase 1 — Advance Hardening ───────────────────────────────────────────",
+    "sync_reserve_integral_gain": "# ─── Phase 2.5 — Integral Centering & Confidence ───────────────────────────",
     "est_alpha_min":       "# ─── Smarter Sync (Estimator) ─────────────────────────────────────────────",
     "dist_in_out":         "# ─── Physical Model (mm) ─────────────────────────────────────────────────",
     "buf_sensor_type":     "# ─── Analog Buffer Sensor ─────────────────────────────────────────────────",
@@ -160,8 +173,8 @@ BOOL_KEYS = {
     "interpolate",
     "auto_mode",
     "auto_preload",
-    "reload_mode",
     "enable_cutter",
+    "sync_overshoot_mid_extend",
 }
 
 
