@@ -233,6 +233,24 @@ oscillates.
 
 ---
 
+## Telemetry and Tuning — nosf_logger.py
+
+Phase 2.7 adds high-speed diagnostic capture. Use `scripts/nosf_logger.py` to
+stream internal state to a CSV file for offline analysis.
+
+1. Start the logger on the Pi:
+   ```bash
+   python3 scripts/nosf_logger.py --port /dev/ttyACM0 --out run1.csv
+   ```
+2. Run your print.
+3. Stop the logger (Ctrl+C).
+4. Analyze the results with `scripts/nosf_analyze.py`:
+   ```bash
+   python3 scripts/nosf_analyze.py --in run1.csv --out patch.ini
+   ```
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |

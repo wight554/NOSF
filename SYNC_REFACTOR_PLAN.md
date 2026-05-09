@@ -1463,6 +1463,8 @@ release blocker.
 
 ### Phase 2.7 Open Questions (deferred)
 
+- **Decision on 2.7.5 (PID).** Based on engineering analysis of the Bayesian blend (2.7.2) and active mid-zone creep (2.7.1), the system already provides sufficient residency on the trailing side and robust recovery from estimator drift. Adding a full PID controller at this stage would introduce significant tuning complexity for marginal gain on dual-switch hardware. 2.7.5 is deferred until more data from long-term real-world prints (≥ 100 runs) is analyzed. Phase 2.7 ships without firmware PID.
+
 - **Q-2.7-A.** Should `gcode_marker.py` emit Klipper `SET_GCODE_VARIABLE`
   calls in addition to `M118` for tighter integration with Klipper macros
   that consume slicer feature names? Decide after first end-to-end soak.

@@ -97,7 +97,7 @@ Persistent tunables follow this path:
 9. Update relevant docs (`MANUAL.md`, `BEHAVIOR.md`, `README.md`, etc.).
 10. Bump `SETTINGS_VERSION` in `firmware/src/settings_store.c` when `settings_t` layout changes.
 
-Current `SETTINGS_VERSION`: `38` in `firmware/src/settings_store.c`.
+Current `SETTINGS_VERSION`: `47` in `firmware/src/settings_store.c`.
 
 ---
 

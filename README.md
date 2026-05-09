@@ -108,6 +108,9 @@ python3 scripts/nosf_cmd.py "SV:"
 ## Helper Scripts
 
 - `scripts/nosf_cmd.py`: Serial helper — send commands and dump live config
+- `scripts/nosf_logger.py`: High-speed CSV telemetry capture (10 Hz polling)
+- `scripts/nosf_analyze.py`: Offline regression and auto-tuning patch generator
+- `scripts/gcode_marker.py`: G-code metadata injector for telemetry correlation
 - `scripts/gen_config.py`: Generate `tune.h` from `config.ini`
 - `scripts/validate_regression.sh`: One-command static regression gate before flashing hardware
 
