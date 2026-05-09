@@ -959,6 +959,16 @@ void sync_tick(uint32_t now_ms) {
     float raw_target = buf_target_reserve_mm();
     float reserve_deadband_mm = buf_virtual_deadband_mm();
 
+    g_buf_pos_raw_status = g_buf_pos;
+    /* Phase 2.7.2: variance-aware position blend (default OFF) */
+    if (BUF_VARIANCE_BLEND_FRAC > 0.0f && g_buf_sigma_mm > 0.0f) {
+        float sigma_ref = (BUF_VARIANCE_BLEND_REF_MM > 0.05f)
+                          ? BUF_VARIANCE_BLEND_REF_MM : 1.0f;
+        float distrust = clamp_f(g_buf_sigma_mm / sigma_ref, 0.0f, 1.0f);
+        float blend = distrust * BUF_VARIANCE_BLEND_FRAC;
+        g_buf_pos = (1.0f - blend) * g_buf_pos + blend * raw_target;
+    }
+
     /* Phase 2.6: effective buffer position with drift correction (default OFF) */
     float bp_eff = g_buf_pos;
     float drift_correction_mm = 0.0f;
@@ -995,9 +1005,13 @@ void sync_tick(uint32_t now_ms) {
         /* CONFIDENCE BIAS: If we are uncertain, shift bp_eff toward the ADVANCE side.
          * This creates a gentle "feed pressure" that ensures we don't under-feed
          * while the model is drifting open-loop. This shift disappears as soon as
-         * we hit a switch and restore confidence. */
-        float uncertainty_shift_mm = (1.0f - g_buf_signal.confidence) * (thr * 0.8f);
-        bp_eff += uncertainty_shift_mm;
+         * we hit a switch and restore confidence.
+         * When 2.7.2 blend is active (BLEND_FRAC > 0), 2.6's confidence-bias is
+         * redundant. Gate it off in that case. */
+        if (BUF_VARIANCE_BLEND_FRAC <= 0.0f) {
+            float uncertainty_shift_mm = (1.0f - g_buf_signal.confidence) * (thr * 0.8f);
+            bp_eff += uncertainty_shift_mm;
+        }
 
         /* Clamp so correction cannot push bp_eff past the endstop zone boundary */
         bp_eff = clamp_f(bp_eff, -thr, thr);

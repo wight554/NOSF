@@ -122,6 +122,12 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `EST_ALPHA_MIN`| `est_alpha_min` | Estimator responsiveness for slow drifts | 0.12 |
 | `EST_ALPHA_MAX`| `est_alpha_max` | Estimator responsiveness for sharp jumps | 0.65 |
 | `SYNC_RESERVE_PCT` | `sync_reserve_pct` | Normal-sync reserve target as % of `BUF_HALF_TRAVEL` toward trailing | 35 |
+| `TRAIL_BIAS_FRAC` | `sync_trailing_bias_frac` | Additional trailing-side setpoint shift (0.0 to 0.7) | 0.0 |
+| `MID_CREEP_TIMEOUT_MS` | `mid_creep_timeout_ms` | Mid-dwell wait before creep activates | 0 |
+| `MID_CREEP_RATE` | `mid_creep_rate_sps_per_s` | Creep ramp slope (SPS/s) | 0 |
+| `MID_CREEP_CAP` | `mid_creep_cap_frac` | Hard cap on creep as % of extruder_est_sps | 10 |
+| `VAR_BLEND_FRAC` | `buf_variance_blend_frac` | Max variance-aware blend fraction (0.0=OFF) | 0.0 |
+| `VAR_BLEND_REF_MM` | `buf_variance_blend_ref_mm` | Sigma value at which blend distrust saturates | 1.0 |
 | `ZONE_BIAS_BASE`| `zone_bias_base_rate`| Base reserve-recovery correction around the virtual buffer target (mm/min) | 90 |
 | `ZONE_BIAS_RAMP`| `zone_bias_ramp_rate`| Extra reserve-recovery ramp while buffer stays away from target (mm/min per second) | 30 |
 | `ZONE_BIAS_MAX` | `zone_bias_max_rate` | Max reserve-recovery correction (mm/min) | 600 |
@@ -180,6 +186,8 @@ These fields are appended after `SS:` in the `?:` response. They are additive an
 | `RT` | mm (signed) | Reserve target position. Negative = trailing side. Set by `SYNC_RESERVE_PCT`, `TRAIL_BIAS_FRAC`, and `BUF_HALF_TRAVEL`. |
 | `TB` | % (int) | Trailing bias fraction × 100. |
 | `MC` | SPS | Mid-zone creep component added to target rate |
+| `VB` | % (int) | Variance blend distrust percentage |
+| `BPV`| mm × 100 | Post-blend effective position used by control loops |
 | `RD` | mm | Reserve deadband width around the target. |
 | `AD` | ms | Time the buffer arm has been continuously pinned at the advance-side switch. Zero when not in `BUF_ADVANCE`. |
 | `TD` | ms | Time the buffer arm has been continuously pinned at the trailing-side switch. Zero when not in `BUF_TRAILING`. |

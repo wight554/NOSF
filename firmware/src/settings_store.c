@@ -358,6 +358,8 @@ void settings_save(void) {
     s.mid_creep_timeout_ms = MID_CREEP_TIMEOUT_MS;
     s.mid_creep_rate_sps_per_s = MID_CREEP_RATE_SPS_PER_S;
     s.mid_creep_cap_frac = MID_CREEP_CAP_FRAC;
+    s.buf_variance_blend_frac = BUF_VARIANCE_BLEND_FRAC;
+    s.buf_variance_blend_ref_mm = BUF_VARIANCE_BLEND_REF_MM;
 
     for (int i = 0; i < NUM_LANES; i++) {
         s.tmc_rotation_distance[i] = TMC_ROTATION_DISTANCE[i];
@@ -567,5 +569,13 @@ void settings_load(void) {
     motion_limit_runtime_rates(false);
 
     tmc_apply_all();
+}
+
+time_rates(false);
+
+    tmc_apply_all();
+}
+
+
 }
 

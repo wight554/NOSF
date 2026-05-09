@@ -82,6 +82,8 @@ DEFAULTS = {
     "mid_creep_timeout_ms": "0",
     "mid_creep_rate_sps_per_s": "0",
     "mid_creep_cap_frac": "10",
+    "buf_variance_blend_frac": "0.0",
+    "buf_variance_blend_ref_mm": "1.0",
     "est_alpha_min": "0.12",
     "est_alpha_max": "0.65",
     "zone_bias_base_rate": "90",

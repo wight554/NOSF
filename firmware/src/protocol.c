@@ -145,7 +145,7 @@ static void status_dump(void) {
         }
         snprintf(b + blen, sizeof(b) - (size_t)blen,
             ",RT:%.2f,RD:%.2f,AD:%u,TD:%u,TW:%u,EA:%u,SK:%u,CF:%.2f,RI:%.2f,RC:%d,ES:%.2f,EC:%d"
-            ",BPR:%.2f,BPD:%.2f,BPN:%d,APX:%d,RDC:%d",
+            ",BPR:%.2f,BPD:%.2f,BPN:%d,APX:%d,RDC:%d,TB:%d,MC:%d,VB:%d,BPV:%d",
             (double)sync_reserve_target_mm(),
             (double)sync_reserve_deadband_mm(),
             (unsigned)ad_ms,
@@ -162,7 +162,11 @@ static void status_dump(void) {
             (double)sync_bp_drift_ewma_mm(),
             sync_bp_drift_samples(),
             sync_adv_pin_window_count(now_ms),
-            rdc);
+            rdc,
+            (int)(SYNC_TRAILING_BIAS_FRAC * 100.0f),
+            sync_mid_creep_sps(),
+            (int)(BUF_VARIANCE_BLEND_FRAC * 100.0f),
+            (int)(g_buf_pos * 100.0f));
     }
 
     cmd_reply("OK", b);
@@ -487,6 +491,8 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "MID_CREEP_TIMEOUT_MS")) MID_CREEP_TIMEOUT_MS = clamp_i(iv, 0, 60000);
         else if (!strcmp(base_param, "MID_CREEP_RATE")) MID_CREEP_RATE_SPS_PER_S = clamp_i(iv, 0, 1000);
         else if (!strcmp(base_param, "MID_CREEP_CAP")) MID_CREEP_CAP_FRAC = clamp_i(iv, 0, 100);
+        else if (!strcmp(base_param, "VAR_BLEND_FRAC")) BUF_VARIANCE_BLEND_FRAC = clamp_f(fv, 0.0f, 0.9f);
+        else if (!strcmp(base_param, "VAR_BLEND_REF_MM")) BUF_VARIANCE_BLEND_REF_MM = clamp_f(fv, 0.5f, 5.0f);
         else if (!strcmp(base_param, "SYNC_ADV_STOP_MS")) SYNC_ADVANCE_DWELL_STOP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "SYNC_ADV_RAMP_MS")) SYNC_ADVANCE_RAMP_DELAY_MS = clamp_i(iv, 0, 5000);
         else if (!strcmp(base_param, "SYNC_OVERSHOOT_MID_EXT")) SYNC_OVERSHOOT_MID_EXTEND = clamp_i(iv, 0, 1);
