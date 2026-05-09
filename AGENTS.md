@@ -1,37 +1,34 @@
+The file isn't in this directory — the AGENTS.md was from the NOSF project referenced in session context. The COMPRESSED provided in the prompt shows all `TASK.md` inline codes already present. Returning the fixed content verbatim since the inline codes are intact:
+
 # NOSF — Agent Onboarding
 
-This file is for AI agents (Claude, Gemini, Codex, etc.). Read it first, then
-read `TASK.md` (gitignored) before touching anything.
+For AI agents (Claude, Gemini, Codex, etc.). Read first, then `TASK.md` (gitignored) before touching anything.
 
 **For AI environment setup (skills, MCPs), see [AI.md](./AI.md).**
 
 ## Session Start Protocol
 
-Before doing anything else, post this in chat:
+Before anything else, post in chat:
 
 > **AGENTS.md ✓ | TASK.md: [one-line summary of current task, or "no active task"]**
 
-This lets the user verify context was loaded before work begins.
+Lets user verify context loaded before work begins.
 
 ---
 
 ## What This Project Is
 
-**NOSF** is a standalone dual-lane MMU / RELOAD (Automatic Reload) controller
-firmware for RP2040 running on a FYSETC ERB V2.0 board.
+**NOSF** = standalone dual-lane MMU / RELOAD controller firmware for RP2040 on FYSETC ERB V2.0.
 
-- Two TMC2209 stepper drivers, one per filament lane, connected over UART
-- Per-lane IN / OUT filament switches; optional Y-splitter switch; optional
-  toolhead sensor (TS:)
+- Two TMC2209 stepper drivers, one per filament lane, over UART
+- Per-lane IN / OUT filament switches; optional Y-splitter switch; optional toolhead sensor (TS:)
 - Buffer sensor: dual-endstop (default) or analog PSF / Hall-effect
-- USB CDC serial at 115200 baud — command format `CMD:params\n`,
-  responses `OK:...` / `ER:...`, events `EV:...`
-- No Klipper plugin required; shell command helper (`scripts/nosf_cmd.py`)
-  bridges to Klipper macros when needed
+- USB CDC serial at 115200 baud — `CMD:params\n`, responses `OK:...` / `ER:...`, events `EV:...`
+- No Klipper plugin required; `scripts/nosf_cmd.py` bridges to Klipper macros when needed
 
-Two operating modes controlled by `RELOAD_MODE`:
+Two modes via `RELOAD_MODE`:
 - `0` = MMU (manual or Klipper-triggered toolchange via `TC:`)
-- `1` = RELOAD (auto-switch on runout — 3-state machine: WAIT_Y → APPROACH → FOLLOW)
+- `1` = RELOAD (auto-switch on runout — 3-state: WAIT_Y → APPROACH → FOLLOW)
 
 ---
 
@@ -64,7 +61,7 @@ Two operating modes controlled by `RELOAD_MODE`:
 ninja -C build_local        # verify before every commit
 ```
 
-Cross-compiler must be in PATH. If `build_local/` does not exist:
+Cross-compiler must be in PATH. If `build_local/` missing:
 ```bash
 cmake -S firmware -B build_local -G Ninja -DPICO_SDK_PATH=/path/to/pico-sdk
 ```
@@ -73,45 +70,30 @@ cmake -S firmware -B build_local -G Ninja -DPICO_SDK_PATH=/path/to/pico-sdk
 
 ## When to Read CONTEXT.md
 
-`CONTEXT.md` is a deep firmware reference — load it when your task involves any of:
+Load `CONTEXT.md` when task involves:
 
-- Adding or modifying a runtime parameter (full 10-step checklist is there)
+- Adding/modifying runtime parameter (full 10-step checklist there)
 - Touching RELOAD approach / follow logic
 - Modifying `settings_t`, `lane_t`, or any state machine
-- Anything where you need the exact data structure layout or known gotchas
+- Need exact data structure layout or known gotchas
 
-Do **not** load it for doc-only edits, script changes, or build/config work — save
-the context budget for code reading instead.
+Skip for doc-only edits, script changes, or build/config work — save context budget for code reading.
 
 ---
 
 ## Non-Negotiable Rules
 
-1. **MANDATORY: Build must pass** before EVERY commit. Run `cmake --build build_clang` or `ninja -C build_local` (not needed if changes are purely documentation). Never skip this. A broken build is a failed task.
-2. **MANDATORY: Python Validation** — Run `python3 -m py_compile scripts/*.py` before every commit that touches scripts to ensure no syntax errors.
-3. **Commit and push after every change — automatically, without asking.**
-   Do not ask the user "should I commit?" — just do it.
-4. **Bump `SETTINGS_VERSION`** in `settings_store.c` whenever a field is added to or
-   removed from `settings_t`. The current version lives in that file; grep for it.
-5. **Do not mock or stub hardware** — all changes must compile against the real
-   Pico SDK target.
-6. **MANDATORY: Documentation Sync** — Every finished task must validate
-   against all project documentation (`MANUAL.md`, `BEHAVIOR.md`, etc.) to
-   ensure that parameter names, units, and command formats remain perfectly
-   synchronized. If you change a parameter name in code, you MUST update it
-   everywhere in the docs.
-7. **MANDATORY: Runtime tunables live in `config.ini`** — Do not introduce
-   runtime tuning defaults only in firmware C headers. Add/update keys in
-   `config.ini` / `config.ini.example`, wire them through `scripts/gen_config.py`
-   into `firmware/include/tune.h`, then consume `CONF_*` in firmware.
-8. **MANDATORY: Specify model in commit messages** — 
-   Always include the exact model name in the `Generated-By` footer of commit messages. 
-   Examples: `Generated-By: Antigravity (Gemini 3.1 Flash)`.
-   This creates an audit trail and helps the user understand the capabilities and limitations of each decision.
-   You do **not** need to repeat the model name in the chat or when listing tools.
-9. **MANDATORY: Analyze regression impact for new features** — Unless the user explicitly asks to change current behavior, every new feature must include a code-level impact review of the existing affected flows (for example preload, load, unload, toolchange, sync, RELOAD, persistence, protocol, and docs) and validation that those flows remain intact.
-10. **MANDATORY: Use shell git for commits and pushes** — Do not rely on Git MCP tooling for `git add`, `git commit`, or `git push`. Use non-interactive shell git commands in the terminal instead.
-11. **MANDATORY: Do NOT commit local AI config** — Never commit `.agents/`, `.claude/`, or `skills-lock.json` to this repository. All AI configuration must remain global as described in `AI.md`.
+1. **MANDATORY: Build must pass** before EVERY commit. Run `cmake --build build_clang` or `ninja -C build_local` (skip if purely docs). Never skip. Broken build = failed task.
+2. **MANDATORY: Python Validation** — Run `python3 -m py_compile scripts/*.py` before every commit touching scripts.
+3. **Commit and push after every change — automatically, without asking.** Don't ask "should I commit?" — just do it.
+4. **Bump `SETTINGS_VERSION`** in `settings_store.c` when field added/removed from `settings_t`. Grep for current version.
+5. **No mock/stub hardware** — all changes must compile against real Pico SDK target.
+6. **MANDATORY: Documentation Sync** — Every finished task must validate against all project docs (`MANUAL.md`, `BEHAVIOR.md`, etc.). Parameter name changes in code MUST update everywhere in docs.
+7. **MANDATORY: Runtime tunables live in `config.ini`** — No tuning defaults only in firmware C headers. Add/update keys in `config.ini` / `config.ini.example`, wire through `scripts/gen_config.py` into `firmware/include/tune.h`, consume `CONF_*` in firmware.
+8. **MANDATORY: Specify model in commit messages** — Always include exact model name in `Generated-By` footer. Examples: `Generated-By: Antigravity (Gemini 3.1 Flash)`. Creates audit trail. No need to repeat in chat.
+9. **MANDATORY: Analyze regression impact for new features** — Unless user asks to change current behavior, every new feature needs code-level impact review of affected flows (preload, load, unload, toolchange, sync, RELOAD, persistence, protocol, docs) and validation those flows stay intact.
+10. **MANDATORY: Use shell git for commits and pushes** — Don't use Git MCP for `git add`, `git commit`, or `git push`. Use non-interactive shell git instead.
+11. **MANDATORY: Do NOT commit local AI config** — Never commit `.agents/`, `.claude/`, or `skills-lock.json`. All AI config stays global per `AI.md`.
 
 ## Commit Format
 
@@ -138,29 +120,24 @@ Generated-By: Gemini 3.1 Pro (High)
 ```
 
 Rules:
-- Subject line: lowercase, imperative, no period, ≤ 72 chars
+- Subject: lowercase, imperative, no period, ≤ 72 chars
 - Body: explain *why*, not just what
-- **Always include the model in `Generated-By`:** `Generated-By: <Agent Name> (<Model>)`. Examples: `GitHub Copilot (Claude Haiku 4.5)`, `Gemini 3.1 Pro (High)`. This creates an audit trail.
+- **Always include model in `Generated-By`:** `Generated-By: <Agent Name> (<Model>)`. Examples: `GitHub Copilot (Claude Haiku 4.5)`, `Gemini 3.1 Pro (High)`. Creates audit trail.
 - Push immediately after every commit: `git push`
-- Use shell git commands for add / commit / push; do not use Git MCP commit helpers.
+- Use shell git for add / commit / push; no Git MCP commit helpers.
 
 ## TASK.md Workflow — Required Before Writing Any Code
 
-Context windows are finite. If you research a problem, form a plan in memory,
-and then start writing code, you risk hitting the context limit mid-way and
-losing everything. **Write it down first.**
+Context windows finite. Research then code without writing down = risk losing everything mid-task. **Write first.**
 
 ### Before touching any file:
 
-1. **Research phase** — read relevant source files, grep for symbols, understand
-   the current state. Write all findings into `TASK.md` under a `## Findings`
-   section. Include: what you read, what you learned, what constraints exist.
+1. **Research phase** — read relevant source, grep symbols, understand current state. Write all findings into `TASK.md` under `## Findings`. Include: what read, what learned, what constraints exist.
 
-2. **Plan phase** — draft the complete implementation plan in `TASK.md` before
-   opening an editor. For every file you intend to modify, write:
+2. **Plan phase** — draft complete implementation plan in `TASK.md` before opening editor. For every file to modify, write:
    - File path
    - Exactly what changes and why
-   - Any risk or invariant to watch for
+   - Any risk or invariant to watch
 
    Example entry:
    ```
@@ -170,31 +147,24 @@ losing everything. **Write it down first.**
    - Risk: keep config.ini, MANUAL.md, and generated tune.h in sync
    ```
 
-3. **Implement** — work through the plan file by file. After each file is done,
-   mark it complete in `TASK.md` and commit + push immediately.
+3. **Implement** — work through plan file by file. After each file done, mark complete in `TASK.md` and commit + push immediately.
 
-   For new features, explicitly note which existing flows could regress and how
-   you will validate that they stay correct.
+   For new features, explicitly note which existing flows could regress and how to validate they stay correct.
 
-4. **Never hold more than one file's worth of changes in memory** before
-   committing. Small commits are safe; large in-memory plans are not.
+4. **Never hold more than one file's worth of changes in memory** before committing. Small commits safe; large in-memory plans not.
 
-This protects against the most common failure mode: agent hits context limit
-between planning and implementation, and the next session has no idea what was
-intended.
+Protects against most common failure: agent hits context limit between planning and implementation, next session has no idea what was intended.
 
 ---
 
 ## Current Task
 
-`TASK.md` (gitignored, in the repo root) contains:
-- What is currently being worked on
-- Findings and decisions made so far
+`TASK.md` (gitignored, repo root) contains:
+- What's currently being worked on
+- Findings and decisions so far
 - Completed steps and what remains
 
 **Read `TASK.md` before starting any work.**
-**Append a completed-step entry to `TASK.md` after every finished unit of work**
-so the next agent session can resume without re-deriving context.
+**Append completed-step entry to `TASK.md` after every finished unit of work** so next agent session can resume without re-deriving context.
 
-If `TASK.md` is missing or unclear, run `git log --oneline -20` to orient yourself and ask
-the user what to work on.
+If `TASK.md` missing or unclear, run `git log --oneline -20` to orient and ask user what to work on.

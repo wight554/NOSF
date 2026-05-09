@@ -1,29 +1,29 @@
 # NOSF — AI Assistance & MCP Setup
 
-This project uses a **Global-First** AI configuration. Skills and MCP servers are configured at the user level to ensure consistency across `claude-code`, `gemini-cli`, `antigravity`, and IDE-based Copilot chats.
+**Global-First** AI config. Skills and MCP servers at user level — consistent across `claude-code`, `gemini-cli`, `antigravity`, IDE Copilot.
 
 ## Global Configuration Overview
 
-All AI tools in this repo rely on a shared environment located in your home directory:
+All AI tools use shared env in home dir:
 
 - **Primary Source**: `~/.gemini/extensions/caveman/`
 - **Claude Integration**: `~/.claude/skills/` (linked to Gemini source)
 - **MCP Servers**: Managed via global `node` and `npx`
-- **Memory**: Persistent cross-session memory managed by `cavemem` MCP
+- **Memory**: Persistent cross-session memory via `cavemem` MCP
 
 ## Prerequisites
 
 - **Node.js**: v22+ (v22.20.0 recommended)
 - **Python**: v3.12+ (v3.14.4 recommended)
-- **Anthropic / Google API Keys**: Must be exported in your shell profile
+- **Anthropic / Google API Keys**: Export in shell profile
 
 ## Initial Setup (One-Time Global)
 
 ### 1. Install Caveman Extension
-Follow the instructions at [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) to install the core extension.
+Follow instructions at [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman).
 
 ### 2. Link Claude Skills
-To ensure `claude-code` can use the same specialized skills, create global symlinks:
+Create global symlinks so `claude-code` uses same skills:
 ```bash
 ln -sfn ~/.gemini/extensions/caveman/skills/caveman ~/.claude/skills/caveman
 ln -sfn ~/.gemini/extensions/caveman/skills/caveman-commit ~/.claude/skills/caveman-commit
@@ -36,7 +36,7 @@ ln -sfn ~/.gemini/extensions/caveman/skills/caveman-compress ~/.claude/skills/ca
 ```
 
 ### 3. Configure MCP Servers
-Ensure `~/.claude/settings.json` and `~/.gemini/settings.json` include the `cavemem` MCP:
+Add `cavemem` MCP to `~/.claude/settings.json` and `~/.gemini/settings.json`:
 
 ```json
 {
@@ -59,8 +59,8 @@ Ensure `~/.claude/settings.json` and `~/.gemini/settings.json` include the `cave
 
 ## Workspace Rules
 
-- **Do NOT commit local config**: Files like `.agents/`, `.claude/`, or `skills-lock.json` must NOT be committed to the repo. The project relies on the global configuration described above.
-- **Model Attribution**: Always include `Generated-By: <Agent> (<Model>)` in commit messages.
-- **Workflow**: Follow the `TASK.md` protocol (Research -> Plan -> Implement) to manage context limits.
+- **No local config commits**: `.agents/`, `.claude/`, `skills-lock.json` must NOT be committed. Relies on global config above.
+- **Model Attribution**: Include `Generated-By: <Agent> (<Model>)` in commit messages.
+- **Workflow**: Follow `TASK.md` protocol (Research -> Plan -> Implement) for context management.
 
-See `AGENTS.md` for specific firmware engineering mandates and the full session start protocol.
+See `AGENTS.md` for firmware engineering mandates and full session start protocol.

@@ -1,15 +1,12 @@
 # NOSF — Project Context
 
-Deep reference for firmware work. This file is the architectural source of truth
-for agents; `TASK.md` is a task log and may contain historical notes that no
-longer describe the current tree.
+Deep ref for firmware work. Architectural source of truth for agents; `TASK.md` is task log, may have stale notes.
 
 ---
 
 ## Firmware Architecture
 
-NOSF is a cooperative firmware for RP2040 with no RTOS. The main loop calls a
-small set of non-blocking module ticks every iteration.
+NOSF = cooperative firmware for RP2040, no RTOS. Main loop calls non-blocking module ticks each iteration.
 
 ### Module ownership
 
@@ -41,7 +38,7 @@ small set of non-blocking module ticks every iteration.
   - defaults/save/load/reset
   - TMC re-apply after settings changes
 
-Shared types, globals, and cross-module helpers live in `firmware/include/controller_shared.h`.
+Shared types, globals, cross-module helpers in `firmware/include/controller_shared.h`.
 
 ---
 
@@ -74,7 +71,7 @@ Important fields:
 
 ### `buf_tracker_t`
 
-Buffer-zone transition history used by the estimator.
+Buffer-zone transition history used by estimator.
 
 Important fields:
 
@@ -89,16 +86,16 @@ Important fields:
 
 Persistent tunables follow this path:
 
-1. Add or update the key in `config.ini.example` and `config.ini`.
-2. Add the default and generated `CONF_*` macro in `scripts/gen_config.py`.
+1. Add/update key in `config.ini.example` and `config.ini`.
+2. Add default and generated `CONF_*` macro in `scripts/gen_config.py`.
 3. Regenerate `firmware/include/tune.h` with `python3 scripts/gen_config.py`.
-4. Add or update the owning runtime variable in the appropriate module (`main.c`, `motion.c`, `sync.c`, `toolchange.c`, or another owner; shared externs belong in `controller_shared.h`).
-5. Add the field to `settings_t` in `firmware/src/settings_store.c` if the value must persist.
+4. Add/update owning runtime variable in appropriate module (`main.c`, `motion.c`, `sync.c`, `toolchange.c`, or another owner; shared externs in `controller_shared.h`).
+5. Add field to `settings_t` in `firmware/src/settings_store.c` if value must persist.
 6. Wire defaults/save/load/reset in `settings_store.c`.
-7. If the value affects hardware registers, update the TMC apply path in `settings_store.c`.
+7. If value affects hardware registers, update TMC apply path in `settings_store.c`.
 8. Add `SET:` / `GET:` handling in `firmware/src/protocol.c`.
-9. Update the relevant docs (`MANUAL.md`, `BEHAVIOR.md`, `README.md`, etc.).
-10. Bump `SETTINGS_VERSION` in `firmware/src/settings_store.c` whenever `settings_t` layout changes.
+9. Update relevant docs (`MANUAL.md`, `BEHAVIOR.md`, `README.md`, etc.).
+10. Bump `SETTINGS_VERSION` in `firmware/src/settings_store.c` when `settings_t` layout changes.
 
 Current `SETTINGS_VERSION`: `38` in `firmware/src/settings_store.c`.
 
@@ -108,36 +105,31 @@ Current `SETTINGS_VERSION`: `38` in `firmware/src/settings_store.c`.
 
 ### 1. Sync only runs in `TC_IDLE`
 
-`sync_tick()` is guarded so normal sync never runs during toolchange or RELOAD.
-If you change RELOAD behavior, do not expect the normal sync tick to rescue it.
+`sync_tick()` guarded — normal sync never runs during toolchange or RELOAD. Don't expect normal sync tick to rescue RELOAD behavior changes.
 
 ### 2. RELOAD is buffer-driven now
 
 - `TC_RELOAD_APPROACH` waits for `BUF_TRAILING` contact.
-- `TC_RELOAD_FOLLOW` reuses the estimator with `RELOAD_LEAN_FACTOR`.
-- There is no driver-load or DIAG-based stall handling in the current firmware flow.
+- `TC_RELOAD_FOLLOW` reuses estimator with `RELOAD_LEAN_FACTOR`.
+- No driver-load or DIAG-based stall handling in current firmware flow.
 
 ### 3. Load / unload safety is distance-based
 
-- `AUTOLOAD_MAX`, `LOAD_MAX`, and `UNLOAD_MAX` are travel limits.
-- Toolchange phases such as `TC_LOAD_WAIT_TH` or `TC_UNLOAD_WAIT_OUT` observe the underlying lane task and react when it stops.
-- Older names like `TC_LOAD_MS` / `TC_UNLOAD_MS` are legacy protocol aliases, not real time-based limits.
+- `AUTOLOAD_MAX`, `LOAD_MAX`, `UNLOAD_MAX` = travel limits.
+- Toolchange phases like `TC_LOAD_WAIT_TH` or `TC_UNLOAD_WAIT_OUT` observe underlying lane task, react when it stops.
+- Old names `TC_LOAD_MS` / `TC_UNLOAD_MS` = legacy protocol aliases, not real time-based limits.
 
 ### 4. Persistence is activity-gated
 
-`SV:`, `LD:`, and `RS:` are rejected with `ER:PERSIST_BUSY` while motion,
-toolchange, cutter activity, or boot stabilization is active.
+`SV:`, `LD:`, `RS:` rejected with `ER:PERSIST_BUSY` while motion, toolchange, cutter activity, or boot stabilization active.
 
 ### 5. Speed conversion helpers are shared
 
-`mm_per_min_to_sps*()` and `sps_to_mm_per_min*()` are implemented in `main.c`
-and declared in `controller_shared.h`. Protocol and settings code rely on them.
+`mm_per_min_to_sps*()` and `sps_to_mm_per_min*()` implemented in `main.c`, declared in `controller_shared.h`. Protocol and settings code rely on them.
 
 ### 6. Board pins live in `config.h`
 
-`firmware/include/config.h` is the source of truth for pin assignment and other
-board constants. DIAG pins remain defined for board completeness, but current
-firmware does not attach DIAG IRQ handling.
+`firmware/include/config.h` = source of truth for pin assignment and board constants. DIAG pins defined for board completeness; current firmware doesn't attach DIAG IRQ handling.
 
 ---
 
@@ -146,27 +138,27 @@ firmware does not attach DIAG IRQ handling.
 ### Add a new `SET:` / `GET:` parameter
 
 - Add config key and generated macro.
-- Update the runtime variable and persistence path if needed.
+- Update runtime variable and persistence path if needed.
 - Add `SET` / `GET` branches in `firmware/src/protocol.c`.
-- Regenerate `tune.h` and update the docs.
+- Regenerate `tune.h` and update docs.
 
 ### Add a new serial command
 
-- Implement the command in `cmd_execute()` in `firmware/src/protocol.c`.
-- Use module APIs from `motion.h`, `sync.h`, `toolchange.h`, and `settings_store.h`.
-- Document it in `MANUAL.md`.
+- Implement in `cmd_execute()` in `firmware/src/protocol.c`.
+- Use module APIs from `motion.h`, `sync.h`, `toolchange.h`, `settings_store.h`.
+- Document in `MANUAL.md`.
 
 ### Run the static regression gate
 
 - `bash scripts/validate_regression.sh`
-- Use this before hardware testing to catch config, build, script, and diff-integrity regressions quickly.
+- Run before hardware testing — catches config, build, script, and diff-integrity regressions fast.
 
 ### Emit a reply or event
 
 - `cmd_reply("OK", data)` / `cmd_reply("ER", reason)`
 - `cmd_event("TYPE", data)`
 
-Remember that `EV:` output is best-effort and rate-limited.
+`EV:` output is best-effort and rate-limited.
 
 ---
 
