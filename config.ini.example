@@ -11,9 +11,9 @@
 #   run_current: 0.8, 1.0       → different currents per lane
 
 # ─── Required ────────────────────────────────────────────────────────────────
-microsteps: 16
-rotation_distance: 22.679
-run_current: 0.980
+microsteps:
+rotation_distance:
+run_current:
 
 # ─── Motor / TMC (per-lane capable) ─────────────────────────────────────────
 # full_steps_per_rotation: 200
