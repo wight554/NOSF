@@ -148,6 +148,13 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `EST_SIGMA_CAP` | `est_sigma_hard_cap_mm` | Estimator sigma hard cap in mm. Confidence (`EC`) drops to 0 when the physics-based position uncertainty reaches this level. | 1.5 |
 | `EST_LOW_CF_THR` | `est_low_cf_warn_threshold` | `EV:BUF,EST_LOW_CF` fires when estimator confidence falls below this threshold (runtime-only, not persisted). | 0.5 |
 | `EST_FALLBACK_THR` | `est_fallback_cf_threshold` | Integral centering freezes when confidence falls below this threshold. Also the floor below which `EV:BUF,EST_FALLBACK` is eligible (runtime-only). | 0.2 |
+| `BUF_DRIFT_TAU_MS` | `buf_drift_ewma_tau_ms` | EWMA time constant for per-transition residual drift estimate (ms). Longer = more stable; shorter = adapts faster. | 60000 |
+| `BUF_DRIFT_MIN_SMP` | `buf_drift_min_samples` | Minimum zone transitions before drift correction can engage. | 3 |
+| `BUF_DRIFT_THR_MM` | `buf_drift_apply_thr_mm` | Minimum `|BPD|` required to apply correction (mm). **0.0 = disabled** (default-OFF). Enable only after confirming stable non-zero `BPD`. | 0.0 |
+| `BUF_DRIFT_CLAMP` | `buf_drift_clamp_mm` | Hard clamp on applied drift correction magnitude in mm. | 2.0 |
+| `BUF_DRIFT_MIN_CF` | `buf_drift_apply_min_cf` | Minimum estimator confidence (`EC`/100) required to apply drift correction. Correction freezes (but EWMA continues accumulating) when below this. | 0.5 |
+| `ADV_RISK_WINDOW` | `adv_risk_window_ms` | Rolling window for `APX` advance-pin density (ms). Runtime-only, not persisted. | 60000 |
+| `ADV_RISK_THR` | `adv_risk_threshold` | `EV:SYNC,ADV_RISK_HIGH` fires when `APX >= this`. 0 = disable. Runtime-only, not persisted. | 4 |
 | `POST_PRINT_STAB_MS` | `post_print_stab_delay_ms` | Delay before idle+`TRAILING` recovery starts; once triggered, the low-speed post-print stabilization move settles the buffer back to `MID` and only falls back to the advance-side handoff if it overshoots center. `0` starts immediately | 0 |
 | `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |
 | `RELOAD_JOIN_MS` | `reload_join_delay_ms` | Extra RELOAD-only settling delay after tail and Y clear before `RELOAD:JOINING` starts | 500 |
@@ -182,6 +189,11 @@ These fields are appended after `SS:` in the `?:` response. They are additive an
 | `RC` | 0–100 | Effective integral gain scalar (0 = frozen/disabled, 100 = active). |
 | `ES` | mm | Estimator sigma — physics-based position uncertainty in mm. |
 | `EC` | 0–100 | Estimator confidence based on sigma (independent of source `CF`). |
+| `BPR` | mm (signed) | Last per-transition residual: `g_buf_pos − switch_pos_mm` measured just before the virtual position snaps to the switch threshold. Non-zero values indicate virtual/physical mismatch at that crossing. |
+| `BPD` | mm (signed) | Drift EWMA — exponentially weighted average of `BPR` samples (time constant `BUF_DRIFT_TAU_MS`). A stable non-zero value indicates systematic virtual-position bias. |
+| `BPN` | int | Number of zone transitions sampled into `BPD`. Correction gates on `BPN >= BUF_DRIFT_MIN_SMP`. |
+| `APX` | int | Count of `BUF_ADVANCE` pin entries within the last `ADV_RISK_WINDOW` ms. `EV:SYNC,ADV_RISK_HIGH` fires when this reaches `ADV_RISK_THR`. |
+| `RDC` | 0–100 | Drift-correction activity scalar: 0 = inactive or disabled, 100 = correction at full clamp (`BUF_DRIFT_CLAMP`). |
 
 ---
 
@@ -199,7 +211,8 @@ These fields are appended after `SS:` in the `?:` response. They are additive an
 | `MOVE_DONE` | `lane` | Exact move completed. |
 | `ACTIVE` | `lane\|NONE`| Reported when the active lane changes. |
 | `FAULT:DRY_SPIN`| `lane` | Motor spinning > 8s without filament (`IN` clear). |
-| `SYNC` | `AUTO_START\|AUTO_STOP\|ADV_DWELL_STOP\|ADV_DWELL_WARN` | Automatic sync state transitions. `ADV_DWELL_STOP` fires when pinned at advance for `SYNC_ADV_STOP_MS`. `ADV_DWELL_WARN` fires when centering drift reaches a significant threshold. |
+| `SYNC` | `AUTO_START\|AUTO_STOP\|ADV_DWELL_STOP\|ADV_DWELL_WARN\|ADV_RISK_HIGH` | Automatic sync state transitions. `ADV_DWELL_STOP` fires when pinned at advance for `SYNC_ADV_STOP_MS`. `ADV_DWELL_WARN` fires when centering drift reaches a significant threshold. `ADV_RISK_HIGH` fires (rate-limited 1/30 s) when advance-pin density in the rolling window reaches `ADV_RISK_THR`. |
+| `BUF` | `DRIFT_RESET` | Drift EWMA was reset. Fires when sync stops, `EST_FALLBACK` occurs, or sensor is hot-swapped. Subsequent `BPN` will restart from 0. |
 | `BUF` | `EST_LOW_CF\|EST_FALLBACK` | Buffer estimator events. `EST_LOW_CF` fires when confidence drops; `EST_FALLBACK` fires when sigma exceeds the hard cap. |
 | `BUF_STAB` | `START\|DONE\|TIMEOUT` | Buffer neutralization started, reached `MID`, or hit its safety timeout. |
 | `BS` | Mode-specific snapshot | Periodic buffer/sync status event used during sync and RELOAD follow. |

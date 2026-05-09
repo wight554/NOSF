@@ -24,3 +24,8 @@ bool sync_is_positive_relaunch_damped(void);
 bool sync_is_advance_predicted(void);
 float sync_reserve_integral_get_mm(void);
 float sync_buf_sigma_mm(void);
+float sync_bp_residual_last_mm(void);
+float sync_bp_drift_ewma_mm(void);
+int   sync_bp_drift_samples(void);
+int   sync_adv_pin_window_count(uint32_t now_ms);
+float sync_bp_drift_correction_applied_mm(void);

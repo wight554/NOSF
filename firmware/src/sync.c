@@ -3,6 +3,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "hardware/adc.h"
 
@@ -51,6 +52,17 @@ static float g_buf_sigma_mm = 0.0f;
 static uint32_t g_buf_est_low_cf_emit_ms = 0;
 static uint32_t g_buf_adv_dwell_warn_emit_ms = 0;
 static bool g_buf_est_fallback_emitted = false;
+
+/* Phase 2.6: residual drift observer */
+#define ADV_PIN_WINDOW_LEN 16
+static float g_bp_residual_last_mm = 0.0f;
+static float g_bp_drift_ewma_mm = 0.0f;
+static uint16_t g_bp_drift_samples = 0;
+static uint32_t g_bp_drift_last_ms = 0;
+static float g_bp_drift_correction_applied_mm = 0.0f;
+static uint32_t g_adv_pin_ts[ADV_PIN_WINDOW_LEN] = {0};
+static int g_adv_pin_ts_idx = 0;
+static uint32_t g_adv_risk_emit_ms = 0;
 
 /* buf_signal_t — canonical signal produced by the active sensor each tick. */
 buf_signal_t g_buf_signal = {0};
@@ -234,7 +246,7 @@ float sync_trailing_wall_time_ms(lane_t *L) {
     return (sync_trailing_wall_remaining_mm() / toward_trailing) * 1000.0f;
 }
 
-static int sync_apply_scaling(int base_sps, float effective_target_mm) {
+static int sync_apply_scaling(int base_sps, float effective_target_mm, float bp_eff_mm) {
     if (g_buf_signal.kind == BUF_SRC_ANALOG) {
         float frac = clamp_f((g_buf_pos + 1.0f) * 0.5f, 0.0f, 1.0f);
         return (int)(TRAILING_SPS + (float)(base_sps - TRAILING_SPS) * frac);
@@ -242,13 +254,13 @@ static int sync_apply_scaling(int base_sps, float effective_target_mm) {
 
     int target = base_sps;
 
-    if (g_buf_pos < (effective_target_mm - buf_virtual_deadband_mm())) {
+    if (bp_eff_mm < (effective_target_mm - buf_virtual_deadband_mm())) {
         float taper_start_mm = effective_target_mm - buf_virtual_deadband_mm();
         float taper_end_mm = -buf_threshold_mm();
         float taper_span_mm = taper_start_mm - taper_end_mm;
 
         if (target > TRAILING_SPS && taper_span_mm > 0.001f) {
-            float overfill_mm = taper_start_mm - g_buf_pos;
+            float overfill_mm = taper_start_mm - bp_eff_mm;
             float taper_frac = clamp_f(overfill_mm / taper_span_mm, 0.0f, 1.0f);
             int taper_floor_sps = TRAILING_SPS;
             if (g_buf.state == BUF_MID) {
@@ -576,6 +588,28 @@ static void buf_update(buf_state_t new_state, uint32_t now_ms) {
         extruder_est_last_update_ms = now_ms;
     }
 
+    /* Phase 2.6: residual observer — measure pre-snap virtual/physical mismatch */
+    if (BUF_SENSOR_TYPE == 0 && old == BUF_MID &&
+        (new_state == BUF_ADVANCE || new_state == BUF_TRAILING)) {
+        float switch_pos_mm = (new_state == BUF_ADVANCE) ? threshold : -threshold;
+        float residual = g_buf_pos - switch_pos_mm;
+        g_bp_residual_last_mm = residual;
+
+        float tau_ms_f = (BUF_DRIFT_EWMA_TAU_MS > 0) ? (float)BUF_DRIFT_EWMA_TAU_MS : 60000.0f;
+        float alpha;
+        if (g_bp_drift_samples == 0 || g_bp_drift_last_ms == 0) {
+            alpha = 1.0f;
+        } else {
+            uint32_t dt = now_ms - g_bp_drift_last_ms;
+            alpha = 1.0f - expf(-(float)dt / tau_ms_f);
+            if (alpha < 0.02f) alpha = 0.02f;
+            if (alpha > 1.0f) alpha = 1.0f;
+        }
+        g_bp_drift_ewma_mm = alpha * residual + (1.0f - alpha) * g_bp_drift_ewma_mm;
+        g_bp_drift_last_ms = now_ms;
+        if (g_bp_drift_samples < 65535u) g_bp_drift_samples++;
+    }
+
     history_push(g_buf.state, prev_dwell);
     g_buf.state = new_state;
     g_buf.entered_ms = now_ms;
@@ -625,6 +659,15 @@ void sync_disable(bool reset_estimator) {
     g_buf_est_low_cf_emit_ms = 0;
     g_buf_adv_dwell_warn_emit_ms = 0;
     g_buf_est_fallback_emitted = false;
+    if (g_bp_drift_samples > 0) cmd_event("BUF", "DRIFT_RESET");
+    g_bp_residual_last_mm = 0.0f;
+    g_bp_drift_ewma_mm = 0.0f;
+    g_bp_drift_samples = 0;
+    g_bp_drift_last_ms = 0;
+    g_bp_drift_correction_applied_mm = 0.0f;
+    memset(g_adv_pin_ts, 0, sizeof(g_adv_pin_ts));
+    g_adv_pin_ts_idx = 0;
+    g_adv_risk_emit_ms = 0;
 
     if (reset_estimator) {
         extruder_est_sps = 0.0f;
@@ -701,6 +744,8 @@ static void sync_on_transition(buf_state_t prev, buf_state_t now_state, uint32_t
 
     if (now_state == BUF_ADVANCE) {
         sync_advance_pin_since_ms = now_ms;
+        g_adv_pin_ts[g_adv_pin_ts_idx] = now_ms;
+        g_adv_pin_ts_idx = (g_adv_pin_ts_idx + 1) % ADV_PIN_WINDOW_LEN;
     } else if (prev == BUF_ADVANCE) {
         sync_advance_pin_since_ms = 0;
     }
@@ -761,6 +806,11 @@ void buf_sensor_tick(uint32_t now_ms) {
                     g_buf_est_fallback_emitted = true;
                     sync_reserve_integral_mm = 0.0f;
                     cmd_event("BUF", "EST_FALLBACK");
+                    g_bp_drift_ewma_mm = 0.0f;
+                    g_bp_drift_samples = 0;
+                    g_bp_drift_last_ms = 0;
+                    g_bp_drift_correction_applied_mm = 0.0f;
+                    cmd_event("BUF", "DRIFT_RESET");
                 }
                 if (sync_enabled && g_buf_confidence < EST_LOW_CF_WARN_THRESHOLD) {
                     if (g_buf_est_low_cf_emit_ms == 0 ||
@@ -854,12 +904,25 @@ void sync_tick(uint32_t now_ms) {
     float raw_target = buf_target_reserve_mm();
     float reserve_deadband_mm = buf_virtual_deadband_mm();
 
+    /* Phase 2.6: effective buffer position with drift correction (default OFF) */
+    float bp_eff = g_buf_pos;
+    float drift_correction_mm = 0.0f;
+    bool drift_apply_gate = (BUF_DRIFT_APPLY_THR_MM > 0.0f)
+        && ((int)g_bp_drift_samples >= BUF_DRIFT_MIN_SAMPLES)
+        && (fabsf(g_bp_drift_ewma_mm) >= BUF_DRIFT_APPLY_THR_MM)
+        && (g_buf_signal.confidence >= BUF_DRIFT_APPLY_MIN_CF);
+    if (drift_apply_gate) {
+        drift_correction_mm = clamp_f(g_bp_drift_ewma_mm, -BUF_DRIFT_CLAMP_MM, BUF_DRIFT_CLAMP_MM);
+        bp_eff = g_buf_pos - drift_correction_mm;
+    }
+    g_bp_drift_correction_applied_mm = drift_correction_mm;
+
     /* Phase 2.5: integral reserve centering — active only in BUF_MID with adequate confidence */
     bool integral_active = (s == BUF_MID)
         && (SYNC_RESERVE_INTEGRAL_GAIN > 0.0f)
         && (g_buf_signal.confidence >= 0.7f);
     if (integral_active) {
-        float raw_error = g_buf_pos - raw_target;
+        float raw_error = bp_eff - raw_target;
         float dt_s = (float)SYNC_TICK_MS / 1000.0f;
         sync_reserve_integral_mm -= SYNC_RESERVE_INTEGRAL_GAIN * raw_error * dt_s;
         sync_reserve_integral_mm = clamp_f(sync_reserve_integral_mm,
@@ -876,7 +939,7 @@ void sync_tick(uint32_t now_ms) {
     }
     float effective_target = raw_target + sync_reserve_integral_mm;
 
-    bool buf_near_target = fabsf(g_buf_pos - effective_target) < (reserve_deadband_mm * 2.0f);
+    bool buf_near_target = fabsf(bp_eff - effective_target) < (reserve_deadband_mm * 2.0f);
     if (s == BUF_ADVANCE && (now_ms - g_buf.entered_ms) > SYNC_TRAILING_COLLAPSE_DELAY_MS) {
         // Mirror the trailing bleed-down logic: if the arm stays pinned at the
         // advance wall, a conservative bootstrap estimate is now too low.
@@ -898,7 +961,7 @@ void sync_tick(uint32_t now_ms) {
         }
     }
 
-    float reserve_error_mm = g_buf_pos - effective_target;
+    float reserve_error_mm = bp_eff - effective_target;
     if (reserve_error_mm < -reserve_deadband_mm) {
         sync_recent_negative_until_ms = now_ms + SYNC_RECENT_NEGATIVE_HOLD_MS;
     }
@@ -996,7 +1059,18 @@ void sync_tick(uint32_t now_ms) {
         }
     }
 
-    target_sps = sync_apply_scaling(target_sps, effective_target);
+    /* Phase 2.6.2: ADVANCE-risk density warning (warn-only, default threshold=4) */
+    if (ADV_RISK_THRESHOLD > 0) {
+        int apx = sync_adv_pin_window_count(now_ms);
+        if (apx >= ADV_RISK_THRESHOLD) {
+            if (g_adv_risk_emit_ms == 0 || (now_ms - g_adv_risk_emit_ms) >= 30000u) {
+                g_adv_risk_emit_ms = now_ms;
+                cmd_event("SYNC", "ADV_RISK_HIGH");
+            }
+        }
+    }
+
+    target_sps = sync_apply_scaling(target_sps, effective_target, bp_eff);
 
     if (sync_post_trailing_boost_until_ms != 0) {
         if ((int32_t)(sync_post_trailing_boost_until_ms - now_ms) > 0) target_sps += PRE_RAMP_SPS;
@@ -1151,4 +1225,31 @@ float sync_reserve_integral_get_mm(void) {
 
 float sync_buf_sigma_mm(void) {
     return g_buf_sigma_mm;
+}
+
+float sync_bp_residual_last_mm(void) {
+    return g_bp_residual_last_mm;
+}
+
+float sync_bp_drift_ewma_mm(void) {
+    return g_bp_drift_ewma_mm;
+}
+
+int sync_bp_drift_samples(void) {
+    return (int)g_bp_drift_samples;
+}
+
+int sync_adv_pin_window_count(uint32_t now_ms) {
+    uint32_t window_ms = (ADV_RISK_WINDOW_MS > 0) ? (uint32_t)ADV_RISK_WINDOW_MS : 60000u;
+    int count = 0;
+    for (int i = 0; i < ADV_PIN_WINDOW_LEN; i++) {
+        if (g_adv_pin_ts[i] != 0 && (now_ms - g_adv_pin_ts[i]) < window_ms) {
+            count++;
+        }
+    }
+    return count;
+}
+
+float sync_bp_drift_correction_applied_mm(void) {
+    return g_bp_drift_correction_applied_mm;
 }

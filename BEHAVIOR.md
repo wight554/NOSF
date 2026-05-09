@@ -186,6 +186,26 @@ estimator sigma (uncertainty in mm) and confidence percentage. A large `EA:`
 value while the arm is in `BUF_MID` is normal; a large `EA:` while in `BUF_ADVANCE`
 may indicate the bleed path is the only update source.
 
+Phase 2.6 adds a residual drift observer. At every `MID → ADVANCE` and
+`MID → TRAILING` zone transition the virtual position (`g_buf_pos`) is measured
+against the known switch threshold *before* the position is snapped to that
+threshold. The difference `BPR = g_buf_pos − switch_pos_mm` is the literal
+mismatch between the virtual model and the physical arm at the one moment
+per cycle where the physical position is exactly known. These per-crossing
+residuals are accumulated into a slow EWMA (`BPD`, time constant
+`BUF_DRIFT_TAU_MS`). A stable non-zero `BPD` value indicates systematic
+virtual-position bias — the estimator is underestimating the net arm travel
+per cycle.
+
+When `BUF_DRIFT_THR_MM > 0` and at least `BUF_DRIFT_MIN_SMP` samples have
+accumulated, the controller substitutes `bp_eff = g_buf_pos − clamp(BPD, ±BUF_DRIFT_CLAMP)`
+in place of raw `g_buf_pos` for all control-law decisions in `sync_tick()`
+(reserve error, near-target check, taper scaling). The integration loop and
+re-anchoring always use the raw position; only the controller's *reaction* to
+the current position is corrected. `RDC:` (0–100) shows the correction activity
+level. The observer state resets on sync stop, `EST_FALLBACK`, and sensor
+hot-swap, emitting `EV:BUF,DRIFT_RESET`.
+
 #### Zone bias and recovery behavior
 
 In dual-endstop mode, firmware anchors the virtual position to the switch edge
@@ -226,6 +246,14 @@ or low-confidence dwells. `RC:` shows the active gain percentage (0% = disabled
 or frozen). If the integral saturates toward the advance side,
 `EV:SYNC,ADV_DWELL_WARN` is emitted as an upstream warning before an advance
 pin occurs.
+
+Phase 2.6 adds a transition-residual drift correction layer (`RDC:`). When
+enabled (`BUF_DRIFT_THR_MM > 0`), the effective position seen by the control
+law is shifted by the signed EWMA of pre-snap residuals. When enabled and the
+integral is also active, the integral operates on the corrected position so
+both terms do not double-correct for the same bias. `APX:` counts recent
+advance-pin events; `EV:SYNC,ADV_RISK_HIGH` fires when the density exceeds
+`ADV_RISK_THR` in the `ADV_RISK_WINDOW` rolling window.
 
 After a deep negative reserve excursion, firmware also latches a
 positive-relaunch damp state. During that state, positive reserve correction

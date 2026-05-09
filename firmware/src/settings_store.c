@@ -14,7 +14,7 @@
 
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4e4f5346u
-#define SETTINGS_VERSION 45u
+#define SETTINGS_VERSION 46u
 
 typedef struct {
     uint32_t magic;
@@ -93,6 +93,12 @@ typedef struct {
     float sync_reserve_integral_clamp_mm;
     int   sync_reserve_integral_decay_ms;
     float est_sigma_hard_cap_mm;
+
+    int   buf_drift_ewma_tau_ms;
+    int   buf_drift_min_samples;
+    float buf_drift_apply_thr_mm;
+    float buf_drift_clamp_mm;
+    float buf_drift_apply_min_cf;
 
     uint32_t crc32;
 } settings_t;
@@ -197,6 +203,11 @@ void settings_defaults(void) {
     SYNC_RESERVE_INTEGRAL_CLAMP_MM = CONF_SYNC_RESERVE_INTEGRAL_CLAMP_MM;
     SYNC_RESERVE_INTEGRAL_DECAY_MS = CONF_SYNC_RESERVE_INTEGRAL_DECAY_MS;
     EST_SIGMA_HARD_CAP_MM = CONF_EST_SIGMA_HARD_CAP_MM;
+    BUF_DRIFT_EWMA_TAU_MS = CONF_BUF_DRIFT_EWMA_TAU_MS;
+    BUF_DRIFT_MIN_SAMPLES = CONF_BUF_DRIFT_MIN_SAMPLES;
+    BUF_DRIFT_APPLY_THR_MM = CONF_BUF_DRIFT_APPLY_THR_MM;
+    BUF_DRIFT_CLAMP_MM = CONF_BUF_DRIFT_CLAMP_MM;
+    BUF_DRIFT_APPLY_MIN_CF = CONF_BUF_DRIFT_APPLY_MIN_CF;
     BUF_STAB_SPS = clamp_i(CONF_BUF_STAB_SPS, 10, 10000);
     JOIN_SPS = CONF_JOIN_SPS;
     PRESS_SPS = CONF_PRESS_SPS;
@@ -326,6 +337,11 @@ void settings_save(void) {
     s.sync_reserve_integral_clamp_mm = SYNC_RESERVE_INTEGRAL_CLAMP_MM;
     s.sync_reserve_integral_decay_ms = SYNC_RESERVE_INTEGRAL_DECAY_MS;
     s.est_sigma_hard_cap_mm = EST_SIGMA_HARD_CAP_MM;
+    s.buf_drift_ewma_tau_ms = BUF_DRIFT_EWMA_TAU_MS;
+    s.buf_drift_min_samples = BUF_DRIFT_MIN_SAMPLES;
+    s.buf_drift_apply_thr_mm = BUF_DRIFT_APPLY_THR_MM;
+    s.buf_drift_clamp_mm = BUF_DRIFT_CLAMP_MM;
+    s.buf_drift_apply_min_cf = BUF_DRIFT_APPLY_MIN_CF;
 
     for (int i = 0; i < NUM_LANES; i++) {
         s.tmc_rotation_distance[i] = TMC_ROTATION_DISTANCE[i];
@@ -493,6 +509,11 @@ void settings_load(void) {
     SYNC_RESERVE_INTEGRAL_CLAMP_MM = clamp_f(s->sync_reserve_integral_clamp_mm, 0.0f, 2.0f);
     SYNC_RESERVE_INTEGRAL_DECAY_MS = clamp_i(s->sync_reserve_integral_decay_ms, 0, 60000);
     EST_SIGMA_HARD_CAP_MM = clamp_f(s->est_sigma_hard_cap_mm, 0.5f, 5.0f);
+    BUF_DRIFT_EWMA_TAU_MS = clamp_i(s->buf_drift_ewma_tau_ms, 5000, 600000);
+    BUF_DRIFT_MIN_SAMPLES = clamp_i(s->buf_drift_min_samples, 1, 32);
+    BUF_DRIFT_APPLY_THR_MM = clamp_f(s->buf_drift_apply_thr_mm, 0.0f, 5.0f);
+    BUF_DRIFT_CLAMP_MM = clamp_f(s->buf_drift_clamp_mm, 0.0f, 5.0f);
+    BUF_DRIFT_APPLY_MIN_CF = clamp_f(s->buf_drift_apply_min_cf, 0.0f, 1.0f);
 
     RELOAD_MODE = s->reload_mode ? 1 : 0;
     CUT_TIMEOUT_SETTLE_MS = s->cutter_settle_ms;

@@ -1,3 +1,4 @@
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -136,8 +137,15 @@ static void status_dump(void) {
         uint32_t ea_ms = sync_est_age_ms(now_ms);
         int rc = (SYNC_RESERVE_INTEGRAL_GAIN > 0.0f && sync_enabled
                   && g_buf.state == BUF_MID && g_buf_signal.confidence >= 0.7f) ? 100 : 0;
+        float drift_corr = sync_bp_drift_correction_applied_mm();
+        int rdc = 0;
+        if (BUF_DRIFT_CLAMP_MM > 0.0f && drift_corr != 0.0f) {
+            rdc = (int)(fabsf(drift_corr) / BUF_DRIFT_CLAMP_MM * 100.0f);
+            if (rdc > 100) rdc = 100;
+        }
         snprintf(b + blen, sizeof(b) - (size_t)blen,
-            ",RT:%.2f,RD:%.2f,AD:%u,TD:%u,TW:%u,EA:%u,SK:%u,CF:%.2f,RI:%.2f,RC:%d,ES:%.2f,EC:%d",
+            ",RT:%.2f,RD:%.2f,AD:%u,TD:%u,TW:%u,EA:%u,SK:%u,CF:%.2f,RI:%.2f,RC:%d,ES:%.2f,EC:%d"
+            ",BPR:%.2f,BPD:%.2f,BPN:%d,APX:%d,RDC:%d",
             (double)sync_reserve_target_mm(),
             (double)sync_reserve_deadband_mm(),
             (unsigned)ad_ms,
@@ -149,7 +157,12 @@ static void status_dump(void) {
             (double)sync_reserve_integral_get_mm(),
             rc,
             (double)sync_buf_sigma_mm(),
-            (int)(g_buf_signal.confidence * 100.0f));
+            (int)(g_buf_signal.confidence * 100.0f),
+            (double)sync_bp_residual_last_mm(),
+            (double)sync_bp_drift_ewma_mm(),
+            sync_bp_drift_samples(),
+            sync_adv_pin_window_count(now_ms),
+            rdc);
     }
 
     cmd_reply("OK", b);
@@ -456,6 +469,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
                 return;
             }
             BUF_SENSOR_TYPE = clamp_i(iv, 0, 1);
+            sync_disable(false);
         }
         else if (!strcmp(base_param, "BUF_NEUTRAL")) BUF_NEUTRAL = clamp_f(fv, 0.0f, 1.0f);
         else if (!strcmp(base_param, "BUF_RANGE")) BUF_RANGE = clamp_f(fv, 0.01f, 0.5f);
@@ -477,6 +491,13 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "EST_SIGMA_CAP")) EST_SIGMA_HARD_CAP_MM = clamp_f(fv, 0.5f, 5.0f);
         else if (!strcmp(base_param, "EST_LOW_CF_THR")) EST_LOW_CF_WARN_THRESHOLD = clamp_f(fv, 0.0f, 1.0f);
         else if (!strcmp(base_param, "EST_FALLBACK_THR")) EST_FALLBACK_CF_THRESHOLD = clamp_f(fv, 0.0f, 0.5f);
+        else if (!strcmp(base_param, "BUF_DRIFT_TAU_MS")) BUF_DRIFT_EWMA_TAU_MS = clamp_i(iv, 5000, 600000);
+        else if (!strcmp(base_param, "BUF_DRIFT_MIN_SMP")) BUF_DRIFT_MIN_SAMPLES = clamp_i(iv, 1, 32);
+        else if (!strcmp(base_param, "BUF_DRIFT_THR_MM")) BUF_DRIFT_APPLY_THR_MM = clamp_f(fv, 0.0f, 5.0f);
+        else if (!strcmp(base_param, "BUF_DRIFT_CLAMP")) BUF_DRIFT_CLAMP_MM = clamp_f(fv, 0.0f, 5.0f);
+        else if (!strcmp(base_param, "BUF_DRIFT_MIN_CF")) BUF_DRIFT_APPLY_MIN_CF = clamp_f(fv, 0.0f, 1.0f);
+        else if (!strcmp(base_param, "ADV_RISK_WINDOW")) ADV_RISK_WINDOW_MS = clamp_i(iv, 5000, 300000);
+        else if (!strcmp(base_param, "ADV_RISK_THR")) ADV_RISK_THRESHOLD = clamp_i(iv, 0, 1000);
         else if (!strcmp(base_param, "TS_BUF_MS")) TS_BUF_FALLBACK_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "STARTUP_MS")) MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "SERVO_OPEN")) SERVO_OPEN_US = clamp_i(iv, 400, 2600);
@@ -576,6 +597,13 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "EST_SIGMA_CAP")) snprintf(out, sizeof(out), "EST_SIGMA_CAP:%.3f", (double)EST_SIGMA_HARD_CAP_MM);
         else if (!strcmp(param, "EST_LOW_CF_THR")) snprintf(out, sizeof(out), "EST_LOW_CF_THR:%.3f", (double)EST_LOW_CF_WARN_THRESHOLD);
         else if (!strcmp(param, "EST_FALLBACK_THR")) snprintf(out, sizeof(out), "EST_FALLBACK_THR:%.3f", (double)EST_FALLBACK_CF_THRESHOLD);
+        else if (!strcmp(param, "BUF_DRIFT_TAU_MS")) snprintf(out, sizeof(out), "BUF_DRIFT_TAU_MS:%d", BUF_DRIFT_EWMA_TAU_MS);
+        else if (!strcmp(param, "BUF_DRIFT_MIN_SMP")) snprintf(out, sizeof(out), "BUF_DRIFT_MIN_SMP:%d", BUF_DRIFT_MIN_SAMPLES);
+        else if (!strcmp(param, "BUF_DRIFT_THR_MM")) snprintf(out, sizeof(out), "BUF_DRIFT_THR_MM:%.3f", (double)BUF_DRIFT_APPLY_THR_MM);
+        else if (!strcmp(param, "BUF_DRIFT_CLAMP")) snprintf(out, sizeof(out), "BUF_DRIFT_CLAMP:%.3f", (double)BUF_DRIFT_CLAMP_MM);
+        else if (!strcmp(param, "BUF_DRIFT_MIN_CF")) snprintf(out, sizeof(out), "BUF_DRIFT_MIN_CF:%.3f", (double)BUF_DRIFT_APPLY_MIN_CF);
+        else if (!strcmp(param, "ADV_RISK_WINDOW")) snprintf(out, sizeof(out), "ADV_RISK_WINDOW:%d", ADV_RISK_WINDOW_MS);
+        else if (!strcmp(param, "ADV_RISK_THR")) snprintf(out, sizeof(out), "ADV_RISK_THR:%d", ADV_RISK_THRESHOLD);
         else if (!strcmp(param, "TS_BUF_MS")) snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
         else if (!strcmp(param, "STARTUP_MS")) snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
         else if (!strcmp(param, "EST_ALPHA_MIN")) snprintf(out, sizeof(out), "EST_ALPHA_MIN:%.3f", (double)EST_ALPHA_MIN);
