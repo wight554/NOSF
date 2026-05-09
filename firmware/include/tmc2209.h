@@ -12,6 +12,7 @@ typedef struct {
     uint sm_rx;
     uint offset_tx;
     uint offset_rx;
+    uint32_t chopconf;
 } tmc_t;
 #define TMC_REG_GCONF       0x00
 #define TMC_REG_GSTAT       0x01

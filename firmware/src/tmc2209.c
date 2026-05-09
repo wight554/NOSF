@@ -5,6 +5,7 @@
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 #include "tmc_uart.pio.h"
+#include "config.h"
 
 #define TMC_BAUD    40000u
 
@@ -185,23 +186,42 @@ int tmc_read_raw(tmc_t *t, uint8_t reg, uint8_t *buf_out) {
     return tmc_read_bytes(t, reg, buf_out);
 }
 
-static uint8_t clamp_u5_from_ma(int ma) {
+static uint8_t calculate_cs(int ma, bool vsense) {
     if (ma <= 0) return 0;
     float irms   = (float)ma / 1000.0f;
-    float reff   = 0.110f + 0.020f;
+    float vfs    = vsense ? 0.180f : 0.325f;
+    float r_sense = CONF_RSENSE_OHM;
+    float r_total = r_sense + 0.020f;
     float sqrt2  = 1.41421356f;
-    int v = (int)(32.0f * irms * reff * sqrt2 / 0.32f - 1.0f + 0.5f);
-    if (v < 16) {
-        v = (int)(32.0f * irms * reff * sqrt2 / 0.18f - 1.0f + 0.5f);
-    }
-    if (v < 0)  v = 0;
-    if (v > 31) v = 31;
-    return (uint8_t)v;
+    
+    // CS = (I_RMS * 32 * R_TOTAL * sqrt(2) / V_FS) - 1
+    float cs_f = (irms * 32.0f * r_total * sqrt2 / vfs) - 1.0f;
+    int cs = (int)(cs_f + 0.5f); // Round to nearest
+    
+    if (cs < 0)  cs = 0;
+    if (cs > 31) cs = 31;
+    return (uint8_t)cs;
 }
 
 bool tmc_set_run_current_ma(tmc_t *t, int run_ma, int hold_ma) {
-    uint8_t irun = clamp_u5_from_ma(run_ma);
-    uint8_t ihold = clamp_u5_from_ma(hold_ma);
+    // Klipper-style vsense toggling: use high sensitivity (vsense=1, 0.180V) up to 0.98A
+    // and low sensitivity (vsense=0, 0.325V) above that for better resolution at lower currents.
+    bool vsense = (run_ma <= 980);
+    
+    uint8_t irun = calculate_cs(run_ma, vsense);
+    uint8_t ihold = calculate_cs(hold_ma, vsense);
+    
+    // Update CHOPCONF if vsense bit (bit 17) needs to change
+    uint32_t current_vsense = (t->chopconf >> 17) & 1u;
+    if (current_vsense != (uint32_t)vsense) {
+        if (vsense) {
+            t->chopconf |= (1u << 17);
+        } else {
+            t->chopconf &= ~(1u << 17);
+        }
+        tmc_write(t, TMC_REG_CHOPCONF, t->chopconf);
+    }
+
     uint32_t reg = ((uint32_t)ihold) | ((uint32_t)irun << 8) | (8u << 16);
     return tmc_write(t, TMC_REG_IHOLD_IRUN, reg);
 }
@@ -236,6 +256,7 @@ bool tmc_setup_chopconf(tmc_t *t, int microsteps, int toff, int tbl, int hstrt, 
     if (intpol) {
         chop |= (1u << 28);
     }
+    t->chopconf = chop;
     return tmc_write(t, TMC_REG_CHOPCONF, chop);
 }
 

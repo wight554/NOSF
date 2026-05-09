@@ -334,6 +334,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             int idx = lane_to_idx(ln);
             if (tmc_set_run_current_ma(t, ma, TMC_HOLD_CURRENT_MA[idx])) {
                 TMC_RUN_CURRENT_MA[idx] = ma;
+                g_shadow_vsense[idx] = (ma <= 980);
                 g_shadow_ihold_irun[idx] = build_ihold_irun_reg(TMC_RUN_CURRENT_MA[idx], TMC_HOLD_CURRENT_MA[idx], g_shadow_vsense[idx]);
                 g_shadow_ihold_irun_valid[idx] = true;
                 cmd_reply("OK", NULL);

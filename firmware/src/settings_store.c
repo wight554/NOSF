@@ -379,6 +379,12 @@ void sync_tmc_settings(int lane) {
 
     tmc_setup_chopconf(t, TMC_MICROSTEPS[idx], TMC_TOFF[idx], TMC_TBL[idx], TMC_HSTRT[idx], TMC_HEND[idx], TMC_INTERPOLATE[idx]);
     tmc_set_stealthchop_sps(t, TMC_STEALTHCHOP_SPS[idx], TMC_MICROSTEPS[idx]);
+    tmc_set_run_current_ma(t, TMC_RUN_CURRENT_MA[idx], TMC_HOLD_CURRENT_MA[idx]);
+
+    // Synchronize shadow state for protocol reporting
+    g_shadow_vsense[idx] = (TMC_RUN_CURRENT_MA[idx] <= 980);
+    g_shadow_ihold_irun[idx] = build_ihold_irun_reg(TMC_RUN_CURRENT_MA[idx], TMC_HOLD_CURRENT_MA[idx], g_shadow_vsense[idx]);
+    g_shadow_ihold_irun_valid[idx] = true;
 }
 
 static void tmc_apply_all(void) {
@@ -391,10 +397,10 @@ static void tmc_apply_all(void) {
     tmc_set_run_current_ma(&g_tmc_l1, TMC_RUN_CURRENT_MA[0], TMC_HOLD_CURRENT_MA[0]);
     tmc_set_run_current_ma(&g_tmc_l2, TMC_RUN_CURRENT_MA[1], TMC_HOLD_CURRENT_MA[1]);
 
-    g_shadow_vsense[0] = true;
-    g_shadow_vsense[1] = true;
-    g_shadow_ihold_irun[0] = build_ihold_irun_reg(TMC_RUN_CURRENT_MA[0], TMC_HOLD_CURRENT_MA[0], true);
-    g_shadow_ihold_irun[1] = build_ihold_irun_reg(TMC_RUN_CURRENT_MA[1], TMC_HOLD_CURRENT_MA[1], true);
+    g_shadow_vsense[0] = (TMC_RUN_CURRENT_MA[0] <= 980);
+    g_shadow_vsense[1] = (TMC_RUN_CURRENT_MA[1] <= 980);
+    g_shadow_ihold_irun[0] = build_ihold_irun_reg(TMC_RUN_CURRENT_MA[0], TMC_HOLD_CURRENT_MA[0], g_shadow_vsense[0]);
+    g_shadow_ihold_irun[1] = build_ihold_irun_reg(TMC_RUN_CURRENT_MA[1], TMC_HOLD_CURRENT_MA[1], g_shadow_vsense[1]);
     g_shadow_ihold_irun_valid[0] = true;
     g_shadow_ihold_irun_valid[1] = true;
 }

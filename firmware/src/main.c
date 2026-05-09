@@ -181,7 +181,7 @@ int lane_to_idx(int ln) {
 
 static int cs_to_ma(uint8_t cs, bool vsense) {
     const float reff = CONF_RSENSE_OHM + 0.020f;
-    const float vref = vsense ? 0.18f : 0.32f;
+    const float vref = vsense ? 0.180f : 0.325f;
     const float sqrt2 = 1.41421356f;
     float irms = ((float)cs + 1.0f) * vref / (32.0f * reff * sqrt2);
     int ma = (int)(irms * 1000.0f + 0.5f);
@@ -191,7 +191,7 @@ static int cs_to_ma(uint8_t cs, bool vsense) {
 static uint8_t ma_to_cs(int ma, bool vsense) {
     if (ma <= 0) return 0;
     const float reff = CONF_RSENSE_OHM + 0.020f;
-    const float vref = vsense ? 0.18f : 0.32f;
+    const float vref = vsense ? 0.180f : 0.325f;
     const float sqrt2 = 1.41421356f;
     float irms = (float)ma / 1000.0f;
     int cs = (int)(32.0f * irms * reff * sqrt2 / vref - 1.0f + 0.5f);
