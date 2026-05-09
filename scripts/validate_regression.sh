@@ -14,6 +14,9 @@ ninja -C build_local
 echo "=== Python Syntax ==="
 python3 -m py_compile scripts/*.py
 
+echo "=== Live Tuner Self-Test ==="
+python3 scripts/test_nosf_live_tuner.py
+
 echo "=== Diff Hygiene ==="
 git diff --check
 

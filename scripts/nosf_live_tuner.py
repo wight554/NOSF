@@ -32,8 +32,18 @@ from typing import Dict, Optional
 try:
     import serial
 except ImportError:
-    print("nosf_live_tuner: 'pyserial' not installed. Run: pip install pyserial", file=sys.stderr)
-    sys.exit(1)
+    class _MissingSerial:
+        class SerialException(Exception):
+            pass
+
+        @staticmethod
+        def Serial(*_args, **_kwargs):
+            raise _MissingSerial.SerialException("pyserial is not installed")
+
+    serial = _MissingSerial()
+    PY_SERIAL_AVAILABLE = False
+else:
+    PY_SERIAL_AVAILABLE = True
 
 
 CF_GATE = 0.6
@@ -79,6 +89,8 @@ def default_state_path(machine_id: str) -> str:
 
 
 def parse_status(line: str) -> Dict[str, str]:
+    if line.startswith("OK:"):
+        line = line[3:]
     return dict(STATUS_FIELD_RE.findall(line))
 
 
@@ -537,6 +549,9 @@ def unlock_bucket(state_path: str, machine_id: str, feature: str) -> None:
 
 
 def open_serial(port: str, baud: int):
+    if not PY_SERIAL_AVAILABLE:
+        print("nosf_live_tuner: 'pyserial' not installed. Run: pip install pyserial", file=sys.stderr)
+        sys.exit(1)
     try:
         return serial.Serial(port, baud, timeout=0.05)
     except serial.SerialException as exc:
