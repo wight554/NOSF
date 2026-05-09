@@ -531,6 +531,956 @@ warning before a hard stop occurs.
 
 ---
 
+### Phase 2.7 — Trailing-Seeking Adaptive Sync, Mid-Zone Creep, Variance-Aware Position, Telemetry Pipeline & Automated Tuning
+
+> **Status:** PROPOSED. Builds on Phase 2.6.x (drift observer + confidence
+> bias). Depends on Phase 2.5 estimator-confidence surface (`EC:`, `ES:`) and
+> Phase 2 `buf_signal_t` adapter.
+>
+> **Why now.** Soak runs at slow extrusion (≤ 600 mm/min) still settle the
+> arm closer to the ADVANCE switch than to the TRAILING side. Phase 2.6
+> proved the bias is real and measurable (`BPD` converges to ~−7.8 mm on a
+> 300 mm/min run); the drift observer corrects the *control surface* but the
+> *setpoint* still aims near center, and the open-loop integrator in `MID`
+> has no time-pressure mechanism to actively seek the trailing wall during
+> long mid-dwells. Phase 2.7 closes those gaps and ships an end-to-end
+> telemetry/tuning pipeline so any further default change is data-driven
+> rather than hand-fitted.
+>
+> **Scope guard.** Per **D5**, no change to `TC_RELOAD_FOLLOW`. Per **D6**,
+> no MID-overshoot extension turn-on. Per **D7**, status fields appended at
+> tail only. Every behavioral lever ships default-OFF (gain = 0 / disabled
+> tunable) so endstop-mode parity (§4.5) is preserved by default.
+
+#### 2.7.0 — Findings (post-2.6.x)
+
+1. **Setpoint is fixed-fraction of half-travel.** `buf_target_reserve_mm()`
+   (`sync.c:145-158`) returns `−SYNC_RESERVE_PCT/100 × threshold − center_guard`.
+   At the user's `SYNC_RESERVE_PCT=50` and `BUF_HALF_TRAVEL=7.8` mm this is
+   roughly −4.3 mm — geometrically center-trailing. After 2.6.x correction
+   the controller does drive `g_buf_pos` toward this point, but the
+   *physical* arm still settles 8–12 mm forward of it (advance side). The
+   correction can only mask, not eliminate, the bias because the setpoint
+   is not chosen with safety margin in mind.
+
+2. **No mid-dwell time pressure.** The control loop has no mechanism that
+   says "we have spent 8 s in MID with no transition; nudge MMU faster
+   until we hit TRAILING and confirm position". The σ-confidence model
+   (Phase 2.5) penalises stale estimates, and the Phase 2.6 confidence-bias
+   shifts `bp_eff` toward advance, but neither term increases the
+   *commanded* feed rate; both just bias the perceived position.
+
+3. **No active wall-seek.** Once the system is in steady state at a
+   slow-and-steady extrusion rate, the estimator settles, the integrator
+   stops moving, and the arm holds wherever the residual drift left it.
+   Phase 2.6 instrumentation does not see this as a fault because no pin
+   event fires. The arm needs to *touch trailing* periodically to refresh
+   ground truth; today it does not.
+
+4. **Tuning is log-archaeology.** Every parameter shift in 2.5/2.6 was
+   driven by parsing tail strings out of a manual run. There is no
+   reproducible capture-and-analyse loop. Any further default change risks
+   over-fitting to one operator's print profile.
+
+#### 2.7.1 — Sub-phase overview
+
+| Sub-phase | Title | Modules | Default-on? | Settings bump |
+|---|---|---|---|---|
+| 2.7.0 | Trailing-bias setpoint shift (extends `SYNC_RESERVE_PCT`) | `sync.c`, `tune.h`, `config.ini` | OFF (legacy `SYNC_RESERVE_PCT` path retained) | yes (one new field) |
+| 2.7.1 | Mid-zone creep (active wall-seek) | `sync.c`, `tune.h`, `config.ini` | OFF (rate = 0) | yes (three new fields) |
+| 2.7.2 | Variance-aware position blend (extends Phase 2.5 σ surface) | `sync.c`, `tune.h`, `config.ini` | OFF (blend = 0) | yes (two new fields) |
+| 2.7.3 | Telemetry pipeline (firmware `MARK:` + host logger + g-code marker re-add) | `protocol.c`, `sync.c`, `scripts/` | host opt-in | no |
+| 2.7.4 | Automated tuner (offline regression on captured CSVs) | `scripts/` | manual run | no |
+| 2.7.5 | Optional firmware PID (Kp/Kd in addition to existing Ki) | `sync.c`, `tune.h`, `config.ini` | OFF (Kp = Kd = 0) | yes (two new fields) |
+
+**Single combined settings bump:** 46u → 47u, applied once in 2.7.0 and
+extended in 2.7.1/2.7.2/2.7.5 by appending fields to `settings_t` in the
+same version. If sub-phases ship across separate releases, each field
+addition bumps the version and the previous version is wiped clean.
+
+---
+
+### Sub-phase 2.7.0 — Trailing-Bias Setpoint Shift
+
+**Goal.** Move the proportional setpoint from "center-trailing" toward "near
+trailing endstop minus a small safety margin", *without* removing the
+existing `SYNC_RESERVE_PCT` knob (which would invalidate every operator's
+saved tune).
+
+**Approach.** Extend `buf_target_reserve_mm()` with an additive bias term
+`SYNC_TRAILING_BIAS_FRAC ∈ [0.0, 0.7]` that further shifts the target
+toward the trailing endstop. Default 0.0 — no behavior change. Operator
+ramps it up after observing 2.6.x soak data.
+
+**Code (sync.c)**
+
+```c
+/* New tunable, declared in controller_shared.h, defined in tune.h via gen_config */
+extern float SYNC_TRAILING_BIAS_FRAC;       /* 0.0..0.7; default 0.0 */
+
+/* sync.c — buf_target_reserve_mm(), replaces existing body */
+static float buf_target_reserve_mm(void) {
+    float threshold = buf_threshold_mm();
+    float physical_half = buf_physical_half_travel_mm();
+    float pct = (float)SYNC_RESERVE_PCT / 100.0f;
+    float bias = clamp_f(SYNC_TRAILING_BIAS_FRAC, 0.0f, 0.7f);
+    float center_guard_mm = threshold * SYNC_RESERVE_CENTER_GUARD_FRAC;
+
+    /* Legacy contribution (Phase 0/1 behaviour) */
+    float target = -(threshold * pct);
+    if (pct > 0.0f) target -= center_guard_mm;
+
+    /* New trailing-bias contribution: additional offset toward trailing wall */
+    target -= bias * threshold;
+
+    /* Safety margin so we never sit at the wall — leave at least 0.5 mm */
+    float min_target = -physical_half + 0.5f;
+    if (target < min_target) target = min_target;
+    if (target > threshold) target = threshold;
+    return target;
+}
+```
+
+**Anti-windup interaction.** When `g_buf_pos < raw_target − 0.25 × threshold`
+(arm physically near trailing wall), pause `sync_reserve_integral_mm`
+accumulation in the existing block at `sync.c:964-983`. Prevents the
+2.5-era integrator from continuing to wind up while the arm is already
+sitting at the desired position.
+
+```c
+/* sync.c — replace existing integral_active gate */
+bool integral_active = (s == BUF_MID)
+    && (SYNC_RESERVE_INTEGRAL_GAIN > 0.0f)
+    && (g_buf_signal.confidence >= 0.7f)
+    && (g_buf_pos > raw_target - buf_threshold_mm() * 0.25f);  /* NEW */
+```
+
+**Tunable (config.ini)**
+
+```ini
+# sync_trailing_bias_frac: 0.0   # additional setpoint shift toward trailing.
+                                 # 0.0 = legacy behavior (SYNC_RESERVE_PCT only).
+                                 # 0.4 typical for slow-extrusion soak; 0.7 max.
+```
+
+**Settings (settings_store.c)** add `float sync_trailing_bias_frac` to
+`settings_t`, persist with `clamp_f(..., 0.0f, 0.7f)`. Bump
+`SETTINGS_VERSION` 46u → 47u.
+
+**Status (protocol.c)** new tail field `TB:` — current bias fraction × 100
+as integer 0..70.
+
+**SET/GET surface**: `SET:TRAIL_BIAS_FRAC:<float>`, `GET:TRAIL_BIAS_FRAC`.
+
+**Acceptance**
+- `SET:TRAIL_BIAS_FRAC:0.0` → identical numeric `RT:` to Phase 2.6.x baseline.
+- `SET:TRAIL_BIAS_FRAC:0.4` at 300 mm/min, 5 min soak: mean `BP:` shifts 1.5 mm or more in trailing direction vs. baseline; ADVANCE-pin count does not increase.
+- No new `EV:SYNC,ADV_DWELL_STOP` events at any bias value ≤ 0.6.
+
+---
+
+### Sub-phase 2.7.1 — Mid-Zone Creep (Active Wall-Seek)
+
+**Goal.** When the arm has been in MID for more than `MID_CREEP_TIMEOUT_MS`
+without a transition, additively increase MMU rate at a bounded ramp until
+either (a) a TRAILING transition occurs (success: refresh ground truth and
+reset creep), or (b) creep cap is hit (no progress: hold cap until next
+transition or extruder demand changes). Fail-safe: any ADVANCE transition
+resets creep to zero immediately.
+
+**Approach.** Pure additive correction inside `sync_tick()` — does not
+modify the estimator, does not modify `g_buf_pos`. Bound by
+`MID_CREEP_CAP_FRAC × extruder_est_sps` so creep is zero when extruder is
+idle (no false push during pause-extrude G-code).
+
+**Code (sync.c)**
+
+```c
+/* File-static state */
+static int g_mid_creep_sps = 0;
+static uint32_t g_mid_creep_last_advance_ms = 0;
+
+/* Reset hooks */
+/* Inside sync_disable():           g_mid_creep_sps = 0; */
+/* Inside sync_on_transition() when entering BUF_ADVANCE: */
+/*   g_mid_creep_sps = 0; g_mid_creep_last_advance_ms = now_ms; */
+/* Inside sync_on_transition() when entering BUF_TRAILING: */
+/*   g_mid_creep_sps = 0;  // success — wall reached, reset */
+
+/* sync_tick() addition — placed AFTER existing target_sps calculation,
+ * BEFORE sync_apply_scaling() ramp limit. */
+static void mid_creep_update(buf_state_t s, lane_t *A, uint32_t now_ms) {
+    if (MID_CREEP_RATE_SPS_PER_S <= 0 || MID_CREEP_TIMEOUT_MS <= 0) {
+        g_mid_creep_sps = 0;
+        return;
+    }
+    if (s != BUF_MID) {
+        g_mid_creep_sps = 0;
+        return;
+    }
+    if (extruder_est_sps < 1.0f) {       /* extruder idle → no creep */
+        g_mid_creep_sps = 0;
+        return;
+    }
+    /* Cooldown after recent ADVANCE — don't immediately re-creep */
+    if (g_mid_creep_last_advance_ms != 0 &&
+        (now_ms - g_mid_creep_last_advance_ms) < (uint32_t)(MID_CREEP_TIMEOUT_MS * 2)) {
+        g_mid_creep_sps = 0;
+        return;
+    }
+    uint32_t dwell = now_ms - g_buf.entered_ms;
+    if (dwell <= (uint32_t)MID_CREEP_TIMEOUT_MS) {
+        g_mid_creep_sps = 0;
+        return;
+    }
+    float dt_s = (float)SYNC_TICK_MS / 1000.0f;
+    float step_sps = (float)MID_CREEP_RATE_SPS_PER_S * dt_s;
+    int cap_sps = (int)((float)MID_CREEP_CAP_FRAC / 100.0f * extruder_est_sps);
+    g_mid_creep_sps += (int)step_sps;
+    if (g_mid_creep_sps > cap_sps) g_mid_creep_sps = cap_sps;
+}
+
+/* Apply the creep additively to the chosen target — placed at sync.c:~1154
+ * just before/after sync_apply_scaling() depending on whether we want it
+ * pre-taper (recommended: pre-taper, so creep is itself subject to the
+ * trailing-side floor). */
+mid_creep_update(s, A, now_ms);
+target_sps += g_mid_creep_sps;
+```
+
+**Tunables**
+
+| Key | Range | Default | Purpose |
+|---|---|---|---|
+| `mid_creep_timeout_ms` | 0–60000 | **0** (OFF) | Mid-dwell wait before creep activates. 0 disables. Recommended: 4000. |
+| `mid_creep_rate_sps_per_s` | 0–200 | **0** | Creep ramp slope; zero disables. Recommended: 5–10. |
+| `mid_creep_cap_frac` | 0–25 | **10** | Hard cap on creep as percentage of `extruder_est_sps`. |
+
+All persisted (`settings_t` extension; same 47u bump as 2.7.0).
+
+**Status (protocol.c)** new tail field `MC:` — current creep additive in
+sps. Operators can watch the value rise during a long MID, fall to 0 on
+TRAILING hit.
+
+**Event** `EV:SYNC,MID_CREEP_CAP` rate-limited 1 per 5 s when creep
+saturates (signals operator to either raise cap or accept the fact that
+extruder demand exceeds expectation).
+
+**Acceptance**
+- With `mid_creep_rate_sps_per_s = 0`: zero behaviour change vs 2.7.0.
+- Synthetic test at 300 mm/min steady extrusion with creep enabled (5 sps/s, 10%, 4000 ms): TRAILING hit observed within 30 s of sync start; `BPN` increments cleanly; no ADVANCE pin in 5-min run.
+- Pause-extrude test (G-code with 30 s of zero E-moves): creep does not engage (extruder_est decays → cap is 0).
+- ADVANCE recovery test (force ADVANCE with simulated runout): creep resets to 0 within one tick of transition; cooldown holds for 8 s.
+
+---
+
+### Sub-phase 2.7.2 — Variance-Aware Position Blend
+
+**Goal.** When estimator confidence is low (high σ from Phase 2.5), blend
+`g_buf_pos` toward `reserve_target` so the controller stops trusting a
+stale integrator as ground truth. Replaces the ad-hoc Phase 2.6
+"confidence bias" (`bp_eff += (1 − conf) × thr × 0.8`) with an explicit
+Bayesian-prior pull whose strength is settable.
+
+**Approach.** Compute a *trust* scalar from the existing `g_buf_sigma_mm`
+(maintained in 2.5/2.6), then blend `g_buf_pos` toward `effective_target`
+proportionally to `(1 − trust)`. Different from 2.6's bias because (a) the
+target of the pull is the *setpoint*, not "advance side"; (b) it operates
+on `g_buf_pos` itself, not on `bp_eff`, so the integrator and the drift
+correction both see the regularised value; (c) it is gated by a tunable
+strength so it can be turned off entirely.
+
+**Code (sync.c)** — add inside `sync_tick()` immediately *before* the
+2.6.x drift-correction block (`sync.c:919`):
+
+```c
+/* Phase 2.7.2: variance-aware position blend (default OFF) */
+if (BUF_VARIANCE_BLEND_FRAC > 0.0f && g_buf_sigma_mm > 0.0f) {
+    float sigma_ref = (BUF_VARIANCE_BLEND_REF_MM > 0.05f)
+                      ? BUF_VARIANCE_BLEND_REF_MM : 1.0f;
+    float distrust = clamp_f(g_buf_sigma_mm / sigma_ref, 0.0f, 1.0f);
+    float blend = distrust * BUF_VARIANCE_BLEND_FRAC;
+    g_buf_pos = (1.0f - blend) * g_buf_pos + blend * raw_target;
+}
+```
+
+Note: this *mutates* `g_buf_pos`. Acceptable because (a) σ resets at every
+zone transition, so the blend cannot cumulatively migrate the integrator;
+(b) the pull target is the *setpoint*, which is the correct prior in the
+absence of fresh information.
+
+**Interaction with Phase 2.6 confidence-bias.** Replace the existing
+`uncertainty_shift_mm` block at `sync.c:952-957` with:
+
+```c
+/* When 2.7.2 blend is active (BLEND_FRAC > 0), 2.6's confidence-bias is
+ * redundant. Gate it off in that case. */
+if (BUF_VARIANCE_BLEND_FRAC <= 0.0f) {
+    float uncertainty_shift_mm = (1.0f - g_buf_signal.confidence) * (thr * 0.8f);
+    bp_eff += uncertainty_shift_mm;
+}
+```
+
+**Tunables**
+
+| Key | Range | Default | Purpose |
+|---|---|---|---|
+| `buf_variance_blend_frac` | 0.0–0.9 | **0.0** (OFF) | Max blend fraction at full distrust. |
+| `buf_variance_blend_ref_mm` | 0.5–5.0 | **1.0** | σ value at which distrust scalar saturates. |
+
+Both persisted; settings bump shared with 2.7.0/2.7.1.
+
+**Status** — new tail fields `VB:` (current blend scalar × 100 as int) and
+`BPV:` (post-blend `g_buf_pos`, mm × 100 as signed int — distinct from
+`BP:` which now reports the *unblended* raw value to preserve §4.5
+parity).
+
+**Acceptance**
+- `buf_variance_blend_frac = 0.0`: zero deviation from 2.6.x baseline (parity).
+- With blend = 0.5 and synthetic σ injection: `BPV:` tracks `g_buf_pos` toward `RT:` proportionally; integrator does not run away during forced 30 s mid-dwell.
+- Default-OFF runs preserve the §4.5 parity gate.
+
+---
+
+### Sub-phase 2.7.3 — Telemetry Pipeline (firmware `MARK:` + host logger + re-added g-code marker)
+
+**Goal.** Capture per-layer / per-feature buffer behaviour as a CSV the
+host can analyse offline. Replaces ad-hoc tail-string parsing with a
+single reproducible pipeline.
+
+**Architecture**
+
+```
+slicer.gcode
+    │
+    ├── scripts/gcode_marker.py  (re-added; preprocesses gcode, injects
+    │                             M118 NOSF_TUNE:<feature>:V<vfil>:W<w>:H<h>)
+    ▼
+slicer.gcode.tuned
+    │  printed via Klipper
+    ▼
+M118 lines  ──►  Klipper macro `NOSF_MARK` (in macros.cfg)
+                                   │
+                                   ▼
+                       nosf_cmd.py MARK:<tag>
+                                   │   (USB CDC, asynchronous)
+                                   ▼
+                       firmware: g_marker_seq++; g_marker_tag = "<tag>"
+                                   │   (next STATUS dump carries them)
+                                   ▼
+                       /dev/ttyACM0  ──►  scripts/nosf_logger.py
+                                                  │
+                                                  ▼
+                                       /var/log/nosf/run_YYYYmmdd-HHMMSS.csv
+```
+
+**Firmware changes (very small)**
+
+`firmware/include/protocol.h` — declare `MARK:` as a recognised command.
+
+`firmware/src/protocol.c` — new handler:
+
+```c
+} else if (strncmp(cmd, "MARK:", 5) == 0) {
+    const char *tag = cmd + 5;
+    size_t n = strlen(tag);
+    if (n >= sizeof(g_marker_tag)) n = sizeof(g_marker_tag) - 1;
+    memcpy(g_marker_tag, tag, n);
+    g_marker_tag[n] = '\0';
+    g_marker_seq++;
+    cmd_reply("OK", "MARK");
+}
+```
+
+New globals in `controller_shared.h` / `controller_shared.c`:
+
+```c
+extern char     g_marker_tag[32];
+extern uint16_t g_marker_seq;
+```
+
+Status emission (additive tail per **D7**) — append `MK:<seq>:<tag>` to
+status string. Tag is short (≤ 31 chars), so payload growth is bounded
+within the existing 480-byte status buffer.
+
+No new tunables. No settings bump.
+
+**Host: re-add `scripts/gcode_marker.py`** — restore from commit
+`272c2d4:scripts/gcode_marker.py`, with two adjustments:
+
+1. Drop M118 prefix change to `NOSF_TUNE:` exactly as in original (Klipper
+   parses M118 messages reliably; the host listener uses regex match).
+2. Add CLI flag `--every-layer` to additionally emit a marker on every
+   `;LAYER:n` boundary (most slicers emit this comment).
+
+**Host: new `scripts/nosf_logger.py`**
+
+```python
+#!/usr/bin/env python3
+"""nosf_logger.py — async CSV capture of NOSF status + M118 markers.
+
+Usage: nosf_logger.py --port /dev/ttyACM0 --out /var/log/nosf/run.csv
+The logger:
+  - opens a serial reader at 115200,
+  - polls STATUS at 10 Hz (sends `STATUS\n` and parses tail fields),
+  - listens for any `M118 NOSF_TUNE:...` lines on the same TTY (Klipper
+    echoes them via the host UART by configuration; alternatively the
+    user can pass --moonraker-url to subscribe to gcode_response events),
+  - writes one CSV row per status sample, tagging with the most-recent
+    marker seq/tag.
+
+Dependencies: pyserial, optional websockets for moonraker mode.
+"""
+import argparse, csv, re, sys, time, threading, queue
+import serial
+
+STATUS_RE = re.compile(r'(?P<key>[A-Z]+):(?P<val>-?\d+(?:\.\d+)?|[A-Z]+)')
+MARK_RE   = re.compile(r'MK:(?P<seq>\d+):(?P<tag>[^,]*)')
+M118_RE   = re.compile(r'NOSF_TUNE:(?P<feature>[^:]+):V(?P<vfil>[^:]+):W(?P<w>[^:]+):H(?P<h>[^:]+)')
+
+CSV_FIELDS = [
+    'ts_ms','lane','zone','bp_mm','sigma_mm','est_sps','current_sps',
+    'reserve_err_mm','rt_mm','ri_mm','ec','cf','bpd_mm','bpn',
+    'apx','adv_dwell_ms','tb','mc','vb','bpv_mm',
+    'marker_seq','marker_tag','feature','v_fil','width','height',
+]
+
+def parse_status(line):
+    m = dict(STATUS_RE.findall(line))
+    mk = MARK_RE.search(line)
+    if mk:
+        m['MK_SEQ'] = mk.group('seq')
+        m['MK_TAG'] = mk.group('tag')
+    return m
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--port', required=True)
+    ap.add_argument('--baud', type=int, default=115200)
+    ap.add_argument('--out',  required=True)
+    ap.add_argument('--rate-hz', type=float, default=10.0)
+    args = ap.parse_args()
+
+    ser = serial.Serial(args.port, args.baud, timeout=0.05)
+    writer = csv.DictWriter(open(args.out, 'w', newline=''), fieldnames=CSV_FIELDS)
+    writer.writeheader()
+
+    last_feature = {'feature':'','v_fil':'','width':'','height':''}
+    interval = 1.0 / args.rate_hz
+    next_t = time.monotonic()
+    while True:
+        # 1. Drain incoming lines (STATUS replies + spontaneous events + M118 echoes)
+        while True:
+            line = ser.readline().decode('utf-8', errors='replace').strip()
+            if not line: break
+            m118 = M118_RE.search(line)
+            if m118:
+                last_feature = m118.groupdict()
+                continue
+            if line.startswith('STATUS'):
+                fields = parse_status(line)
+                row = build_row(fields, last_feature)
+                writer.writerow(row)
+        # 2. Send the next STATUS poll on schedule
+        now = time.monotonic()
+        if now >= next_t:
+            ser.write(b'STATUS\n')
+            next_t = now + interval
+
+if __name__ == '__main__':
+    main()
+```
+
+Helper `build_row(...)` maps the parsed status dictionary (and `last_feature`)
+into the CSV column order. Implementation is mechanical; full source ships
+in 2.7.3.
+
+**Klipper macro (`KLIPPER.md` example block)**
+
+```ini
+# printer.cfg
+[gcode_macro NOSF_MARK]
+gcode:
+    {% set tag = params.TAG|default('NA') %}
+    RUN_SHELL_COMMAND CMD=nosf_mark PARAMS={tag}
+
+[gcode_shell_command nosf_mark]
+command: /usr/local/bin/python3 /home/pi/nosf/scripts/nosf_cmd.py MARK:%s
+timeout: 2.0
+
+# Hook into M118 if desired:
+[gcode_macro M118]
+rename_existing: M118.1
+gcode:
+    M118.1 {rawparams}
+    {% if 'NOSF_TUNE:' in rawparams %}
+        NOSF_MARK TAG={rawparams}
+    {% endif %}
+```
+
+**Acceptance**
+- `MARK:foo` returns `OK:MARK`; subsequent `STATUS` lines carry `MK:N:foo`.
+- A 5-min print with `gcode_marker.py` preprocess produces a CSV with at least one row per sliced feature; `marker_tag` column is non-empty for ≥ 95 % of rows.
+- Logger reconnects cleanly after USB disconnect (sleeps 1 s, retries).
+
+---
+
+### Sub-phase 2.7.4 — Automated Tuner (offline regression)
+
+**Goal.** Take the CSVs produced by 2.7.3 and emit a `config.ini` patch
+that improves `BASELINE_SPS`, `SYNC_TRAILING_BIAS_FRAC`, and (optionally)
+per-feature feedforward gains. **No online ML, no RL.** Pure offline
+ordinary-least-squares regression on aggregated buckets.
+
+**Reasoning** (also recorded in §7 below):
+- Online RL/online ML is unsafe under FDM (sparse rewards, long episodes,
+  hours of plant time per gradient step, no rollback if a policy update
+  causes a print failure).
+- The actual learning surface here is small: ~6 features × ~10 v_fil bins
+  = ~60 buckets per print. OLS converges in milliseconds.
+- A Pi 4 runs `pandas + scikit-learn + lightgbm` comfortably. The output
+  is a flat `config.ini` patch the operator reviews, applies, reflashes.
+
+**Code (`scripts/nosf_analyze.py`, ~150 LoC)**
+
+```python
+#!/usr/bin/env python3
+"""nosf_analyze.py — offline regression on nosf_logger.py CSVs.
+
+Reads one or more CSVs, buckets rows by (feature, v_fil_bin), fits
+per-bucket statistics, and emits a config.ini patch with suggested
+BASELINE_SPS, SYNC_TRAILING_BIAS_FRAC, and optionally per-feature
+feedforward coefficients.
+
+Usage: nosf_analyze.py --in run1.csv run2.csv --out config.patch.ini
+       [--mode safe|aggressive] [--feedforward]
+"""
+import argparse, configparser, csv, math, sys
+from collections import defaultdict
+import statistics as stats
+
+SAFETY_K = {'safe': 1.5, 'aggressive': 1.0}     # σ-multiplier on baseline reserve
+
+def bin_v_fil(v): return int(round(v / 5.0)) * 5  # 5 mm/s buckets
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--in', dest='inputs', nargs='+', required=True)
+    ap.add_argument('--out', required=True)
+    ap.add_argument('--mode', choices=['safe','aggressive'], default='safe')
+    ap.add_argument('--feedforward', action='store_true')
+    args = ap.parse_args()
+
+    rows = []
+    for path in args.inputs:
+        with open(path) as fh:
+            rows.extend(list(csv.DictReader(fh)))
+
+    # 1. Bucket by (feature, v_fil_bin)
+    buckets = defaultdict(list)
+    for r in rows:
+        try:
+            v = float(r.get('v_fil') or 0.0)
+            est = float(r.get('est_sps') or 0.0)
+            zone = r.get('zone','')
+            if v > 0 and est > 0 and zone == 'MID':
+                buckets[(r.get('feature',''), bin_v_fil(v))].append(est)
+        except ValueError:
+            continue
+
+    # 2. Per-bucket statistics
+    summary = {}
+    for key, vs in buckets.items():
+        if len(vs) < 30: continue              # sparse bucket → skip
+        summary[key] = {
+            'n': len(vs),
+            'mean': stats.mean(vs),
+            'stdev': stats.stdev(vs),
+            'p10': stats.quantiles(vs, n=10)[0],
+        }
+
+    # 3. Global recommendation: baseline = max bucket mean − k·stdev
+    means = [s['mean'] for s in summary.values()]
+    if not means:
+        print('not enough data; need at least one populated bucket', file=sys.stderr)
+        sys.exit(1)
+    suggested_baseline = max(means)
+    safety = SAFETY_K[args.mode]
+    suggested_baseline -= safety * stats.stdev(means)
+    suggested_baseline = max(0.0, suggested_baseline)
+
+    # 4. Trailing bias: derived from observed mean(BP) vs RT
+    bp_means = [float(r.get('bp_mm') or 0.0) for r in rows
+                if r.get('zone','')=='MID']
+    rt_means = [float(r.get('rt_mm') or 0.0) for r in rows
+                if r.get('zone','')=='MID']
+    if bp_means and rt_means:
+        observed_offset = stats.mean(bp_means) - stats.mean(rt_means)
+        # If arm sits advance-of-target, raise bias to push it back.
+        bias_delta = max(0.0, observed_offset / 7.8)   # threshold ≈ 7.8 mm
+        bias_delta = min(0.4, bias_delta)              # cap suggested change
+    else:
+        bias_delta = 0.0
+
+    # 5. Emit config.ini patch
+    cp = configparser.ConfigParser()
+    cp['nosf'] = {
+        '_comment': '# generated by nosf_analyze.py',
+        'baseline_rate_sps_suggestion': f'{suggested_baseline:.0f}',
+        'sync_trailing_bias_frac_delta': f'{bias_delta:.3f}',
+    }
+    if args.feedforward:
+        for (feat, v), s in sorted(summary.items()):
+            cp['nosf'][f'ff_{feat}_v{v}'] = f"{s['mean']:.0f}"
+    with open(args.out, 'w') as fh:
+        fh.write('# nosf_analyze.py output\n')
+        cp.write(fh)
+
+if __name__ == '__main__':
+    main()
+```
+
+**Workflow**
+
+```
+$ python3 scripts/gcode_marker.py print.gcode --output print.tuned.gcode
+$ # print print.tuned.gcode while running:
+$ python3 scripts/nosf_logger.py --port /dev/ttyACM0 --out run1.csv
+$ python3 scripts/nosf_analyze.py --in run1.csv --out cfg.patch.ini --mode safe
+$ # review cfg.patch.ini, manually merge into config.ini, then:
+$ python3 scripts/gen_config.py
+$ ninja -C build_local && ./scripts/flash_nosf.sh
+```
+
+Iterate. After 3–5 print cycles a steady state emerges and the patch
+file's deltas converge to noise, signalling tune is complete.
+
+**Stretch (deferred to 2.7.4-b)**: lightgbm regressor on
+`(feature, v_fil, layer_h, width)` → `optimal_baseline_sps`. Embed the
+fitted decision-tree leaves as a small lookup table compiled into
+`tune.h`. Out of scope for first release — flat OLS first, validate, then
+fancier model.
+
+**Acceptance**
+- Three soak runs on the same hardware/file produce config patches whose suggested `baseline_rate_sps` differ by less than 5 %.
+- Patch suggestions never raise `baseline_rate_sps` above the observed maximum extrusion rate (safety check).
+- Patch suggestions never drop `baseline_rate_sps` below 50 % of `extruder_est_sps` mean.
+
+---
+
+### Sub-phase 2.7.5 — Optional Firmware PID (deferred default-OFF)
+
+**Goal.** Add proportional and derivative terms to the existing
+`sync_reserve_integral_mm` block, completing a true PID. Default Kp = Kd =
+0 so behaviour is identical to 2.5/2.6.
+
+**Code (sync.c)** — replaces the existing 2.5 integral block at
+`sync.c:964-984`:
+
+```c
+/* Phase 2.7.5: full PID over reserve_error.  Default Kp=Kd=0 → degenerate
+ * to existing 2.5 integral-only behaviour. */
+static float g_pid_prev_error_mm = 0.0f;
+static uint32_t g_pid_prev_ms = 0;
+
+float reserve_error_mm = bp_eff - raw_target;       /* signed: + = advance side */
+float dt_s = (float)SYNC_TICK_MS / 1000.0f;
+
+/* Integral term (existing) */
+bool integral_active = (s == BUF_MID)
+    && (SYNC_RESERVE_INTEGRAL_GAIN > 0.0f)
+    && (g_buf_signal.confidence >= 0.7f);
+if (integral_active) {
+    sync_reserve_integral_mm -= SYNC_RESERVE_INTEGRAL_GAIN * reserve_error_mm * dt_s;
+    sync_reserve_integral_mm = clamp_f(sync_reserve_integral_mm,
+        -SYNC_RESERVE_INTEGRAL_CLAMP_MM, +SYNC_RESERVE_INTEGRAL_CLAMP_MM);
+}
+
+/* New: Proportional and Derivative on measurement (not error) — avoids
+ * derivative kick when setpoint shifts via TRAIL_BIAS_FRAC SET. */
+float p_mm = -SYNC_PID_KP * reserve_error_mm;       /* mm of target bias */
+float d_mm = 0.0f;
+if (g_pid_prev_ms != 0 && SYNC_PID_KD > 0.0f) {
+    float d_pos = bp_eff - g_pid_prev_error_mm;     /* derivative on measurement */
+    d_mm = -SYNC_PID_KD * d_pos / dt_s;
+}
+g_pid_prev_error_mm = bp_eff;
+g_pid_prev_ms = now_ms;
+
+float effective_target = raw_target + sync_reserve_integral_mm + p_mm + d_mm;
+```
+
+**Tunables**
+
+| Key | Range | Default | Purpose |
+|---|---|---|---|
+| `sync_pid_kp` | 0.0–0.5 | **0.0** | P gain on reserve_error_mm. |
+| `sync_pid_kd` | 0.0–0.1 | **0.0** | D gain on `bp_eff` derivative. |
+
+Persisted; settings bump shared with 2.7.0 (or later increment if shipped
+separately).
+
+**Status** new tail fields `KP:` / `KD:` for current values × 1000 as int.
+
+**Acceptance**
+- `Kp = Kd = 0`: numerically identical `effective_target` as 2.5 baseline (parity).
+- Bench A/B with `Kp = 0.1, Kd = 0.005`: reserve_err RMSE reduced ≥ 10 % vs Phase 2.6.x baseline; no oscillation visible in `BP:` plot.
+- §4.5 parity gate maintained at default values.
+
+**Decision gate.** Sub-phase 2.7.5 is conditional. If 2.7.0 + 2.7.1 +
+2.7.2 + 2.7.4-driven baseline tune already meet all release acceptance
+criteria, **skip 2.7.5**. PID adds two tunables; if simpler bias + creep
++ σ-blend already meets spec, do not ship the complexity.
+
+---
+
+### Algorithm Choice Summary
+
+**Hybrid: firmware PID-when-needed + host-side regression. No online ML.
+No RL.**
+
+- Stabilisation (μs latency, real-time): firmware. Existing I-term + new
+  trailing-bias setpoint + creep + σ-blend is sufficient to bound steady-
+  state error. Optional Kp/Kd available if A/B evidence demands.
+- Anticipation (per-feature feedforward, ms latency): firmware reads
+  `g_marker_tag` → optional `feedforward_table.h` lookup (deferred to
+  2.7.4-b). The marker contract is in place from 2.7.3 onwards.
+- Parameter selection (offline, batch): Pi runs `nosf_analyze.py`
+  ordinary-least-squares regression over collected CSVs → emits
+  `config.ini` patch the operator reviews and merges. Sample-efficient
+  (3–5 print runs), interpretable, trivially safe (just baseline shift).
+
+Why not RL: sparse reward, long episodes, hours of plant time per gradient
+step, no rollback if a policy update causes a print failure. Why not
+online supervised ML: same data needed as offline OLS, with extra failure
+modes (online drift, evaluation-during-training).
+
+The mathematics of the chosen control law (worst case, 2.7.5 enabled):
+
+```
+e_k          = bp_eff_k − raw_target_k                     (signed mm)
+P            = −Kp · e_k
+I            = clamp(I_{k−1} − Ki · e_k · dt, ±I_max)      (frozen on pin)
+D            = −Kd · (bp_eff_k − bp_eff_{k−1}) / dt        (on measurement)
+target_eff_k = raw_target + I + P + D
+target_sps_k = sync_apply_scaling(base_sps, target_eff_k, bp_eff_k)
+target_sps_k += g_mid_creep_sps                            (additive, capped)
+```
+
+`raw_target` is a function of `SYNC_RESERVE_PCT` and the new
+`SYNC_TRAILING_BIAS_FRAC`, both runtime-tunable.
+
+---
+
+### Documentation Sync (mandatory per repo rule #6)
+
+Every sub-phase ships with the corresponding doc updates in the same
+commit:
+
+**`MANUAL.md`**
+- Add `SET:` / `GET:` rows for every new tunable (`TRAIL_BIAS_FRAC`,
+  `MID_CREEP_TIMEOUT_MS`, `MID_CREEP_RATE_SPS_PER_S`, `MID_CREEP_CAP_FRAC`,
+  `BUF_VARIANCE_BLEND_FRAC`, `BUF_VARIANCE_BLEND_REF_MM`, `SYNC_PID_KP`,
+  `SYNC_PID_KD`).
+- Add the new `MARK:<tag>` command with example.
+- Document new status fields: `TB:`, `MC:`, `VB:`, `BPV:`, `MK:`, `KP:`, `KD:`.
+- Document new events: `EV:SYNC,MID_CREEP_CAP`.
+- Add a "Trailing-Bias Tuning Quickstart" section (8–12 lines) summarising
+  the recommended SET sequence for slow-extrusion soak workflow.
+
+**`BEHAVIOR.md`**
+- New section "Trailing-Bias Setpoint and Mid-Creep" describing the
+  control law from §"Algorithm Choice Summary" above.
+- New section "Variance-Aware Position" describing the σ → blend → `BPV:`
+  pipeline; clarifies relationship with Phase 2.6 confidence-bias (which
+  is now gated off when blend is active).
+- Update "Velocity estimator" section to note the σ surface is now
+  consumed by both the integral gate (2.5) and the blend (2.7.2).
+- Update "Buffered reserve target" to describe `SYNC_TRAILING_BIAS_FRAC`
+  as an additive shift.
+
+**`KLIPPER.md`**
+- New "G-code Tuning Marker Workflow" section (~30 lines) covering:
+  preprocessing with `gcode_marker.py`, the `[gcode_macro NOSF_MARK]`
+  example, the `nosf_logger.py` invocation, log file rotation guidance.
+- Cross-reference with `MANUAL.md` for the firmware `MARK:` command.
+
+**`CONTEXT.md`**
+- Note the new file-statics in `sync.c` (`g_mid_creep_sps`,
+  `g_pid_prev_error_mm`).
+- Note the new globals (`g_marker_tag`, `g_marker_seq`).
+- Settings version table updated to 47u.
+
+**`config.ini.example`**
+- New "Phase 2.7" comment block with all new tunables, default values,
+  and one-line guidance per key (matches existing Phase 2.5 / 2.6 block
+  style).
+
+**`CHANGELOG`-equivalent (commit-body convention)** — every sub-phase
+commit body includes a bullet list of doc files touched. Reviewers verify
+that any code-side rename appears in the matching doc.
+
+**`README.md`** — one-paragraph mention of `gcode_marker.py` and
+`nosf_logger.py` in the "Tools" section.
+
+---
+
+### Automated Tuning Workflow (operator-facing, end-to-end)
+
+The pipeline below is the user-facing contract for 2.7.3 + 2.7.4 combined.
+It is reproducible across machines and produces a deterministic
+`config.ini` patch each run.
+
+**One-time setup (per host)**
+
+```bash
+# Install host deps
+sudo apt install -y python3-pyserial python3-pandas
+pip3 install --user lightgbm scikit-learn      # optional, only for 2.7.4-b
+
+# Install scripts
+ln -s ~/nosf/scripts/nosf_logger.py   /usr/local/bin/nosf_logger
+ln -s ~/nosf/scripts/nosf_analyze.py  /usr/local/bin/nosf_analyze
+ln -s ~/nosf/scripts/gcode_marker.py  /usr/local/bin/nosf_mark_gcode
+
+# Klipper config: register the macros from the KLIPPER.md snippet above.
+sudo systemctl restart klipper
+```
+
+**Per-print loop**
+
+```bash
+# 1. Slice as normal in your slicer; export to print.gcode.
+# 2. Preprocess with marker injection.
+nosf_mark_gcode print.gcode --output print.tuned.gcode --every-layer
+
+# 3. Start logging in parallel with the print.
+mkdir -p ~/nosf-logs
+RUN=$(date +%Y%m%d-%H%M%S)
+nosf_logger --port /dev/ttyACM0 --out ~/nosf-logs/run-${RUN}.csv &
+LOGGER_PID=$!
+
+# 4. Print print.tuned.gcode via Klipper; logger captures CSV in real time.
+
+# 5. After print finishes:
+kill $LOGGER_PID
+
+# 6. Analyse.
+nosf_analyze \
+    --in ~/nosf-logs/run-${RUN}.csv \
+    --out ~/nosf-logs/patch-${RUN}.ini \
+    --mode safe
+
+# 7. Review the patch (every line is human-readable):
+cat ~/nosf-logs/patch-${RUN}.ini
+
+# 8. If accepted, merge into config.ini manually, regenerate, reflash:
+$EDITOR config.ini   # apply the suggested deltas
+python3 scripts/gen_config.py
+ninja -C build_local
+./scripts/flash_nosf.sh
+```
+
+**Soak-validation loop** (after a tune is accepted)
+
+```bash
+# Repeat steps 1–6 above with --mode safe.
+# If three consecutive runs produce nosf_analyze patches whose suggested
+# deltas are below the noise floor (|baseline_rate_sps_suggestion - current|
+# < 30 sps and |sync_trailing_bias_frac_delta| < 0.02), the tune is
+# considered converged and may be committed to the repo's config.ini.
+```
+
+**Failure-mode handling**
+
+- *Logger desyncs from firmware*: nosf_logger.py uses `time.monotonic()`
+  for its row timestamps, not firmware ticks; clock drift between host
+  and firmware is bounded by the 100 ms STATUS poll cadence and is
+  acceptable for offline regression.
+- *Klipper M118 not echoing on the same TTY*: the `--moonraker-url` flag
+  (deferred to 2.7.3-b) subscribes to gcode_response events directly via
+  websocket, removing the dependency on TTY echo configuration.
+- *Marker injection breaking print*: gcode_marker.py emits only `M118`
+  comments; if a slicer's post-processor rewrites them, fall back to
+  emitting `; NOSF_TUNE:...` plain-comment markers and have nosf_logger
+  scan TTY for the underlying gcode_response stream.
+
+---
+
+### Step-by-step Milestones (checklist)
+
+```
+[ ] 2.7.0 trailing-bias setpoint shift          sync.c, settings_store.c, tune.h, config.ini  → bump 47u
+[ ]   docs sync: MANUAL.md, BEHAVIOR.md, config.ini.example
+[ ] 2.7.1 mid-zone creep                        sync.c, settings_store.c, tune.h, config.ini
+[ ]   docs sync: MANUAL.md, BEHAVIOR.md, config.ini.example
+[ ] 2.7.2 variance-aware position blend         sync.c, settings_store.c, tune.h, config.ini
+[ ]   docs sync: MANUAL.md, BEHAVIOR.md
+[ ] 2.7.3a firmware MARK: command               protocol.c, controller_shared.[ch], sync.c
+[ ] 2.7.3b re-add scripts/gcode_marker.py       restored from 272c2d4 with --every-layer flag
+[ ] 2.7.3c new scripts/nosf_logger.py           CSV capture, async serial reader
+[ ]   docs sync: MANUAL.md (MARK:), KLIPPER.md (workflow), README.md (tools)
+[ ] 2.7.4 new scripts/nosf_analyze.py           offline regression, config.ini patch emitter
+[ ]   docs sync: KLIPPER.md (workflow), README.md
+[ ] 2.7.5 optional firmware PID (gated OFF)     sync.c, settings_store.c, tune.h, config.ini
+[ ]   docs sync: MANUAL.md, BEHAVIOR.md, config.ini.example
+[ ] 4.5 parity gate run on 2.7.0 + 2.7.1 + 2.7.2 + 2.7.5 default-OFF
+[ ] long-run soak (≥ 30 min, slow extrusion) with all features ON
+[ ] commit + push per repo rule #3 after each milestone
+```
+
+Each milestone is a single PR (one commit per sub-phase). All sub-phases
+are revertible by reverting their commit. Settings version 47u is the
+only destructive step — call it out in commit body and `MANUAL.md`.
+
+---
+
+### Phase 2.7 Acceptance (release gate)
+
+A 30-minute slow-extrusion soak (target: sustained 300–600 mm/min) on
+representative hardware must satisfy all of:
+
+- *Trailing-side residency.* Mean `BPV:` (post-blend position) ≤ −0.4 ×
+  `buf_threshold_mm()` for the final 10 minutes of the run. (Equivalent to
+  ≥ 60 % of half-travel toward trailing.)
+- *Wall-seek confirmation.* `BPN` increments at least once per 5 minutes
+  during steady extrusion (proves the system finds and re-anchors at the
+  trailing wall periodically).
+- *No advance-pin clusters.* `APX` peak ≤ 2 within any 60-s window.
+- *No new auto-stops.* Zero occurrences of `EV:SYNC,ADV_DWELL_STOP`,
+  `EV:SYNC,AUTO_STOP`, `EV:BUF,EST_FALLBACK`.
+- *Estimator health.* Mean `EC:` ≥ 70; minimum (excluding boot) ≥ 30.
+- *Reserve variance.* `stddev(RE)` ≤ 1.10 × Phase 2.6 baseline.
+- *Tuner convergence.* Three consecutive `nosf_analyze.py` runs on
+  separate prints produce suggested-delta values within noise floor (see
+  "Soak-validation loop" above).
+
+Default-OFF parity (Phase 2.6 baseline equivalence) **must** hold when
+all 2.7 tunables are at their default values. The §4.5 parity gate is the
+release blocker.
+
+---
+
+### Phase 2.7 Open Questions (deferred)
+
+- **Q-2.7-A.** Should `gcode_marker.py` emit Klipper `SET_GCODE_VARIABLE`
+  calls in addition to `M118` for tighter integration with Klipper macros
+  that consume slicer feature names? Decide after first end-to-end soak.
+- **Q-2.7-B.** Should the embedded feedforward table (2.7.4-b) be a flat
+  lookup or a polynomial fit? Lookup is simpler; polynomial is smaller in
+  flash. Decide after first OLS fit shows whether per-feature variance
+  warrants nonlinearity.
+- **Q-2.7-C.** Online learning vs offline regression long-term: revisit
+  after Phase 2.7 ships and a dataset of ≥ 100 print runs is available.
+  Until then, offline only.
+- **Q-2.7-D.** Should `MID_CREEP_RATE_SPS_PER_S` adapt to recent
+  advance-pin density (i.e. throttle creep when `APX` is high)? Possible
+  follow-up; not in 2.7.1.
+- **Q-2.7-E.** Should `BUF_VARIANCE_BLEND_FRAC` autotune from observed
+  σ-vs-pin-event covariance? Defer — operator-set in 2.7.2.
+
+---
+
 ### Phase 3 — Generic Analog Drop-In Compatibility Layer (deferred validation, PSF-ready)
 
 > **Deferred validation phase.** Per **D1**, no PSF-specific electrical
