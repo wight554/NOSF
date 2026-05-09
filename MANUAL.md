@@ -245,3 +245,13 @@ For slow-extrusion soak workflows, use this SET sequence to converge the baselin
 r causing extruder stall.
 or causing extruder stall.
 r causing extruder stall.
+
+---
+
+## Tools
+
+### Live Tuner Reconnect Behavior
+`scripts/nosf_live_tuner.py` owns the serial port while it is running. If a
+serial write fails, it waits 1 s and attempts to reopen the same port up to
+five times. If the port cannot be reopened, the tuner exits non-zero and leaves
+the state file unchanged.
