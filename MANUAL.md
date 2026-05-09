@@ -298,6 +298,11 @@ position, confidence, state, and the current wait reason. Progress lines are
 rate-limited by `--progress-interval 10`; set `--progress-interval 0` to keep
 marker-only debug output.
 
+Very low `EST` samples below 100 steps/s are ignored so pauses, coasting, and
+near-zero-flow top-surface segments do not create stable buckets or push global
+`TRAIL_BIAS_FRAC` to a rail. Buckets with learned bias outside `0.05..0.65` are
+also kept out of live writes and lock/commit eligibility.
+
 The tuner first sends `SET:LIVE_TUNE_LOCK:1` before writing live tuning values.
 That lock is not persisted and resets to `0` on boot. While it is enabled,
 manual writes to baseline, trailing bias, mid-creep, and variance-blend tuning

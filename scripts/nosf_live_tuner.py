@@ -60,6 +60,9 @@ APX_THR = 4
 P_STABLE_THR = 100.0
 SET_DEADBAND_SPS = 30.0
 BIAS_DEADBAND = 0.03
+BIAS_SAFE_MIN = 0.05
+BIAS_SAFE_MAX = 0.65
+MIN_LEARN_EST_SPS = 100.0
 MIN_SET_SPACING = 2.0
 N_MIN_SAMPLES = 200
 BUCKET_LOCK_S = 60.0
@@ -165,6 +168,8 @@ class Tuner:
         self.last_rate_limit_warn_t = -999.0
         self.allow_baseline_writes = False
         self.last_baseline_skip_warn_t = -999.0
+        self.last_low_flow_warn_t = -999.0
+        self.last_bias_rail_warn_t = -999.0
         self.progress_interval = 10.0
         self._load_state()
 
@@ -351,10 +356,17 @@ class Tuner:
             rt = float(fields.get("RT", "0"))
         except ValueError:
             return
-        if est <= 0.0:
-            return
 
         label = bucket_label(self.last_feature, self.last_v_fil)
+        if est < MIN_LEARN_EST_SPS:
+            if self.debug and now - self.last_low_flow_warn_t >= max(1.0, self.progress_interval):
+                print(
+                    f"[tuner] skip low-flow {label} est={est:.1f} < {MIN_LEARN_EST_SPS:.0f}",
+                    file=sys.stderr,
+                )
+                self.last_low_flow_warn_t = now
+            return
+
         wall_now = self.wall_fn()
         b = self.buckets.setdefault(label, Bucket(label=label, x=est, first_seen=wall_now))
         self.active_label = label
@@ -397,6 +409,8 @@ class Tuner:
             return f"samples {b.n}/{N_MIN_SAMPLES}"
         if b.P > 4.0 * P_STABLE_THR:
             return f"variance P>{4.0 * P_STABLE_THR:.0f}"
+        if not self._bias_in_safe_range(b.bias):
+            return "bias rail guard"
         if abs(b.x - b.last_set_x) >= SET_DEADBAND_SPS and not self.allow_baseline_writes:
             return "baseline observe-only"
         if abs(b.bias - b.last_set_bias) >= BIAS_DEADBAND:
@@ -446,6 +460,14 @@ class Tuner:
                 self.last_set_t = now
                 return
         if abs(b.bias - b.last_set_bias) >= BIAS_DEADBAND:
+            if not self._bias_in_safe_range(b.bias):
+                if self.debug and now - self.last_bias_rail_warn_t >= max(1.0, self.progress_interval):
+                    print(
+                        f"[tuner] bias write skipped for {b.label}; rail guard bias={b.bias:.3f}",
+                        file=sys.stderr,
+                    )
+                    self.last_bias_rail_warn_t = now
+                return
             if self._rate_limited(now):
                 return
             self._engage_lock()
@@ -459,6 +481,7 @@ class Tuner:
             b.P < P_STABLE_THR
             and b.n >= N_MIN_SAMPLES
             and x_stable
+            and self._bias_in_safe_range(b.bias)
             and abs(b.bias - b.last_set_bias) < BIAS_DEADBAND
         )
         if not stable:
@@ -483,6 +506,10 @@ class Tuner:
         b.P = max(b.P, 1e4)
         if self.allow_baseline_writes and b.last_set_x:
             self._send(f"SET:BASELINE_SPS:{int(round(b.last_set_x))}")
+
+    @staticmethod
+    def _bias_in_safe_range(bias: float) -> bool:
+        return BIAS_SAFE_MIN <= bias <= BIAS_SAFE_MAX
 
     def print_idle_ready(self, idle_s: float = 30.0) -> bool:
         if not self.seen_print_activity:

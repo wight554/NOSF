@@ -164,6 +164,39 @@ def test_baseline_writes_disabled_by_default():
         return "baseline SETs are opt-in only"
 
 
+def test_low_flow_samples_are_ignored():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t, fake = make_tuner(os.path.join(td, "state.json"), clock)
+        for _ in range(20):
+            clock.step(1.0)
+            t.on_status(status(est=0.5))
+        assert not t.buckets, t.buckets
+        assert not fake.writes, fake.writes
+        return "low-flow EST samples do not create buckets"
+
+
+def test_bias_rail_guard_blocks_set_and_lock():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t, fake = make_tuner(os.path.join(td, "state.json"), clock)
+        b = tuner_mod.Bucket(
+            label="PERIMETER_v40",
+            x=1600.0,
+            P=50.0,
+            n=250,
+            bias=0.700,
+            last_set_x=1600.0,
+            last_set_bias=0.4,
+        )
+        clock.step(3.0)
+        t._maybe_emit_set(b, clock.now())
+        t._maybe_lock(b, clock.now())
+        assert not [w for w in fake.writes if w.startswith("SET:TRAIL_BIAS_FRAC:")], fake.writes
+        assert b.state == "TRACKING", b.state
+        return "rail-clamped bias is not written or locked"
+
+
 def test_debug_bucket_progress_line():
     with tempfile.TemporaryDirectory() as td:
         clock = Clock()
@@ -230,6 +263,8 @@ def main():
         ("halt", test_adv_dwell_stop_halts),
         ("rate-limit", test_rate_limit_three_sets_per_window),
         ("baseline-off", test_baseline_writes_disabled_by_default),
+        ("low-flow", test_low_flow_samples_are_ignored),
+        ("bias-rail", test_bias_rail_guard_blocks_set_and_lock),
         ("debug-log", test_debug_bucket_progress_line),
         ("idle-arm", test_commit_idle_requires_activity),
         ("mk-marker", test_status_mk_marker_fallback),

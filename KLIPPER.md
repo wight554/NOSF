@@ -297,6 +297,9 @@ Use `--debug` for tuning bring-up. It prints marker changes plus throttled
 per-bucket progress lines showing samples, variance, learned `x`, live `EST`,
 bias, confidence, state, and why the bucket is waiting. The cadence is
 controlled by `--progress-interval 10`; use `0` for marker-only debug output.
+Very low `EST` samples below 100 steps/s and rail-clamped bias buckets are
+ignored for live writes so pause/coast/top-surface artifacts do not become a
+global tuning value.
 
 `nosf_live_tuner.py` and `nosf_logger.py` both own the NOSF USB TTY. Do not run
 them against the same `/dev/ttyACM*` at the same time. Use the live tuner for
