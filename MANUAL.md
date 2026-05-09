@@ -268,8 +268,13 @@ For normal tuning runs, prefer automatic end-of-print commit:
 
 ```bash
 python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
-    --machine-id myprinter --commit-on-idle
+    --machine-id myprinter --commit-on-idle \
+    --klipper-log ~/printer_data/logs/klippy.log
 ```
+
+`--klipper-log` is recommended when `NOSF_TUNE` appears as `echo:` lines in the
+Klipper console. The tuner also understands firmware `MK:` status markers when
+the marker-forwarding macro sends `MARK:` to NOSF.
 
 The tuner first sends `SET:LIVE_TUNE_LOCK:1` before writing live tuning values.
 That lock is not persisted and resets to `0` on boot. While it is enabled,

@@ -159,6 +159,23 @@ def test_commit_idle_requires_activity():
         return "commit-on-idle arms only after marker activity"
 
 
+def test_status_mk_marker_fallback():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t, fake = make_tuner(os.path.join(td, "state.json"), clock)
+        t.last_feature = ""
+        t.last_v_fil = 0.0
+        line = status(est=1800) + ",MK:7:NOSF_TUNE:Outer wall:V40.0:W0.45:H0.20"
+        for _ in range(3):
+            clock.step(1.0)
+            t.on_status(line)
+        assert t.last_feature == "Outer wall"
+        assert t.last_v_fil == 40.0
+        assert t.active_label == "Outer wall_v40"
+        assert not fake.writes
+        return "firmware MK status marker seeds active bucket"
+
+
 def main():
     tests = [
         ("warm-up", test_cold_start_no_set),
@@ -167,6 +184,7 @@ def main():
         ("halt", test_adv_dwell_stop_halts),
         ("rate-limit", test_rate_limit_three_sets_per_window),
         ("idle-arm", test_commit_idle_requires_activity),
+        ("mk-marker", test_status_mk_marker_fallback),
     ]
     print(f"{'case':<14} result")
     print(f"{'-' * 14} {'-' * 40}")

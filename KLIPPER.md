@@ -260,13 +260,19 @@ Recommended tuning-print invocation:
 
 ```bash
 python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
-    --machine-id myprinter --commit-on-idle &
+    --machine-id myprinter --commit-on-idle \
+    --klipper-log ~/printer_data/logs/klippy.log &
 ```
 
 `--commit-on-idle` waits until NOSF reports idle for at least 30 s, then sends
 `SET:LIVE_TUNE_LOCK:0`, sends `SV:`, emits `/tmp/nosf-patch.ini`, logs that path
 to stderr, and exits. Review the patch before merging it into repo
 `config.ini`.
+
+Use `--klipper-log` when the marker lines appear in the Klipper console as
+`echo: NOSF_TUNE:...`. If your Klipper macro forwards markers to NOSF with
+`MARK:`, the tuner can also recover marker context from firmware `MK:` status
+fields.
 
 `nosf_live_tuner.py` and `nosf_logger.py` both own the NOSF USB TTY. Do not run
 them against the same `/dev/ttyACM*` at the same time. Use the live tuner for

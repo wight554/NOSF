@@ -67,6 +67,7 @@ DEFAULT_STATE_DIR = os.path.expanduser("~/nosf-state")
 
 STATUS_FIELD_RE = re.compile(r"(?P<key>[A-Z0-9]+):(?P<val>-?\d+(?:\.\d+)?|[A-Z_]+|[^,]*)")
 EVENT_RE = re.compile(r"^EV:([A-Z_]+),([A-Z_]+)")
+MARK_RE = re.compile(r"MK:(?P<seq>\d+):(?P<tag>[^,]*)")
 M118_RE = re.compile(
     r"NOSF_TUNE:(?P<feature>[^:]+):V(?P<vfil>[^:]+):W(?P<w>[^:]+):H(?P<h>[^:\s]+)"
 )
@@ -149,6 +150,7 @@ class Tuner:
         self.last_feature = ""
         self.last_v_fil = 0.0
         self.last_marker_t = 0.0
+        self.last_marker_seq = -1
         self.idle_since = 0.0
         self.seen_print_activity = False
         self.recent_sets = deque()
@@ -264,6 +266,16 @@ class Tuner:
         except ValueError:
             self.last_v_fil = 0.0
 
+    def on_status_marker(self, raw: str) -> None:
+        m = MARK_RE.search(raw)
+        if not m:
+            return
+        seq = int(m.group("seq"))
+        if seq == self.last_marker_seq:
+            return
+        self.last_marker_seq = seq
+        self.on_m118(m.group("tag"))
+
     def on_event(self, line: str) -> None:
         now = self.now_fn()
         if line.startswith("EV:SYNC,ADV_RISK_HIGH"):
@@ -278,6 +290,7 @@ class Tuner:
     def on_status(self, line: str) -> None:
         if self.halted:
             return
+        self.on_status_marker(line)
         now = self.now_fn()
         fields = parse_status(line)
         if not fields:
@@ -598,7 +611,16 @@ def open_serial(port: str, baud: int):
 
 def run_loop(args) -> None:
     lock_path = acquire_state_lock(args.state)
+    klipper_log = None
     try:
+        if args.klipper_log:
+            try:
+                klipper_log = open(args.klipper_log, "r")
+                klipper_log.seek(0, os.SEEK_END)
+                print(f"[tuner] tailing Klipper log: {args.klipper_log}", file=sys.stderr)
+            except OSError as exc:
+                print(f"[tuner] could not open Klipper log: {exc}", file=sys.stderr)
+                sys.exit(1)
         ser = open_serial(args.port, args.baud)
         lines: queue.Queue = queue.Queue(maxsize=1024)
         threading.Thread(target=reader, args=(ser, lines), daemon=True).start()
@@ -610,6 +632,10 @@ def run_loop(args) -> None:
             if now >= next_poll:
                 tuner._send("?:", count_rate=False)
                 next_poll = now + poll_interval
+            if klipper_log:
+                for log_line in klipper_log.readlines():
+                    if "NOSF_TUNE:" in log_line:
+                        tuner.on_m118(log_line)
             try:
                 line = lines.get(timeout=0.05)
             except queue.Empty:
@@ -638,6 +664,8 @@ def run_loop(args) -> None:
         tuner._persist()
         print("[tuner] persisted state on exit", file=sys.stderr)
     finally:
+        if klipper_log:
+            klipper_log.close()
         release_state_lock(lock_path)
 
 
@@ -657,6 +685,7 @@ def main() -> None:
     ap.add_argument("--state-info", action="store_true", help="Print state summary table and exit")
     ap.add_argument("--reset-runtime", action="store_true", help="Send LIVE_TUNE_LOCK:0 and LD:, then exit")
     ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, unlock, SV:, emit /tmp/nosf-patch.ini, and exit")
+    ap.add_argument("--klipper-log", help="Tail klippy.log for NOSF_TUNE marker echoes while tuning")
     args = ap.parse_args()
     if args.state is None:
         args.state = default_state_path(args.machine_id)
