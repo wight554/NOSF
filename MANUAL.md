@@ -269,21 +269,23 @@ For normal tuning runs, prefer automatic end-of-print commit:
 
 ```bash
 python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
-    --machine-id myprinter --commit-on-idle
+    --machine-id myprinter --commit-on-idle \
+    --marker-file /tmp/nosf-markers-myprinter.log
 ```
 
-For this mode, preprocess G-code with direct firmware markers:
+For this mode, preprocess G-code with local marker-file delivery:
 
 ```bash
-python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode --emit mark
+python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode --emit file
 ```
 
-`--emit mark` inserts `RUN_SHELL_COMMAND CMD=nosf PARAMS="MARK:..."` lines.
-The tuner reads those markers back from the firmware `MK:` status field.
+`--emit file` inserts `RUN_SHELL_COMMAND CMD=nosf_marker PARAMS="..."` lines.
+`scripts/nosf_marker.py` appends those tags to the marker file, and the tuner
+tails that file while remaining the only process that opens `/dev/ttyACM0`.
 `--emit m118` remains available for passive console/log workflows, and
-`--emit both` emits both marker forms for debugging. With `--commit-on-idle`,
-the tuner waits for the final `MARK:FINISH` marker before considering the print
-done.
+`--emit mark` forwards through firmware `MARK:`/`MK:` for non-live-tuner tests.
+With `--commit-on-idle`, the tuner waits for the final `FINISH` marker before
+considering the print done.
 
 The tuner first sends `SET:LIVE_TUNE_LOCK:1` before writing live tuning values.
 That lock is not persisted and resets to `0` on boot. While it is enabled,

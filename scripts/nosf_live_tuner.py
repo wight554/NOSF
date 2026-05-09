@@ -637,6 +637,7 @@ def open_serial(port: str, baud: int):
 def run_loop(args) -> None:
     lock_path = acquire_state_lock(args.state)
     klipper_log = None
+    marker_file = None
     try:
         if args.klipper_log:
             try:
@@ -646,6 +647,12 @@ def run_loop(args) -> None:
             except OSError as exc:
                 print(f"[tuner] could not open Klipper log: {exc}", file=sys.stderr)
                 sys.exit(1)
+        if args.marker_file:
+            parent = os.path.dirname(os.path.abspath(args.marker_file))
+            os.makedirs(parent, exist_ok=True)
+            marker_file = open(args.marker_file, "a+")
+            marker_file.seek(0, os.SEEK_END)
+            print(f"[tuner] tailing marker file: {args.marker_file}", file=sys.stderr)
         ser = open_serial(args.port, args.baud)
         lines: queue.Queue = queue.Queue(maxsize=1024)
         threading.Thread(target=reader, args=(ser, lines), daemon=True).start()
@@ -662,6 +669,13 @@ def run_loop(args) -> None:
                 for log_line in klipper_log.readlines():
                     if "NOSF_TUNE:" in log_line:
                         tuner.on_m118(log_line)
+            if marker_file:
+                for marker_line in marker_file.readlines():
+                    parts = marker_line.strip().split(" ", 1)
+                    if len(parts) == 2:
+                        tuner.on_m118(parts[1])
+                    elif parts:
+                        tuner.on_m118(parts[0])
             try:
                 line = lines.get(timeout=0.05)
             except queue.Empty:
@@ -695,6 +709,8 @@ def run_loop(args) -> None:
     finally:
         if klipper_log:
             klipper_log.close()
+        if marker_file:
+            marker_file.close()
         release_state_lock(lock_path)
 
 
@@ -715,6 +731,7 @@ def main() -> None:
     ap.add_argument("--reset-runtime", action="store_true", help="Send LIVE_TUNE_LOCK:0 and LD:, then exit")
     ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, unlock, SV:, emit /tmp/nosf-patch.ini, and exit")
     ap.add_argument("--klipper-log", help="Tail klippy.log for NOSF_TUNE marker echoes while tuning")
+    ap.add_argument("--marker-file", help="Tail local marker file written by scripts/nosf_marker.py")
     ap.add_argument("--debug", action="store_true", help="Print marker and commit diagnostics to stderr")
     args = ap.parse_args()
     if args.state is None:

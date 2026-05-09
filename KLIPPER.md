@@ -48,6 +48,11 @@ Add to `printer.cfg`:
 command: python3 /home/pi/NOSF/scripts/nosf_cmd.py
 timeout: 130.0
 verbose: True
+
+[gcode_shell_command nosf_marker]
+command: python3 /home/pi/NOSF/scripts/nosf_marker.py --file /tmp/nosf-markers-myprinter.log
+timeout: 2.0
+verbose: False
 ```
 
 Adjust the path to match your Pi home directory. Test it with:
@@ -260,7 +265,8 @@ Recommended tuning-print invocation:
 
 ```bash
 python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
-    --machine-id myprinter --commit-on-idle &
+    --machine-id myprinter --commit-on-idle \
+    --marker-file /tmp/nosf-markers-myprinter.log &
 ```
 
 `--commit-on-idle` waits until NOSF reports idle for at least 30 s, then sends
@@ -268,20 +274,22 @@ python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
 to stderr, and exits. Review the patch before merging it into repo
 `config.ini`.
 
-For live tuning, preprocess with direct NOSF markers so Klipper forwards marker
-state to firmware:
+For live tuning, preprocess with file markers so Klipper never opens the NOSF
+USB serial port for marker delivery:
 
 ```bash
-python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode --emit mark
+python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode --emit file
 ```
 
-`--emit mark` inserts `RUN_SHELL_COMMAND CMD=nosf PARAMS="MARK:..."` lines.
-The tuner then reads the firmware `MK:` status field from normal NOSF serial
-polls. `--commit-on-idle` waits for the final `MARK:FINISH` marker from
+`--emit file` inserts `RUN_SHELL_COMMAND CMD=nosf_marker PARAMS="..."` lines.
+`nosf_marker.py` appends each marker to `/tmp/nosf-markers-myprinter.log`, and
+the tuner tails that file while it remains the only process owning
+`/dev/ttyACM0`. `--commit-on-idle` waits for the final `FINISH` marker from
 `gcode_marker.py` before it tries to save or emit a patch.
 
-`--emit m118` remains available for passive console/log workflows, and
-`--emit both` emits both forms for debugging.
+`--emit m118` remains available for passive console/log workflows. `--emit mark`
+forwards markers through firmware `MARK:`/`MK:`, but should not be used while
+the live tuner owns the serial port.
 
 `nosf_live_tuner.py` and `nosf_logger.py` both own the NOSF USB TTY. Do not run
 them against the same `/dev/ttyACM*` at the same time. Use the live tuner for

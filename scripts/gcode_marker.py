@@ -32,7 +32,7 @@ def marker_lines(tag, emit="m118", shell_cmd="nosf"):
     lines = []
     if emit in ("m118", "both"):
         lines.append(f"M118 {tag}\n")
-    if emit in ("mark", "both"):
+    if emit in ("mark", "both", "file"):
         if tag.startswith("NOSF_TUNE:FINISH"):
             mark_tag = "FINISH"
         else:
@@ -40,7 +40,11 @@ def marker_lines(tag, emit="m118", shell_cmd="nosf"):
             if not m:
                 return lines
             mark_tag = f"NT:{compact_feature(m.group('feature'))}:V{float(m.group('vfil')):.0f}"
-        lines.append(f"RUN_SHELL_COMMAND CMD={shell_cmd} PARAMS=\"MARK:{mark_tag}\"\n")
+        if emit == "file":
+            cmd = "nosf_marker" if shell_cmd == "nosf" else shell_cmd
+            lines.append(f"RUN_SHELL_COMMAND CMD={cmd} PARAMS=\"{mark_tag}\"\n")
+        else:
+            lines.append(f"RUN_SHELL_COMMAND CMD={shell_cmd} PARAMS=\"MARK:{mark_tag}\"\n")
     return lines
 
 def process_gcode(input_path, output_path, filament_dia=1.75, every_layer=False,
@@ -126,8 +130,8 @@ def main():
     parser.add_argument("--output", help="Output path")
     parser.add_argument("--dia", type=float, default=1.75, help="Filament diameter")
     parser.add_argument("--every-layer", action="store_true", help="Inject marker on every layer boundary")
-    parser.add_argument("--emit", choices=["m118", "mark", "both"], default="m118",
-                        help="Marker output: M118 echo, direct NOSF MARK shell command, or both")
+    parser.add_argument("--emit", choices=["m118", "mark", "file", "both"], default="m118",
+                        help="Marker output: M118 echo, direct NOSF MARK command, local marker file, or M118+MARK")
     parser.add_argument("--shell-cmd", default="nosf",
                         help="Klipper gcode_shell_command name for --emit mark/both")
     

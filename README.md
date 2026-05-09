@@ -111,7 +111,8 @@ python3 scripts/nosf_cmd.py "SV:"
 - `scripts/nosf_logger.py`: High-speed CSV telemetry capture (10 Hz polling)
 - `scripts/nosf_analyze.py`: Offline regression and auto-tuning patch generator
 - `scripts/nosf_live_tuner.py`: Phase 2.8 closed-loop live tuner; learns marker buckets during tuning prints, writes guarded runtime SET updates, and emits a reviewable config patch
-- `scripts/gcode_marker.py`: G-code metadata injector for telemetry correlation; use `--emit mark` for live tuner prints
+- `scripts/gcode_marker.py`: G-code metadata injector for telemetry correlation; use `--emit file` for live tuner prints
+- `scripts/nosf_marker.py`: Klipper marker-file bridge used by `gcode_marker.py --emit file`
 - `scripts/gen_config.py`: Generate `tune.h` from `config.ini`
 - `scripts/validate_regression.sh`: One-command static regression gate before flashing hardware
 
