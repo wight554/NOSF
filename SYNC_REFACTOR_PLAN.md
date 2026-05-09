@@ -456,19 +456,55 @@ on `BP:`/`RE:`/`EST:` within ±1 LSB to preserve the §4.5 parity gate.
 
 > **Status: DONE** — settings version bump 45u → 46u. Rollback: `SET BUF_DRIFT_THR_MM:0`.
 
-Adds a transition-residual drift observer that measures `g_buf_pos − switch_pos_mm`
-at `MID → ADVANCE` crossings (the ground-truth moment that matches the observed
-advance-side drift), accumulates residuals into a slow EWMA (`BPD`), and
-optionally applies a bounded correction (`bp_eff = g_buf_pos −
-scaled_clamp(BPD, ±BUF_DRIFT_CLAMP)`) to all controller-side reads of the
-virtual position. Correction ramps from the first explicit-enable sample to full
-strength at `BUF_DRIFT_MIN_SMP`. After real-print validation, the provisional
-default enables correction at `BUF_DRIFT_THR_MM = 2.0`; set it to `0.0` to
-restore the original default-off behavior.
+This phase adds a measurement layer to quantify the structural mismatch between the
+virtual position model and physical reality. It introduces a transition-anchored
+residual observer, default-OFF correction, and an additive ADVANCE-risk channel
+for upstream warning.
 
-Layered on top: a rolling advance-pin density counter (`APX`) with warn-only
-`EV:SYNC,ADV_RISK_HIGH` (rate-limited 1/30 s). Boost knob declared but not
-implemented; ship as documentation placeholder.
+#### Root-Cause Analysis
+The system identifies a "structural drift" where the model reports "near target"
+while the physical arm sits closer to the advance switch. The cause-chain is
+identified as:
+1. **Estimator self-reference:** In `BUF_MID`, the estimator blends toward the
+   commanded MMU rate, which is itself derived from the estimator. This
+   circularity prevents learning the true extruder rate if no transitions occur.
+2. **Contaminated virtual position:** The low-biased estimator causes the virtual
+   position to drift toward trailing in the model while the physical arm drifts
+   toward advance.
+3. **Starvation:** In a healthy print, transitions are rare, leaving the
+   estimator frozen at potentially noisy values for long periods.
+
+#### Chosen Implementation (Drift Observer)
+Ground truth exists at the moment a switch fires. At each `MID → ADVANCE`
+transition, the system now:
+- Measures `pos_mm_residual = pre_snap_pos_mm − switch_pos_mm`.
+- Accumulates residuals into a slow EWMA (`BPD`) with a 60s time constant.
+- Optionally applies a bounded correction: `bp_eff = g_buf_pos − scaled_clamp(BPD, ±BUF_DRIFT_CLAMP)`.
+- Ramps correction from the first sample to full strength at `BUF_DRIFT_MIN_SMP`.
+
+#### Advanced Stability Fixes (Slow Speed & Drift Robustness)
+Following real-world soak runs at slow speeds (300 mm/min), the following
+refinements were added:
+- **Estimator Stall Escape:** If the model position pins at a wall while the
+  physical arm is still in `MID`, the estimator now "bleeds" toward a target rate
+  slightly offset from the current MMU rate. This breaks circular stalls caused
+  by drift correction masking model-physical divergence.
+- **Ramping Bias (Confidence Bias):** When uncertainty is high (confidence < 1.0),
+  the effective position is shifted toward **ADVANCE**. This creates a gentle
+  feed pressure that ensures the arm gravitates toward the safe **TRAILING**
+  switch during open-loop drift.
+- **Uncertainty Speed Probe:** A direct speed boost (up to ~150 mm/min) is added
+  to the target rate based on uncertainty, ensuring the system actively "probes"
+  for a physical wall when the model is stale.
+- **Adaptive Bootstrap Floor:** The bootstrap speed used when hitting the
+  `ADVANCE` switch is now derived from the learned `baseline_sps`, preventing
+  violent rate drops during slow prints.
+
+#### ADVANCE-Risk Telemetry
+Layered on top is a rolling advance-pin density counter (`APX`). If the pin count
+exceeds `ADV_RISK_THR` (default 4) within `ADV_RISK_WINDOW` (default 60s), the
+system emits `EV:SYNC,ADV_RISK_HIGH`. This provides operators with upstream
+warning before a hard stop occurs.
 
 **New status fields (additive tail per D7):** `BPR`, `BPD`, `BPN`, `APX`, `RDC`
 
@@ -486,12 +522,12 @@ implemented; ship as documentation placeholder.
 | `ADV_RISK_WINDOW` | 60000 | runtime-only | Pin window (ms) |
 | `ADV_RISK_THR` | 4 | runtime-only | Pin count threshold |
 
-**Operator soak procedure:**
-1. Run ≥1 print; observe `BPD` and `BPN` in STATUS logs.
-2. If correction is too aggressive near a wall, lower `BUF_DRIFT_CLAMP` or
-   raise `BUF_DRIFT_THR_MM`; if still debugging baseline parity, set
-   `BUF_DRIFT_THR_MM:0`.
-3. If `BPD ≈ 0` after ≥5 transitions: drift is not the root cause; re-evaluate.
+#### Operator Tuning Procedure
+1. Observe `BPR` and `BPD` in logs. Consistently negative `BPR` on `MID → ADVANCE`
+   transitions confirms systematic advance-side drift.
+2. Enable correction: `SET BUF_DRIFT_THR_MM:0.5; SET BUF_DRIFT_MIN_SAMPLES:3`.
+3. Monitor `RDC` (activity scalar) and verify `|BPD|` stays bounded and ADVANCE
+   pins are reduced.
 
 ---
 
