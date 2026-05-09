@@ -1483,6 +1483,29 @@ release blocker.
 
 ---
 
+### Phase 2.8 — Live Tuning (Closed-Loop Online Bucket Learning)
+
+> **Spec lives in [`SYNC_REFACTOR_PHASE_2_8.md`](./SYNC_REFACTOR_PHASE_2_8.md)**
+> (companion file; this main plan was already 1.6k lines so Phase 2.8 was
+> spun off to keep navigation tractable).
+>
+> **Summary.** Closed-loop host-side tuner that observes the Phase 2.7
+> telemetry stream, learns per-`(feature, v_fil_bin)` `BASELINE_SPS` and
+> `TRAIL_BIAS_FRAC` via a per-bucket Kalman filter, and writes them back
+> via rate-limited `SET:` commands during the print. Stability-first:
+> low-`CF` measurements weighted out, `APX`/`EV:` triggered freeze and
+> rollback, three-print convergence rule before commit. Firmware delta:
+> one new SET key (`LIVE_TUNE_LOCK`); **no settings-version bump**, no
+> new persisted fields, no control-law change. Pure stdlib + `pyserial`.
+>
+> **Six milestones**: 2.8.0 firmware lock, 2.8.1 reader/KF, 2.8.2
+> persist, 2.8.3 safety, 2.8.4 patch emit, 2.8.5 docs.
+>
+> **Depends on:** Phase 2.7.3 telemetry (`MARK:` + `nosf_logger.py`),
+> Phase 2.5/2.6 confidence/risk surfaces (`CF`, `APX`, `EV:` events).
+
+---
+
 ### Phase 3 — Generic Analog Drop-In Compatibility Layer (deferred validation, PSF-ready)
 
 > **Deferred validation phase.** Per **D1**, no PSF-specific electrical
