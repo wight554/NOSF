@@ -21,33 +21,33 @@ MANDATORY = ("microsteps", "rotation_distance", "run_current")
 DEFAULTS = {
     # Motor / TMC
     "full_steps_per_rotation": "200",
-    "gear_ratio": "1:1",
-    "hold_current": "",
-    "interpolate": "True",
-    "driver_tbl": "2",
-    "driver_toff": "3",
+    "gear_ratio": "50:17",
+    "hold_current": "0.980",
+    "interpolate": "False",
+    "driver_tbl": "1",
+    "driver_toff": "4",
     "driver_hstrt": "5",
-    "driver_hend": "0",
-    "stealthchop_threshold": "0",
+    "driver_hend": "3",
+    "stealthchop_threshold": "500",
     "dir_invert": "0",
 
     # Speeds (mm/min)
-    "feed_rate": "2100",
-    "rev_rate": "2100",
-    "auto_rate": "2100",
+    "feed_rate": "3000",
+    "rev_rate": "3000",
+    "auto_rate": "3000",
     "buf_stab_rate": "600",
-    "sync_max_rate": "2500",
-    "global_max_rate": "2500",
+    "sync_max_rate": "4000",
+    "global_max_rate": "4000",
     "sync_min_rate": "100",
-    "pre_ramp_rate": "35",
+    "pre_ramp_rate": "90",
 
     # Motion / Ramp
     "motion_startup_ms": "1000",
-    "ramp_step_rate": "17",
+    "ramp_step_rate": "17.1",
     "ramp_tick_ms": "5",
 
     # Buffer Sync
-    "buf_half_travel_mm": "6.5",
+    "buf_half_travel_mm": "7.8",
     "buf_hyst_ms": "30",
     "sync_ramp_up_rate": "40",
     "sync_ramp_dn_rate": "12",
@@ -57,7 +57,7 @@ DEFAULTS = {
     "buf_predict_thr_ms": "250",
     "sync_kp_rate": "900",
     "sync_overshoot_pct": "25",
-    "sync_reserve_pct": "40",
+    "sync_reserve_pct": "35",
     "sync_auto_stop_ms": "5000",
     "post_print_stab_delay_ms": "0",
     "sync_advance_dwell_stop_ms": "6000",
@@ -118,9 +118,9 @@ DEFAULTS = {
     "ts_buf_fallback_ms": "2000",
 
     # Reload Mode
-    "reload_mode": "0",
+    "reload_mode": "1",
     "reload_y_timeout_ms": "10000",
-    "reload_join_delay_ms": "500",
+    "reload_join_delay_ms": "10000",
     "trailing_rate": "90",
     "join_rate": "1600",
     "press_rate": "1200",
@@ -132,7 +132,7 @@ DEFAULTS = {
     "dist_out_y": "100",
     "dist_y_buf": "300",
     "buf_body_len": "200",
-    "buf_size_mm": "50",
+    "buf_size_mm": "22",
 }
 
 

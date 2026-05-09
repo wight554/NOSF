@@ -94,20 +94,20 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `DIST_OUT_Y` | `dist_out_y` | Distance between OUT sensor and Y-splitter | 100 |
 | `DIST_Y_BUF` | `dist_y_buf` | Distance between Y-splitter and buffer entry | 300 |
 | `BUF_BODY_LEN`| `buf_body_len`| Physical length of the buffer body/tube | 200 |
-| `BUF_HALF_TRAVEL` | `buf_half_travel_mm` | Distance from MID to a dual-endstop switch trip point | 6.5 |
-| `BUF_SIZE` | `buf_size_mm` | Travel distance of the buffer arm | 50 |
+| `BUF_HALF_TRAVEL` | `buf_half_travel_mm` | Distance from MID to a dual-endstop switch trip point | 7.8 |
+| `BUF_SIZE` | `buf_size_mm` | Travel distance of the buffer arm | 22 |
 
 ### Speeds & Rates (mm/min)
 | Parameter | `config.ini` Key | Description | Default |
 |-----------|------------------|-------------|---------|
-| `FEED_RATE` | `feed_rate` | Standard feeding speed | 4000 |
-| `REV_RATE` | `rev_rate` | Standard retract speed | 4000 |
-| `AUTO_RATE` | `auto_rate` | Preload speed (`LO:`) | 2000 |
+| `FEED_RATE` | `feed_rate` | Standard feeding speed | 3000 |
+| `REV_RATE` | `rev_rate` | Standard retract speed | 3000 |
+| `AUTO_RATE` | `auto_rate` | Preload speed (`LO:`) | 3000 |
 | `BUF_STAB_RATE` | `buf_stab_rate` | Buffer stabilization speed for boot neutralization and UL advance-recovery move | 600 |
 | `JOIN_RATE` | `join_rate` | RELOAD: Fast approach speed | 1600 |
 | `PRESS_RATE` | `press_rate` | RELOAD: Slow follow-sync speed | 1200 |
-| `GLOBAL_MAX_RATE` | `global_max_rate` | Absolute ceiling applied to every commanded motor rate; `SYNC_MAX_RATE` remains the sync-only soft cap under it | 2500 |
-| `SYNC_MAX_RATE` | `sync_max_rate` | Max speed allowed during sync | 20000 |
+| `GLOBAL_MAX_RATE` | `global_max_rate` | Absolute ceiling applied to every commanded motor rate; `SYNC_MAX_RATE` remains the sync-only soft cap under it | 4000 |
+| `SYNC_MAX_RATE` | `sync_max_rate` | Max speed allowed during sync | 4000 |
 | `BASELINE_RATE` | `baseline_rate` | Sync bootstrap and conservative baseline speed | 1600 |
 
 ### Smarter Sync (Estimator)
@@ -121,7 +121,7 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `SYNC_KP_RATE` | `sync_kp_rate` | Proportional reserve-correction window around the virtual buffer target | 900 |
 | `EST_ALPHA_MIN`| `est_alpha_min` | Estimator responsiveness for slow drifts | 0.12 |
 | `EST_ALPHA_MAX`| `est_alpha_max` | Estimator responsiveness for sharp jumps | 0.65 |
-| `SYNC_RESERVE_PCT` | `sync_reserve_pct` | Normal-sync reserve target as % of `BUF_HALF_TRAVEL` toward trailing | 40 |
+| `SYNC_RESERVE_PCT` | `sync_reserve_pct` | Normal-sync reserve target as % of `BUF_HALF_TRAVEL` toward trailing | 35 |
 | `ZONE_BIAS_BASE`| `zone_bias_base_rate`| Base reserve-recovery correction around the virtual buffer target (mm/min) | 90 |
 | `ZONE_BIAS_RAMP`| `zone_bias_ramp_rate`| Extra reserve-recovery ramp while buffer stays away from target (mm/min per second) | 30 |
 | `ZONE_BIAS_MAX` | `zone_bias_max_rate` | Max reserve-recovery correction (mm/min) | 600 |
@@ -135,7 +135,7 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `UNLOAD_MAX` | `unload_max_mm` | Max distance for `UL:`, `UM:` | 3000 |
 | `AUTO_MODE` | `auto_mode` | Enable autonomous Flow (Auto-Sync, Toolhead load) | 1 |
 | `AUTO_PRELOAD`| `auto_preload` | Enable parking preload on insertion | 1 |
-| `RELOAD_MODE`| `reload_mode` | Enable autonomous RELOAD behavior (Auto-Swap) | 0 |
+| `RELOAD_MODE`| `reload_mode` | Enable autonomous RELOAD behavior (Auto-Swap) | 1 |
 | `RUNOUT_COOLDOWN_MS` | `runout_cooldown_ms` | Cooldown before another runout can be reported on the same lane | 12000 |
 | `SYNC_OVERSHOOT_PCT` | `sync_overshoot_pct` | Extra trailing-side trim as percent of sync correction after reserve overshoots full (0..200) | 25 |
 | `SYNC_OVERSHOOT_MID_EXT` | `sync_overshoot_mid_extend` | Feature flag: extend trailing overshoot trim into `BUF_MID` when virtual position is below the deadband. Default OFF; only enable after A/B evidence from long-run logs. | 0 |
@@ -157,8 +157,8 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `ADV_RISK_THR` | `adv_risk_threshold` | `EV:SYNC,ADV_RISK_HIGH` fires when `APX >= this`. 0 = disable. Runtime-only, not persisted. | 4 |
 | `POST_PRINT_STAB_MS` | `post_print_stab_delay_ms` | Delay before idle+`TRAILING` recovery starts; once triggered, the low-speed post-print stabilization move settles the buffer back to `MID` and only falls back to the advance-side handoff if it overshoots center. `0` starts immediately | 0 |
 | `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |
-| `RELOAD_JOIN_MS` | `reload_join_delay_ms` | Extra RELOAD-only settling delay after tail and Y clear before `RELOAD:JOINING` starts | 500 |
-| `STEALTHCHOP` | `stealthchop_threshold` | Velocity threshold (mm/min) for StealthChop. 0 = always SpreadCycle. | 0 |
+| `RELOAD_JOIN_MS` | `reload_join_delay_ms` | Extra RELOAD-only settling delay after tail and Y clear before `RELOAD:JOINING` starts | 10000 |
+| `STEALTHCHOP` | `stealthchop_threshold` | Velocity threshold (mm/min) for StealthChop. 0 = always SpreadCycle. | 500 |
 
 `BASELINE_RATE` remains a persistent bootstrap target. AUTO sync no longer rewrites it during startup.
 
