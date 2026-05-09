@@ -588,9 +588,9 @@ static void buf_update(buf_state_t new_state, uint32_t now_ms) {
         extruder_est_last_update_ms = now_ms;
     }
 
-    /* Phase 2.6: residual observer — measure pre-snap virtual/physical mismatch */
-    if (BUF_SENSOR_TYPE == 0 && old == BUF_MID &&
-        (new_state == BUF_ADVANCE || new_state == BUF_TRAILING)) {
+    /* Phase 2.6: residual observer — measure pre-snap virtual/physical mismatch.
+     * Only record on MID→ADVANCE: TRAILING residuals have opposite sign and dilute the EWMA. */
+    if (BUF_SENSOR_TYPE == 0 && old == BUF_MID && new_state == BUF_ADVANCE) {
         float switch_pos_mm = (new_state == BUF_ADVANCE) ? threshold : -threshold;
         float residual = g_buf_pos - switch_pos_mm;
         g_bp_residual_last_mm = residual;
@@ -914,6 +914,9 @@ void sync_tick(uint32_t now_ms) {
     if (drift_apply_gate) {
         drift_correction_mm = clamp_f(g_bp_drift_ewma_mm, -BUF_DRIFT_CLAMP_MM, BUF_DRIFT_CLAMP_MM);
         bp_eff = g_buf_pos - drift_correction_mm;
+        /* Clamp so correction cannot push bp_eff past the endstop zone boundary */
+        float thr = buf_threshold_mm();
+        bp_eff = clamp_f(bp_eff, -thr, thr);
     }
     g_bp_drift_correction_applied_mm = drift_correction_mm;
 
