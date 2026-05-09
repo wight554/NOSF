@@ -132,6 +132,7 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `ZONE_BIAS_RAMP`| `zone_bias_ramp_rate`| Extra reserve-recovery ramp while buffer stays away from target (mm/min per second) | 30 |
 | `ZONE_BIAS_MAX` | `zone_bias_max_rate` | Max reserve-recovery correction (mm/min) | 600 |
 | `RELOAD_LEAN`  | `reload_lean_factor` | RELOAD follow under-feed factor (0.0 to 1.0) | 0.85 |
+| `LIVE_TUNE_LOCK` | _(runtime only)_ | Host live-tuning guard. `SET:LIVE_TUNE_LOCK:1` blocks live writes to `BASELINE_RATE`/`BASELINE_SPS`, `TRAIL_BIAS_FRAC`, `MID_CREEP_*`, and `VAR_BLEND_*`/`BUF_VARIANCE_*`; `GET:LIVE_TUNE_LOCK` returns `0` or `1`. Not persisted; resets to `0` on boot. | 0 |
 
 ### Safety & Timeouts
 | Parameter | `config.ini` Key | Description | Default |

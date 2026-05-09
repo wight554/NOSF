@@ -28,6 +28,22 @@ typedef struct {
 static cmd_parser_t g_cmd = {0};
 static uint32_t g_cmd_event_window_ms = 0;
 static int g_cmd_event_count = 0;
+static bool g_live_tune_lock = false;
+
+static bool live_tune_locked_param(const char *param) {
+    return !strcmp(param, "BASELINE_RATE") ||
+           !strcmp(param, "BASELINE_SPS") ||
+           !strcmp(param, "TRAIL_BIAS_FRAC") ||
+           !strcmp(param, "MID_CREEP_TIMEOUT_MS") ||
+           !strcmp(param, "MID_CREEP_RATE") ||
+           !strcmp(param, "MID_CREEP_RATE_SPS_PER_S") ||
+           !strcmp(param, "MID_CREEP_CAP") ||
+           !strcmp(param, "MID_CREEP_CAP_FRAC") ||
+           !strcmp(param, "VAR_BLEND_FRAC") ||
+           !strcmp(param, "BUF_VARIANCE_BLEND_FRAC") ||
+           !strcmp(param, "VAR_BLEND_REF_MM") ||
+           !strcmp(param, "BUF_VARIANCE_BLEND_REF_MM");
+}
 
 static bool controller_activity_in_progress(void) {
     if (g_tc_ctx.state != TC_IDLE || g_cut.state != CUT_IDLE || g_boot_stabilizing) return true;
@@ -399,6 +415,16 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             base_param[len - 3] = '\0';
         }
 
+        if (!strcmp(base_param, "LIVE_TUNE_LOCK")) {
+            g_live_tune_lock = (iv != 0);
+            cmd_reply("OK", "LIVE_TUNE_LOCK");
+            return;
+        }
+        if (g_live_tune_lock && live_tune_locked_param(base_param)) {
+            cmd_reply("ER", "LIVE_TUNE_LOCKED");
+            return;
+        }
+
         #define SET_LANE(BLOCK) for(int l=1; l<=NUM_LANES; l++) if(lane_mask & (1<<(l-1))) { int idx=l-1; BLOCK; sync_tmc_settings(l); }
 
         if (!strcmp(base_param, "FEED_RATE")) FEED_SPS = motion_clamp_rate_sps(clamp_i(mm_per_min_to_sps(fv), 200, 50000));
@@ -469,6 +495,11 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             g_baseline_target_sps = baseline_sps;
             g_baseline_sps = baseline_sps;
         }
+        else if (!strcmp(base_param, "BASELINE_SPS")) {
+            int baseline_sps = motion_clamp_rate_sps(clamp_i(iv, 200, 50000));
+            g_baseline_target_sps = baseline_sps;
+            g_baseline_sps = baseline_sps;
+        }
         else if (!strcmp(base_param, "BUF_SENSOR")) {
             if (sync_enabled || tc_state() != TC_IDLE ||
                     g_lane_l1.task != TASK_IDLE || g_lane_l2.task != TASK_IDLE) {
@@ -491,10 +522,10 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "TRAIL_BIAS_FRAC")) SYNC_TRAILING_BIAS_FRAC = clamp_f(fv, 0.0f, 0.7f);
         else if (!strcmp(base_param, "SYNC_AUTO_STOP")) SYNC_AUTO_STOP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "MID_CREEP_TIMEOUT_MS")) MID_CREEP_TIMEOUT_MS = clamp_i(iv, 0, 60000);
-        else if (!strcmp(base_param, "MID_CREEP_RATE")) MID_CREEP_RATE_SPS_PER_S = clamp_i(iv, 0, 1000);
-        else if (!strcmp(base_param, "MID_CREEP_CAP")) MID_CREEP_CAP_FRAC = clamp_i(iv, 0, 100);
-        else if (!strcmp(base_param, "VAR_BLEND_FRAC")) BUF_VARIANCE_BLEND_FRAC = clamp_f(fv, 0.0f, 0.9f);
-        else if (!strcmp(base_param, "VAR_BLEND_REF_MM")) BUF_VARIANCE_BLEND_REF_MM = clamp_f(fv, 0.5f, 5.0f);
+        else if (!strcmp(base_param, "MID_CREEP_RATE") || !strcmp(base_param, "MID_CREEP_RATE_SPS_PER_S")) MID_CREEP_RATE_SPS_PER_S = clamp_i(iv, 0, 1000);
+        else if (!strcmp(base_param, "MID_CREEP_CAP") || !strcmp(base_param, "MID_CREEP_CAP_FRAC")) MID_CREEP_CAP_FRAC = clamp_i(iv, 0, 100);
+        else if (!strcmp(base_param, "VAR_BLEND_FRAC") || !strcmp(base_param, "BUF_VARIANCE_BLEND_FRAC")) BUF_VARIANCE_BLEND_FRAC = clamp_f(fv, 0.0f, 0.9f);
+        else if (!strcmp(base_param, "VAR_BLEND_REF_MM") || !strcmp(base_param, "BUF_VARIANCE_BLEND_REF_MM")) BUF_VARIANCE_BLEND_REF_MM = clamp_f(fv, 0.5f, 5.0f);
         else if (!strcmp(base_param, "SYNC_ADV_STOP_MS")) SYNC_ADVANCE_DWELL_STOP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "SYNC_ADV_RAMP_MS")) SYNC_ADVANCE_RAMP_DELAY_MS = clamp_i(iv, 0, 5000);
         else if (!strcmp(base_param, "SYNC_OVERSHOOT_MID_EXT")) SYNC_OVERSHOOT_MID_EXTEND = clamp_i(iv, 0, 1);
@@ -548,7 +579,8 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         int idx = (lane_mask == 2) ? 1 : 0;
 
         bool handled = true;
-        if (!strcmp(param, "FEED_RATE")) snprintf(out, sizeof(out), "FEED_RATE:%.1f", (double)sps_to_mm_per_min_idx(FEED_SPS, idx));
+        if (!strcmp(param, "LIVE_TUNE_LOCK")) snprintf(out, sizeof(out), "LIVE_TUNE_LOCK:%d", g_live_tune_lock ? 1 : 0);
+        else if (!strcmp(param, "FEED_RATE")) snprintf(out, sizeof(out), "FEED_RATE:%.1f", (double)sps_to_mm_per_min_idx(FEED_SPS, idx));
         else if (!strcmp(param, "REV_RATE")) snprintf(out, sizeof(out), "REV_RATE:%.1f", (double)sps_to_mm_per_min_idx(REV_SPS, idx));
         else if (!strcmp(param, "AUTO_RATE")) snprintf(out, sizeof(out), "AUTO_RATE:%.1f", (double)sps_to_mm_per_min_idx(AUTO_SPS, idx));
         else if (!strcmp(param, "SYNC_MAX_RATE")) snprintf(out, sizeof(out), "SYNC_MAX_RATE:%.1f", (double)sps_to_mm_per_min_idx(SYNC_MAX_SPS, idx));
@@ -583,6 +615,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "BUF_STAB_RATE")) snprintf(out, sizeof(out), "BUF_STAB_RATE:%.1f", (double)sps_to_mm_per_min_idx(BUF_STAB_SPS, idx));
         else if (!strcmp(param, "FOLLOW_MS")) snprintf(out, sizeof(out), "FOLLOW_MS:%d", FOLLOW_TIMEOUT_MS[idx]);
         else if (!strcmp(param, "BASELINE_RATE")) snprintf(out, sizeof(out), "BASELINE_RATE:%.1f", (double)sps_to_mm_per_min_idx(g_baseline_target_sps, idx));
+        else if (!strcmp(param, "BASELINE_SPS")) snprintf(out, sizeof(out), "BASELINE_SPS:%d", g_baseline_target_sps);
         else if (!strcmp(param, "BASELINE_ALPHA")) snprintf(out, sizeof(out), "BASELINE_ALPHA:%.3f", (double)g_baseline_alpha);
         else if (!strcmp(param, "BUF_SENSOR")) snprintf(out, sizeof(out), "BUF_SENSOR:%d", BUF_SENSOR_TYPE);
         else if (!strcmp(param, "BUF_NEUTRAL")) snprintf(out, sizeof(out), "BUF_NEUTRAL:%.3f", (double)BUF_NEUTRAL);
