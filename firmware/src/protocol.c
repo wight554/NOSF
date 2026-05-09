@@ -135,13 +135,15 @@ static void status_dump(void) {
         uint32_t tw_ms = (tw_raw >= 99999.0f) ? 99999u : (uint32_t)tw_raw;
         uint32_t ea_ms = sync_est_age_ms(now_ms);
         snprintf(b + blen, sizeof(b) - (size_t)blen,
-            ",RT:%.2f,RD:%.2f,AD:%u,TD:%u,TW:%u,EA:%u",
+            ",RT:%.2f,RD:%.2f,AD:%u,TD:%u,TW:%u,EA:%u,SK:%u,CF:%.2f",
             (double)sync_reserve_target_mm(),
             (double)sync_reserve_deadband_mm(),
             (unsigned)ad_ms,
             (unsigned)td_ms,
             (unsigned)tw_ms,
-            (unsigned)ea_ms);
+            (unsigned)ea_ms,
+            (unsigned)g_buf_signal.kind,
+            (double)g_buf_signal.confidence);
     }
 
     cmd_reply("OK", b);
@@ -441,7 +443,14 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             g_baseline_target_sps = baseline_sps;
             g_baseline_sps = baseline_sps;
         }
-        else if (!strcmp(base_param, "BUF_SENSOR")) BUF_SENSOR_TYPE = clamp_i(iv, 0, 1);
+        else if (!strcmp(base_param, "BUF_SENSOR")) {
+            if (sync_enabled || tc_state() != TC_IDLE ||
+                    g_lane_l1.task != TASK_IDLE || g_lane_l2.task != TASK_IDLE) {
+                cmd_reply("ER", "BUSY");
+                return;
+            }
+            BUF_SENSOR_TYPE = clamp_i(iv, 0, 1);
+        }
         else if (!strcmp(base_param, "BUF_NEUTRAL")) BUF_NEUTRAL = clamp_f(fv, 0.0f, 1.0f);
         else if (!strcmp(base_param, "BUF_RANGE")) BUF_RANGE = clamp_f(fv, 0.01f, 0.5f);
         else if (!strcmp(base_param, "BUF_THR")) BUF_THR = clamp_f(fv, 0.01f, 0.99f);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "buf_signal.h"
 #include "controller_shared.h"
 
 const char *buf_state_name(buf_state_t s);

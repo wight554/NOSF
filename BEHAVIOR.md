@@ -276,6 +276,17 @@ value; the learned runtime baseline cannot pull control below that configured
 floor. AUTO start seeds sync from that floor and no longer overwrites the
 configured baseline with `BUF_STAB_RATE`.
 
+#### Buffer signal abstraction
+
+Each `buf_sensor_tick()` cycle produces a `buf_signal_t` snapshot in `g_buf_signal`. It carries normalized position (`pos_norm` in −1..+1), physical position in mm (`pos_mm`), a confidence score (0.0..1.0), the current zone, the source kind (`BUF_SRC_VIRTUAL_ENDSTOP` or `BUF_SRC_ANALOG`), and a fault flag.
+
+- For virtual-endstop sources, confidence decays linearly from 1.0 toward 0.4 after `BUF_HYST_MS` elapses since the last zone transition. A fresh transition resets it to 1.0.
+- For analog sources, confidence drops to 0.5 if the signal saturates at a rail for more than 250 ms; it returns to 1.0 once the signal moves off the rail.
+
+The `SK:` field in `?:` status exposes the source kind. `CF:` exposes the current confidence score. Both are read-only.
+
+The sensor kind may not be changed while sync is active, a toolchange is in progress, or either lane is running. The `SET:BUF_SENSOR:n` command returns `ER:BUSY` if any of these conditions are true at the time of the call (D4).
+
 ### RELOAD contact and follow
 
 After the old lane tail clears `OUT` and the Y path is clear, firmware waits

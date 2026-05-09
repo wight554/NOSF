@@ -1,4 +1,5 @@
 #include "sync.h"
+#include "buf_signal.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -41,6 +42,14 @@ static uint32_t sync_continuous_trailing_since_ms = 0;
 static uint32_t sync_post_trailing_boost_until_ms = 0;
 static uint32_t sync_recent_negative_until_ms = 0;
 static uint32_t sync_advance_pin_since_ms = 0;
+
+/* buf_signal_t — canonical signal produced by the active sensor each tick. */
+buf_signal_t g_buf_signal = {0};
+static float g_buf_confidence = 1.0f;
+static uint32_t g_buf_last_transition_ms = 0;
+/* Analog: track how long the signal has been saturated (at a rail) */
+static uint32_t g_buf_analog_saturated_since_ms = 0;
+static uint32_t g_buf_analog_last_sample_ms = 0;
 
 buf_tracker_t g_buf = { .state = BUF_MID };
 
@@ -190,13 +199,13 @@ static float extruder_motion_mm_s(lane_t *L) {
 }
 
 float sync_trailing_wall_velocity_mm_s(lane_t *L) {
-    if (!L || BUF_SENSOR_TYPE != 0) return 0.0f;
+    if (!L || g_buf_signal.kind != BUF_SRC_VIRTUAL_ENDSTOP) return 0.0f;
     float toward_trailing = lane_motion_mm_s(L) - extruder_motion_mm_s(L);
     return toward_trailing > 0.0f ? toward_trailing : 0.0f;
 }
 
 static float sync_trailing_wall_remaining_mm(void) {
-    if (BUF_SENSOR_TYPE != 0) return 0.0f;
+    if (g_buf_signal.kind != BUF_SRC_VIRTUAL_ENDSTOP) return 0.0f;
     float remaining = g_buf_pos + buf_physical_half_travel_mm();
     if (remaining < 0.0f) remaining = 0.0f;
     return remaining;
@@ -208,12 +217,12 @@ static int sync_trailing_floor_sps(void) {
 
 float sync_trailing_wall_time_ms(lane_t *L) {
     float toward_trailing = sync_trailing_wall_velocity_mm_s(L);
-    if (!L || BUF_SENSOR_TYPE != 0 || toward_trailing < 0.05f) return 1000000000.0f;
+    if (!L || g_buf_signal.kind != BUF_SRC_VIRTUAL_ENDSTOP || toward_trailing < 0.05f) return 1000000000.0f;
     return (sync_trailing_wall_remaining_mm() / toward_trailing) * 1000.0f;
 }
 
 static int sync_apply_scaling(int base_sps) {
-    if (BUF_SENSOR_TYPE == 1) {
+    if (g_buf_signal.kind == BUF_SRC_ANALOG) {
         float frac = clamp_f((g_buf_pos + 1.0f) * 0.5f, 0.0f, 1.0f);
         return (int)(TRAILING_SPS + (float)(base_sps - TRAILING_SPS) * frac);
     }
@@ -557,6 +566,8 @@ static void buf_update(buf_state_t new_state, uint32_t now_ms) {
     history_push(g_buf.state, prev_dwell);
     g_buf.state = new_state;
     g_buf.entered_ms = now_ms;
+    g_buf_confidence = 1.0f;
+    g_buf_last_transition_ms = now_ms;
     buf_anchor_virtual_position(old, new_state);
 
     g_buf.lane_idx_at_entry = (active_lane == 2) ? 1 : 0;
@@ -591,6 +602,7 @@ void sync_disable(bool reset_estimator) {
     sync_post_trailing_boost_until_ms = 0;
     sync_recent_negative_until_ms = 0;
     sync_advance_pin_since_ms = 0;
+    g_buf_confidence = 1.0f;
 
     if (reset_estimator) {
         extruder_est_sps = 0.0f;
@@ -709,6 +721,44 @@ void buf_sensor_tick(uint32_t now_ms) {
     if (BUF_SENSOR_TYPE == 0 && do_pos) {
         buf_virtual_position_tick(lane_ptr(active_lane), elapsed_ms);
     }
+
+    if (do_pos) {
+        float half = buf_physical_half_travel_mm();
+        buf_source_kind_t kind;
+        float norm;
+        if (BUF_SENSOR_TYPE == 0) {
+            kind = BUF_SRC_VIRTUAL_ENDSTOP;
+            norm = (half > 0.001f) ? (g_buf_pos / half) : 0.0f;
+            norm = clamp_f(norm, -1.0f, 1.0f);
+            if (g_buf_last_transition_ms != 0) {
+                uint32_t age = now_ms - g_buf_last_transition_ms;
+                if (age > (uint32_t)BUF_HYST_MS) {
+                    float t = clamp_f((float)(age - BUF_HYST_MS) / 1500.0f, 0.0f, 1.0f);
+                    g_buf_confidence = 1.0f - t * 0.6f;
+                }
+            }
+            g_buf_analog_saturated_since_ms = 0;
+            g_buf_analog_last_sample_ms = now_ms;
+        } else {
+            kind = BUF_SRC_ANALOG;
+            norm = g_buf_pos;
+            g_buf_analog_last_sample_ms = now_ms;
+            if (fabsf(norm) >= 0.99f) {
+                if (g_buf_analog_saturated_since_ms == 0) g_buf_analog_saturated_since_ms = now_ms;
+                if ((now_ms - g_buf_analog_saturated_since_ms) > 250u) g_buf_confidence = 0.5f;
+            } else {
+                g_buf_analog_saturated_since_ms = 0;
+                g_buf_confidence = 1.0f;
+            }
+        }
+        g_buf_signal.pos_norm   = norm;
+        g_buf_signal.pos_mm     = (BUF_SENSOR_TYPE == 0) ? g_buf_pos : (norm * half);
+        g_buf_signal.confidence = g_buf_confidence;
+        g_buf_signal.age_ms     = now_ms - g_buf_analog_last_sample_ms;
+        g_buf_signal.zone       = g_buf.state;
+        g_buf_signal.kind       = kind;
+        g_buf_signal.fault      = (g_buf.state == BUF_FAULT);
+    }
 }
 
 void sync_tick(uint32_t now_ms) {
@@ -799,7 +849,7 @@ void sync_tick(uint32_t now_ms) {
     int reserve_correction = 0;
     float trailing_wall_ms = 1000000000.0f;
     float trailing_push_mm_s = 0.0f;
-    if (BUF_SENSOR_TYPE == 0) {
+    if (g_buf_signal.kind == BUF_SRC_VIRTUAL_ENDSTOP) {
         float threshold = buf_threshold_mm();
         reserve_correction = (int)((reserve_error_mm / threshold) * (float)kp_window);
         reserve_correction = clamp_i(reserve_correction, -kp_window, kp_window);
@@ -862,7 +912,7 @@ void sync_tick(uint32_t now_ms) {
     }
 
     int wall_trim = 0;
-    if (BUF_SENSOR_TYPE == 0 && s == BUF_TRAILING && trailing_wall_ms < SYNC_TRAILING_SOFT_WALL_MS) {
+    if (g_buf_signal.kind == BUF_SRC_VIRTUAL_ENDSTOP && s == BUF_TRAILING && trailing_wall_ms < SYNC_TRAILING_SOFT_WALL_MS) {
         float urgency = (SYNC_TRAILING_SOFT_WALL_MS - trailing_wall_ms) / SYNC_TRAILING_SOFT_WALL_MS;
         urgency = clamp_f(urgency, 0.0f, 1.0f);
         wall_trim = (int)(urgency * (float)kp_window);
@@ -910,7 +960,7 @@ void sync_tick(uint32_t now_ms) {
         if (target_sps > recovery_cap) target_sps = recovery_cap;
     }
 
-    bool trailing_wall_critical = BUF_SENSOR_TYPE == 0 && s == BUF_TRAILING &&
+    bool trailing_wall_critical = g_buf_signal.kind == BUF_SRC_VIRTUAL_ENDSTOP && s == BUF_TRAILING &&
                                  trailing_push_mm_s > SYNC_TRAILING_HARD_PUSH_MM_S &&
                                  trailing_wall_ms < SYNC_TRAILING_HARD_WALL_MS;
     if (trailing_wall_critical) {

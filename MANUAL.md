@@ -170,6 +170,8 @@ These fields are appended after `SS:` in the `?:` response. They are additive an
 | `TD` | ms | Time the buffer arm has been continuously pinned at the trailing-side switch. Zero when not in `BUF_TRAILING`. |
 | `TW` | ms | Estimated time to trailing wall (remaining physical margin ÷ current net push velocity). Capped at 99999 when not applicable or well out of range. |
 | `EA` | ms | Age of the extruder velocity estimate — time since the estimator was last updated by a zone transition or bleed. |
+| `SK` | enum | Active buffer sensor kind: `0` = virtual endstop, `1` = analog. |
+| `CF` | 0.0–1.0 | Signal confidence from the active source. Below ~0.5 indicates saturation or stale data; the control loop treats values below 0.4 as unreliable. |
 
 ---
 
