@@ -153,6 +153,8 @@ class Tuner:
         self.last_marker_seq = -1
         self.idle_since = 0.0
         self.seen_print_activity = False
+        self.finish_seen = False
+        self.debug = False
         self.recent_sets = deque()
         self._load_state()
 
@@ -254,6 +256,14 @@ class Tuner:
         return False
 
     def on_m118(self, raw: str) -> None:
+        if "NOSF_TUNE:FINISH" in raw:
+            self.seen_print_activity = True
+            self.finish_seen = True
+            self.last_marker_t = self.now_fn()
+            self.idle_since = 0.0
+            if self.debug:
+                print("[tuner] marker FINISH", file=sys.stderr)
+            return
         m = M118_RE.search(raw)
         if not m:
             return
@@ -261,10 +271,17 @@ class Tuner:
         self.last_marker_t = self.now_fn()
         self.idle_since = 0.0
         self.last_feature = m.group("feature").strip()
+        if self.last_feature == "FINISH":
+            self.finish_seen = True
+            if self.debug:
+                print("[tuner] marker FINISH", file=sys.stderr)
+            return
         try:
             self.last_v_fil = float(m.group("vfil"))
         except ValueError:
             self.last_v_fil = 0.0
+        if self.debug:
+            print(f"[tuner] marker {self.last_feature}_v{int(round(self.last_v_fil / 5.0)) * 5}", file=sys.stderr)
 
     def on_status_marker(self, raw: str) -> None:
         m = MARK_RE.search(raw)
@@ -405,12 +422,17 @@ class Tuner:
     def print_idle_ready(self, idle_s: float = 30.0) -> bool:
         if not self.seen_print_activity:
             return False
+        if not self.finish_seen:
+            return False
         now = self.now_fn()
         if self.idle_since == 0.0 or now - self.idle_since < idle_s:
             return False
         if self.last_marker_t and now - self.last_marker_t < idle_s:
             return False
         return True
+
+    def locked_bucket_count(self) -> int:
+        return sum(1 for b in self.buckets.values() if b.locked or b.state == "LOCKED")
 
 
 def reader(ser, lines: queue.Queue) -> None:
@@ -625,6 +647,7 @@ def run_loop(args) -> None:
         lines: queue.Queue = queue.Queue(maxsize=1024)
         threading.Thread(target=reader, args=(ser, lines), daemon=True).start()
         tuner = Tuner(ser, args.state, args.machine_id, port=args.port, baud=args.baud)
+        tuner.debug = args.debug
         poll_interval = 1.0 / args.poll_hz
         next_poll = time.monotonic()
         while True:
@@ -653,10 +676,13 @@ def run_loop(args) -> None:
             elif "BUF:" in line and "BP:" in line:
                 tuner.on_status(line)
                 if args.commit_on_idle and tuner.print_idle_ready():
+                    tuner._persist()
+                    if tuner.locked_bucket_count() == 0:
+                        print("[tuner] FINISH seen, but no LOCKED buckets yet; persisted tracking state without SV", file=sys.stderr)
+                        raise SystemExit(1)
                     tuner._send("SET:LIVE_TUNE_LOCK:0", count_rate=False)
                     time.sleep(0.1)
                     tuner._send("SV:", count_rate=False)
-                    tuner._persist()
                     emit_patch(args.state, args.machine_id, "/tmp/nosf-patch.ini")
                     print("[tuner] commit-on-idle patch: /tmp/nosf-patch.ini", file=sys.stderr)
                     return
@@ -686,6 +712,7 @@ def main() -> None:
     ap.add_argument("--reset-runtime", action="store_true", help="Send LIVE_TUNE_LOCK:0 and LD:, then exit")
     ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, unlock, SV:, emit /tmp/nosf-patch.ini, and exit")
     ap.add_argument("--klipper-log", help="Tail klippy.log for NOSF_TUNE marker echoes while tuning")
+    ap.add_argument("--debug", action="store_true", help="Print marker and commit diagnostics to stderr")
     args = ap.parse_args()
     if args.state is None:
         args.state = default_state_path(args.machine_id)

@@ -274,7 +274,9 @@ python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
 
 `--klipper-log` is recommended when `NOSF_TUNE` appears as `echo:` lines in the
 Klipper console. The tuner also understands firmware `MK:` status markers when
-the marker-forwarding macro sends `MARK:` to NOSF.
+the marker-forwarding macro sends `MARK:` to NOSF. With `--commit-on-idle`, the
+tuner waits for the final `NOSF_TUNE:FINISH` marker before considering the print
+done.
 
 The tuner first sends `SET:LIVE_TUNE_LOCK:1` before writing live tuning values.
 That lock is not persisted and resets to `0` on boot. While it is enabled,

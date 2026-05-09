@@ -155,8 +155,14 @@ def test_commit_idle_requires_activity():
         t.on_status(status(est=1800))
         clock.step(31.0)
         t.on_status(status(est=1800))
-        assert t.print_idle_ready(), "idle should commit after marked print activity"
-        return "commit-on-idle arms only after marker activity"
+        assert not t.print_idle_ready(), "idle should wait for FINISH marker"
+        t.on_m118("echo: NOSF_TUNE:FINISH:0:0:0")
+        clock.step(1.0)
+        t.on_status(status(est=1800))
+        clock.step(31.0)
+        t.on_status(status(est=1800))
+        assert t.print_idle_ready(), "idle should commit after FINISH marker"
+        return "commit-on-idle arms only after FINISH marker"
 
 
 def test_status_mk_marker_fallback():
