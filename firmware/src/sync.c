@@ -18,7 +18,7 @@
 #define SYNC_TRAILING_COLLAPSE_DELAY_MS 250u
 #define SYNC_TRAILING_COLLAPSE_RAMP_MULT 3
 #define SYNC_TRAILING_COLLAPSE_CAP_MS 600u
-#define SYNC_EST_FRESH_MS 3000u
+#define SYNC_EST_FRESH_MS 20000u
 #define SYNC_MID_TRAILING_TAPER_FRAC 0.5f
 #define SYNC_MID_TRAILING_FLOOR_FRAC 0.45f
 #define SYNC_RESERVE_CENTER_GUARD_FRAC 0.05f
@@ -580,6 +580,12 @@ static void buf_update(buf_state_t new_state, uint32_t now_ms) {
 
         const float estimator_norm_mm_s = 30.0f;
         float alpha = clamp_f(fabsf(g_buf.arm_vel_mm_s) / estimator_norm_mm_s, EST_ALPHA_MIN, EST_ALPHA_MAX);
+
+        /* If the model was way off (e.g. at one end but hit the other), trust the new estimate more. */
+        if (fabsf(travel_mm) > threshold * 1.5f && alpha < 0.5f) {
+            alpha = 0.5f;
+        }
+
         if (old == BUF_ADVANCE && new_state == BUF_TRAILING) {
             extruder_est_sps = est_sps;
         } else {
@@ -931,6 +937,12 @@ void sync_tick(uint32_t now_ms) {
         }
 
         bp_eff = g_buf_pos - drift_correction_mm;
+
+        /* SAFETY: Don't let correction push bp_eff to the opposite side of physical state.
+         * If we are physically at a wall, the controller must see it as at or beyond that wall. */
+        if (s == BUF_TRAILING && bp_eff > -thr) bp_eff = -thr;
+        else if (s == BUF_ADVANCE && bp_eff < thr) bp_eff = thr;
+
         /* Clamp so correction cannot push bp_eff past the endstop zone boundary */
         bp_eff = clamp_f(bp_eff, -thr, thr);
     }
@@ -968,9 +980,32 @@ void sync_tick(uint32_t now_ms) {
         }
     } else if (s == BUF_MID && (now_ms - g_buf.entered_ms) > 2000u &&
         A->task == TASK_FEED && A->fault == FAULT_NONE &&
-        buf_near_target && sync_current_sps > 0) {
-        extruder_est_sps += 0.05f * ((float)lane_motion_sps(A) - extruder_est_sps);
-        extruder_est_last_update_ms = now_ms;
+        sync_current_sps > 0) {
+
+        float thr = buf_threshold_mm();
+        bool model_pinned_trailing = (g_buf_pos <= -thr + 0.01f);
+        bool model_pinned_advance = (g_buf_pos >= thr - 0.01f);
+
+        if (buf_near_target) {
+            extruder_est_sps += 0.05f * ((float)lane_motion_sps(A) - extruder_est_sps);
+            extruder_est_last_update_ms = now_ms;
+        } else if (model_pinned_trailing) {
+            /* Escape trailing pin: extruder must be faster than current MMU rate.
+             * Bleed UP toward current rate + a small bump. */
+            float target_rate = (float)lane_motion_sps(A) + 2.0f; // ~50mm/min bump
+            if (extruder_est_sps < target_rate) {
+                extruder_est_sps += 0.01f * (target_rate - extruder_est_sps);
+                extruder_est_last_update_ms = now_ms;
+            }
+        } else if (model_pinned_advance) {
+            /* Escape advance pin: extruder must be slower than current MMU rate. */
+            float target_rate = (float)lane_motion_sps(A) - 2.0f;
+            if (target_rate < 0.0f) target_rate = 0.0f;
+            if (extruder_est_sps > target_rate) {
+                extruder_est_sps += 0.01f * (target_rate - extruder_est_sps);
+                extruder_est_last_update_ms = now_ms;
+            }
+        }
     } else if (s == BUF_TRAILING && (now_ms - g_buf.entered_ms) > SYNC_TRAILING_COLLAPSE_DELAY_MS) {
         // If pinned against the physical wall, the MMU is definitively out-pacing the extruder.
         // If the estimator thinks the extruder is still pulling fast, it is blind. Drag it down.
@@ -1272,3 +1307,4 @@ int sync_adv_pin_window_count(uint32_t now_ms) {
 float sync_bp_drift_correction_applied_mm(void) {
     return g_bp_drift_correction_applied_mm;
 }
+
