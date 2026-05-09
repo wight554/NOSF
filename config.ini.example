@@ -69,6 +69,19 @@ run_current:
 # sync_overshoot_mid_extend: 0     # Feature flag: extend trailing overshoot trim into
                                    # BUF_MID when reserve is below deadband. 0=off.
 
+# ─── Phase 2.5 — Integral Centering + Estimator Confidence ───────────────────
+# sync_reserve_integral_gain: 0.0  # I-gain (mm of target bias per mm·s of reserve error).
+                                   # 0.0 = feature disabled (default, behavior-identical to
+                                   # Phase 2). Enable with a small value (e.g. 0.005) after
+                                   # reviewing soak-run data.
+# sync_reserve_integral_clamp_mm: 0.6  # Hard clamp on the integral correction in mm.
+                                       # Cannot exceed buf_virtual_deadband_mm() in practice.
+# sync_reserve_integral_decay_ms: 0    # Reserved for future use; 0 = hold integral while frozen.
+# est_sigma_hard_cap_mm: 1.5           # Confidence drops to 0 when estimator sigma reaches this.
+                                       # Approximates physical buffer half-travel.
+# est_low_cf_warn_threshold: 0.5       # EV:BUF,EST_LOW_CF fires when confidence < this.
+# est_fallback_cf_threshold: 0.2       # Integral freezes when confidence < this.
+
 # ─── Smarter Sync (Estimator) ────────────────────────────────────────────────
 # est_alpha_min: 0.12          # Estimator responsiveness (slow drifts)
 # est_alpha_max: 0.65          # Estimator responsiveness (sharp jumps)

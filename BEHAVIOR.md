@@ -181,9 +181,10 @@ current MMU speed. This keeps the feed-forward term sane during long steady
 sections where no new transitions arrive.
 
 The `EA:` field in the `?:` status response exposes the estimator age in
-milliseconds since the last meaningful update. A large `EA:` value while the
-arm is in `BUF_MID` is normal; a large `EA:` while in `BUF_ADVANCE` may
-indicate the bleed path is the only update source.
+milliseconds since the last meaningful update. `ES:` and `EC:` expose the current
+estimator sigma (uncertainty in mm) and confidence percentage. A large `EA:`
+value while the arm is in `BUF_MID` is normal; a large `EA:` while in `BUF_ADVANCE`
+may indicate the bleed path is the only update source.
 
 #### Zone bias and recovery behavior
 
@@ -216,6 +217,15 @@ and deadband in mm, so tuning of `SYNC_RESERVE_PCT`, `BUF_HALF_TRAVEL`, and
 `SYNC_KP_RATE` can be observed in real time. `AD:` and `TD:` expose how long
 the arm has been continuously pinned at the advance or trailing endstop. `TW:`
 shows estimated time-to-trailing-wall in ms (99999 when not applicable).
+
+Phase 2.5 adds a low-gain integral centering term (`RI:`) to correct for slow
+rate mismatches that could otherwise settle the arm near the advance side over
+long runs. This term is active only in `BUF_MID` when estimator confidence is
+high. It is capped by `SYNC_INT_CLAMP` and frozen during pin events, toolchanges,
+or low-confidence dwells. `RC:` shows the active gain percentage (0% = disabled
+or frozen). If the integral saturates toward the advance side,
+`EV:SYNC,ADV_DWELL_WARN` is emitted as an upstream warning before an advance
+pin occurs.
 
 After a deep negative reserve excursion, firmware also latches a
 positive-relaunch damp state. During that state, positive reserve correction
@@ -280,10 +290,10 @@ configured baseline with `BUF_STAB_RATE`.
 
 Each `buf_sensor_tick()` cycle produces a `buf_signal_t` snapshot in `g_buf_signal`. It carries normalized position (`pos_norm` in −1..+1), physical position in mm (`pos_mm`), a confidence score (0.0..1.0), the current zone, the source kind (`BUF_SRC_VIRTUAL_ENDSTOP` or `BUF_SRC_ANALOG`), and a fault flag.
 
-- For virtual-endstop sources, confidence decays linearly from 1.0 toward 0.4 after `BUF_HYST_MS` elapses since the last zone transition. A fresh transition resets it to 1.0.
-- For analog sources, confidence drops to 0.5 if the signal saturates at a rail for more than 250 ms; it returns to 1.0 once the signal moves off the rail.
+- **Virtual-endstop sources** (Phase 2.5): Confidence is derived from a physics-based sigma model. Uncertainty (`ES`) grows as the square root of integrated motion steps. Re-anchoring at a switch threshold resets uncertainty to a baseline (0.05 mm). Confidence (`EC`) decays as uncertainty approaches `EST_SIGMA_CAP`.
+- **Analog sources**: Confidence drops to 0.5 if the signal saturates at a rail for more than 250 ms; it returns to 1.0 once the signal moves off the rail.
 
-The `SK:` field in `?:` status exposes the source kind. `CF:` exposes the current confidence score. Both are read-only.
+The `SK:` field in `?:` status exposes the source kind. `CF:` exposes the current source confidence score, while `EC:` and `ES:` provide the internal estimator certainty.
 
 The sensor kind may not be changed while sync is active, a toolchange is in progress, or either lane is running. The `SET:BUF_SENSOR:n` command returns `ER:BUSY` if any of these conditions are true at the time of the call (D4).
 

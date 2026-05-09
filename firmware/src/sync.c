@@ -21,6 +21,7 @@
 #define SYNC_MID_TRAILING_TAPER_FRAC 0.5f
 #define SYNC_MID_TRAILING_FLOOR_FRAC 0.45f
 #define SYNC_RESERVE_CENTER_GUARD_FRAC 0.05f
+#define ENDSTOP_PER_UNIT_SIGMA_MM 0.025f
 #define SYNC_HIGH_FLOW_NEG_ASSIST_START_MM_MIN 1000.0f
 #define SYNC_HIGH_FLOW_NEG_ASSIST_FULL_MM_MIN 1400.0f
 #define SYNC_HIGH_FLOW_NEG_ASSIST_FRAC 0.75f
@@ -42,6 +43,14 @@ static uint32_t sync_continuous_trailing_since_ms = 0;
 static uint32_t sync_post_trailing_boost_until_ms = 0;
 static uint32_t sync_recent_negative_until_ms = 0;
 static uint32_t sync_advance_pin_since_ms = 0;
+
+/* Phase 2.5: integral centering and sigma confidence state */
+static float sync_reserve_integral_mm = 0.0f;
+static float g_buf_pos_sigma_accum_mm = 0.0f;
+static float g_buf_sigma_mm = 0.0f;
+static uint32_t g_buf_est_low_cf_emit_ms = 0;
+static uint32_t g_buf_adv_dwell_warn_emit_ms = 0;
+static bool g_buf_est_fallback_emitted = false;
 
 /* buf_signal_t — canonical signal produced by the active sensor each tick. */
 buf_signal_t g_buf_signal = {0};
@@ -175,7 +184,11 @@ static void buf_virtual_position_tick(lane_t *A, uint32_t elapsed_ms) {
         float dt_s = (float)elapsed_ms / 1000.0f;
         float mmu_mm_s = (float)lane_motion_sps(A) * MM_PER_STEP[idx];
         float extruder_mm_s = extruder_est_sps * MM_PER_STEP[idx];
-        g_buf_pos += (extruder_mm_s - mmu_mm_s) * dt_s;
+        float net_delta = (extruder_mm_s - mmu_mm_s) * dt_s;
+        g_buf_pos += net_delta;
+        if (g_buf.state == BUF_MID) {
+            g_buf_pos_sigma_accum_mm += fabsf(net_delta);
+        }
     }
 
     g_buf_pos = clamp_f(g_buf_pos, -physical_half, physical_half);
@@ -221,7 +234,7 @@ float sync_trailing_wall_time_ms(lane_t *L) {
     return (sync_trailing_wall_remaining_mm() / toward_trailing) * 1000.0f;
 }
 
-static int sync_apply_scaling(int base_sps) {
+static int sync_apply_scaling(int base_sps, float effective_target_mm) {
     if (g_buf_signal.kind == BUF_SRC_ANALOG) {
         float frac = clamp_f((g_buf_pos + 1.0f) * 0.5f, 0.0f, 1.0f);
         return (int)(TRAILING_SPS + (float)(base_sps - TRAILING_SPS) * frac);
@@ -229,8 +242,8 @@ static int sync_apply_scaling(int base_sps) {
 
     int target = base_sps;
 
-    if (g_buf_pos < (buf_target_reserve_mm() - buf_virtual_deadband_mm())) {
-        float taper_start_mm = buf_target_reserve_mm() - buf_virtual_deadband_mm();
+    if (g_buf_pos < (effective_target_mm - buf_virtual_deadband_mm())) {
+        float taper_start_mm = effective_target_mm - buf_virtual_deadband_mm();
         float taper_end_mm = -buf_threshold_mm();
         float taper_span_mm = taper_start_mm - taper_end_mm;
 
@@ -568,6 +581,9 @@ static void buf_update(buf_state_t new_state, uint32_t now_ms) {
     g_buf.entered_ms = now_ms;
     g_buf_confidence = 1.0f;
     g_buf_last_transition_ms = now_ms;
+    g_buf_pos_sigma_accum_mm = 0.0f;
+    g_buf_sigma_mm = 0.0f;
+    g_buf_est_fallback_emitted = false;
     buf_anchor_virtual_position(old, new_state);
 
     g_buf.lane_idx_at_entry = (active_lane == 2) ? 1 : 0;
@@ -603,6 +619,12 @@ void sync_disable(bool reset_estimator) {
     sync_recent_negative_until_ms = 0;
     sync_advance_pin_since_ms = 0;
     g_buf_confidence = 1.0f;
+    sync_reserve_integral_mm = 0.0f;
+    g_buf_pos_sigma_accum_mm = 0.0f;
+    g_buf_sigma_mm = 0.0f;
+    g_buf_est_low_cf_emit_ms = 0;
+    g_buf_adv_dwell_warn_emit_ms = 0;
+    g_buf_est_fallback_emitted = false;
 
     if (reset_estimator) {
         extruder_est_sps = 0.0f;
@@ -730,11 +752,24 @@ void buf_sensor_tick(uint32_t now_ms) {
             kind = BUF_SRC_VIRTUAL_ENDSTOP;
             norm = (half > 0.001f) ? (g_buf_pos / half) : 0.0f;
             norm = clamp_f(norm, -1.0f, 1.0f);
-            if (g_buf_last_transition_ms != 0) {
-                uint32_t age = now_ms - g_buf_last_transition_ms;
-                if (age > (uint32_t)BUF_HYST_MS) {
-                    float t = clamp_f((float)(age - BUF_HYST_MS) / 1500.0f, 0.0f, 1.0f);
-                    g_buf_confidence = 1.0f - t * 0.6f;
+            {
+                float sigma_cap = (EST_SIGMA_HARD_CAP_MM > 0.1f) ? EST_SIGMA_HARD_CAP_MM : 1.5f;
+                g_buf_sigma_mm = sqrtf(g_buf_pos_sigma_accum_mm) * ENDSTOP_PER_UNIT_SIGMA_MM;
+                if (g_buf_sigma_mm > sigma_cap) g_buf_sigma_mm = sigma_cap;
+                g_buf_confidence = clamp_f(1.0f - g_buf_sigma_mm / sigma_cap, 0.0f, 1.0f);
+                if (g_buf_confidence == 0.0f && !g_buf_est_fallback_emitted) {
+                    g_buf_est_fallback_emitted = true;
+                    sync_reserve_integral_mm = 0.0f;
+                    cmd_event("BUF", "EST_FALLBACK");
+                }
+                if (sync_enabled && g_buf_confidence < EST_LOW_CF_WARN_THRESHOLD) {
+                    if (g_buf_est_low_cf_emit_ms == 0 ||
+                        (now_ms - g_buf_est_low_cf_emit_ms) >= 5000u) {
+                        g_buf_est_low_cf_emit_ms = now_ms;
+                        cmd_event("BUF", "EST_LOW_CF");
+                    }
+                } else {
+                    g_buf_est_low_cf_emit_ms = 0;
                 }
             }
             g_buf_analog_saturated_since_ms = 0;
@@ -816,7 +851,32 @@ void sync_tick(uint32_t now_ms) {
         g_buf.mmu_sps_dwell_samples++;
     }
 
-    bool buf_near_target = fabsf(g_buf_pos - buf_target_reserve_mm()) < (buf_virtual_deadband_mm() * 2.0f);
+    float raw_target = buf_target_reserve_mm();
+    float reserve_deadband_mm = buf_virtual_deadband_mm();
+
+    /* Phase 2.5: integral reserve centering — active only in BUF_MID with adequate confidence */
+    bool integral_active = (s == BUF_MID)
+        && (SYNC_RESERVE_INTEGRAL_GAIN > 0.0f)
+        && (g_buf_signal.confidence >= 0.7f);
+    if (integral_active) {
+        float raw_error = g_buf_pos - raw_target;
+        float dt_s = (float)SYNC_TICK_MS / 1000.0f;
+        sync_reserve_integral_mm -= SYNC_RESERVE_INTEGRAL_GAIN * raw_error * dt_s;
+        sync_reserve_integral_mm = clamp_f(sync_reserve_integral_mm,
+            -SYNC_RESERVE_INTEGRAL_CLAMP_MM, +SYNC_RESERVE_INTEGRAL_CLAMP_MM);
+    }
+    /* ADV_DWELL_WARN: integral saturated toward advance side — rate-limited 10 s */
+    if (sync_enabled && SYNC_RESERVE_INTEGRAL_GAIN > 0.0f
+        && sync_reserve_integral_mm < -(SYNC_RESERVE_INTEGRAL_CLAMP_MM * 0.5f)) {
+        if (g_buf_adv_dwell_warn_emit_ms == 0 ||
+            (now_ms - g_buf_adv_dwell_warn_emit_ms) >= 10000u) {
+            g_buf_adv_dwell_warn_emit_ms = now_ms;
+            cmd_event("SYNC", "ADV_DWELL_WARN");
+        }
+    }
+    float effective_target = raw_target + sync_reserve_integral_mm;
+
+    bool buf_near_target = fabsf(g_buf_pos - effective_target) < (reserve_deadband_mm * 2.0f);
     if (s == BUF_ADVANCE && (now_ms - g_buf.entered_ms) > SYNC_TRAILING_COLLAPSE_DELAY_MS) {
         // Mirror the trailing bleed-down logic: if the arm stays pinned at the
         // advance wall, a conservative bootstrap estimate is now too low.
@@ -838,9 +898,7 @@ void sync_tick(uint32_t now_ms) {
         }
     }
 
-    float reserve_target_mm = buf_target_reserve_mm();
-    float reserve_deadband_mm = buf_virtual_deadband_mm();
-    float reserve_error_mm = g_buf_pos - reserve_target_mm;
+    float reserve_error_mm = g_buf_pos - effective_target;
     if (reserve_error_mm < -reserve_deadband_mm) {
         sync_recent_negative_until_ms = now_ms + SYNC_RECENT_NEGATIVE_HOLD_MS;
     }
@@ -938,7 +996,7 @@ void sync_tick(uint32_t now_ms) {
         }
     }
 
-    target_sps = sync_apply_scaling(target_sps);
+    target_sps = sync_apply_scaling(target_sps, effective_target);
 
     if (sync_post_trailing_boost_until_ms != 0) {
         if ((int32_t)(sync_post_trailing_boost_until_ms - now_ms) > 0) target_sps += PRE_RAMP_SPS;
@@ -1085,4 +1143,12 @@ uint32_t sync_advance_dwell_ms(uint32_t now_ms) {
 uint32_t sync_est_age_ms(uint32_t now_ms) {
     if (extruder_est_last_update_ms == 0) return 0;
     return now_ms - extruder_est_last_update_ms;
+}
+
+float sync_reserve_integral_get_mm(void) {
+    return sync_reserve_integral_mm;
+}
+
+float sync_buf_sigma_mm(void) {
+    return g_buf_sigma_mm;
 }

@@ -22,3 +22,5 @@ uint32_t sync_advance_dwell_ms(uint32_t now_ms);
 uint32_t sync_est_age_ms(uint32_t now_ms);
 bool sync_is_positive_relaunch_damped(void);
 bool sync_is_advance_predicted(void);
+float sync_reserve_integral_get_mm(void);
+float sync_buf_sigma_mm(void);

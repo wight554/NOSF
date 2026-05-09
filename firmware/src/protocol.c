@@ -134,8 +134,10 @@ static void status_dump(void) {
         float tw_raw = sync_trailing_wall_time_ms(A);
         uint32_t tw_ms = (tw_raw >= 99999.0f) ? 99999u : (uint32_t)tw_raw;
         uint32_t ea_ms = sync_est_age_ms(now_ms);
+        int rc = (SYNC_RESERVE_INTEGRAL_GAIN > 0.0f && sync_enabled
+                  && g_buf.state == BUF_MID && g_buf_signal.confidence >= 0.7f) ? 100 : 0;
         snprintf(b + blen, sizeof(b) - (size_t)blen,
-            ",RT:%.2f,RD:%.2f,AD:%u,TD:%u,TW:%u,EA:%u,SK:%u,CF:%.2f",
+            ",RT:%.2f,RD:%.2f,AD:%u,TD:%u,TW:%u,EA:%u,SK:%u,CF:%.2f,RI:%.2f,RC:%d,ES:%.2f,EC:%d",
             (double)sync_reserve_target_mm(),
             (double)sync_reserve_deadband_mm(),
             (unsigned)ad_ms,
@@ -143,7 +145,11 @@ static void status_dump(void) {
             (unsigned)tw_ms,
             (unsigned)ea_ms,
             (unsigned)g_buf_signal.kind,
-            (double)g_buf_signal.confidence);
+            (double)g_buf_signal.confidence,
+            (double)sync_reserve_integral_get_mm(),
+            rc,
+            (double)sync_buf_sigma_mm(),
+            (int)(g_buf_signal.confidence * 100.0f));
     }
 
     cmd_reply("OK", b);
@@ -465,6 +471,12 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "SYNC_ADV_STOP_MS")) SYNC_ADVANCE_DWELL_STOP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "SYNC_ADV_RAMP_MS")) SYNC_ADVANCE_RAMP_DELAY_MS = clamp_i(iv, 0, 5000);
         else if (!strcmp(base_param, "SYNC_OVERSHOOT_MID_EXT")) SYNC_OVERSHOOT_MID_EXTEND = clamp_i(iv, 0, 1);
+        else if (!strcmp(base_param, "SYNC_INT_GAIN")) SYNC_RESERVE_INTEGRAL_GAIN = clamp_f(fv, 0.0f, 0.05f);
+        else if (!strcmp(base_param, "SYNC_INT_CLAMP")) SYNC_RESERVE_INTEGRAL_CLAMP_MM = clamp_f(fv, 0.0f, 2.0f);
+        else if (!strcmp(base_param, "SYNC_INT_DECAY_MS")) SYNC_RESERVE_INTEGRAL_DECAY_MS = clamp_i(iv, 0, 60000);
+        else if (!strcmp(base_param, "EST_SIGMA_CAP")) EST_SIGMA_HARD_CAP_MM = clamp_f(fv, 0.5f, 5.0f);
+        else if (!strcmp(base_param, "EST_LOW_CF_THR")) EST_LOW_CF_WARN_THRESHOLD = clamp_f(fv, 0.0f, 1.0f);
+        else if (!strcmp(base_param, "EST_FALLBACK_THR")) EST_FALLBACK_CF_THRESHOLD = clamp_f(fv, 0.0f, 0.5f);
         else if (!strcmp(base_param, "TS_BUF_MS")) TS_BUF_FALLBACK_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "STARTUP_MS")) MOTION_STARTUP_MS = clamp_i(iv, 0, 30000);
         else if (!strcmp(base_param, "SERVO_OPEN")) SERVO_OPEN_US = clamp_i(iv, 400, 2600);
@@ -558,6 +570,12 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "SYNC_ADV_STOP_MS")) snprintf(out, sizeof(out), "SYNC_ADV_STOP_MS:%d", SYNC_ADVANCE_DWELL_STOP_MS);
         else if (!strcmp(param, "SYNC_ADV_RAMP_MS")) snprintf(out, sizeof(out), "SYNC_ADV_RAMP_MS:%d", SYNC_ADVANCE_RAMP_DELAY_MS);
         else if (!strcmp(param, "SYNC_OVERSHOOT_MID_EXT")) snprintf(out, sizeof(out), "SYNC_OVERSHOOT_MID_EXT:%d", SYNC_OVERSHOOT_MID_EXTEND);
+        else if (!strcmp(param, "SYNC_INT_GAIN")) snprintf(out, sizeof(out), "SYNC_INT_GAIN:%.4f", (double)SYNC_RESERVE_INTEGRAL_GAIN);
+        else if (!strcmp(param, "SYNC_INT_CLAMP")) snprintf(out, sizeof(out), "SYNC_INT_CLAMP:%.3f", (double)SYNC_RESERVE_INTEGRAL_CLAMP_MM);
+        else if (!strcmp(param, "SYNC_INT_DECAY_MS")) snprintf(out, sizeof(out), "SYNC_INT_DECAY_MS:%d", SYNC_RESERVE_INTEGRAL_DECAY_MS);
+        else if (!strcmp(param, "EST_SIGMA_CAP")) snprintf(out, sizeof(out), "EST_SIGMA_CAP:%.3f", (double)EST_SIGMA_HARD_CAP_MM);
+        else if (!strcmp(param, "EST_LOW_CF_THR")) snprintf(out, sizeof(out), "EST_LOW_CF_THR:%.3f", (double)EST_LOW_CF_WARN_THRESHOLD);
+        else if (!strcmp(param, "EST_FALLBACK_THR")) snprintf(out, sizeof(out), "EST_FALLBACK_THR:%.3f", (double)EST_FALLBACK_CF_THRESHOLD);
         else if (!strcmp(param, "TS_BUF_MS")) snprintf(out, sizeof(out), "TS_BUF_MS:%d", TS_BUF_FALLBACK_MS);
         else if (!strcmp(param, "STARTUP_MS")) snprintf(out, sizeof(out), "STARTUP_MS:%d", MOTION_STARTUP_MS);
         else if (!strcmp(param, "EST_ALPHA_MIN")) snprintf(out, sizeof(out), "EST_ALPHA_MIN:%.3f", (double)EST_ALPHA_MIN);

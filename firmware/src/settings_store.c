@@ -14,7 +14,7 @@
 
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4e4f5346u
-#define SETTINGS_VERSION 44u
+#define SETTINGS_VERSION 45u
 
 typedef struct {
     uint32_t magic;
@@ -88,6 +88,11 @@ typedef struct {
     int sync_advance_dwell_stop_ms;
     int sync_advance_ramp_delay_ms;
     int sync_overshoot_mid_extend;
+
+    float sync_reserve_integral_gain;
+    float sync_reserve_integral_clamp_mm;
+    int   sync_reserve_integral_decay_ms;
+    float est_sigma_hard_cap_mm;
 
     uint32_t crc32;
 } settings_t;
@@ -188,6 +193,10 @@ void settings_defaults(void) {
     SYNC_ADVANCE_DWELL_STOP_MS = CONF_SYNC_ADVANCE_DWELL_STOP_MS;
     SYNC_ADVANCE_RAMP_DELAY_MS = CONF_SYNC_ADVANCE_RAMP_DELAY_MS;
     SYNC_OVERSHOOT_MID_EXTEND = CONF_SYNC_OVERSHOOT_MID_EXTEND;
+    SYNC_RESERVE_INTEGRAL_GAIN = CONF_SYNC_RESERVE_INTEGRAL_GAIN;
+    SYNC_RESERVE_INTEGRAL_CLAMP_MM = CONF_SYNC_RESERVE_INTEGRAL_CLAMP_MM;
+    SYNC_RESERVE_INTEGRAL_DECAY_MS = CONF_SYNC_RESERVE_INTEGRAL_DECAY_MS;
+    EST_SIGMA_HARD_CAP_MM = CONF_EST_SIGMA_HARD_CAP_MM;
     BUF_STAB_SPS = clamp_i(CONF_BUF_STAB_SPS, 10, 10000);
     JOIN_SPS = CONF_JOIN_SPS;
     PRESS_SPS = CONF_PRESS_SPS;
@@ -313,6 +322,10 @@ void settings_save(void) {
     s.sync_advance_dwell_stop_ms = SYNC_ADVANCE_DWELL_STOP_MS;
     s.sync_advance_ramp_delay_ms = SYNC_ADVANCE_RAMP_DELAY_MS;
     s.sync_overshoot_mid_extend = SYNC_OVERSHOOT_MID_EXTEND;
+    s.sync_reserve_integral_gain = SYNC_RESERVE_INTEGRAL_GAIN;
+    s.sync_reserve_integral_clamp_mm = SYNC_RESERVE_INTEGRAL_CLAMP_MM;
+    s.sync_reserve_integral_decay_ms = SYNC_RESERVE_INTEGRAL_DECAY_MS;
+    s.est_sigma_hard_cap_mm = EST_SIGMA_HARD_CAP_MM;
 
     for (int i = 0; i < NUM_LANES; i++) {
         s.tmc_rotation_distance[i] = TMC_ROTATION_DISTANCE[i];
@@ -476,6 +489,10 @@ void settings_load(void) {
     SYNC_ADVANCE_DWELL_STOP_MS = clamp_i(s->sync_advance_dwell_stop_ms, 0, 30000);
     SYNC_ADVANCE_RAMP_DELAY_MS = clamp_i(s->sync_advance_ramp_delay_ms, 0, 5000);
     SYNC_OVERSHOOT_MID_EXTEND = clamp_i(s->sync_overshoot_mid_extend, 0, 1);
+    SYNC_RESERVE_INTEGRAL_GAIN = clamp_f(s->sync_reserve_integral_gain, 0.0f, 0.05f);
+    SYNC_RESERVE_INTEGRAL_CLAMP_MM = clamp_f(s->sync_reserve_integral_clamp_mm, 0.0f, 2.0f);
+    SYNC_RESERVE_INTEGRAL_DECAY_MS = clamp_i(s->sync_reserve_integral_decay_ms, 0, 60000);
+    EST_SIGMA_HARD_CAP_MM = clamp_f(s->est_sigma_hard_cap_mm, 0.5f, 5.0f);
 
     RELOAD_MODE = s->reload_mode ? 1 : 0;
     CUT_TIMEOUT_SETTLE_MS = s->cutter_settle_ms;

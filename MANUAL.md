@@ -142,6 +142,12 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `SYNC_AUTO_STOP` | `sync_auto_stop_ms` | Auto-mode only: tail-assist stop after sustained `TRAILING`; in normal print sync, stops if continuous `TRAILING` dwell exceeds the timeout and recovery speed has collapsed to the minimum sync floor. | 5000 |
 | `SYNC_ADV_STOP_MS` | `sync_advance_dwell_stop_ms` | Hard stop if continuously pinned at advance endstop for this many ms. 0 = disable. | 6000 |
 | `SYNC_ADV_RAMP_MS` | `sync_advance_ramp_delay_ms` | Grace window before refill-assist overrides target to `SYNC_MAX_RATE`, bypassing the estimator ceiling. 0 = disable. | 400 |
+| `SYNC_INT_GAIN` | `sync_reserve_integral_gain` | Integral reserve-centering gain (mm of target bias per mm·s of reserve error). **0.0 = disabled** (default; behavior identical to Phase 2). Enable with a small value (e.g. 0.005) after reviewing long-run soak logs. | 0.0 |
+| `SYNC_INT_CLAMP` | `sync_reserve_integral_clamp_mm` | Maximum integral correction magnitude in mm. The integral cannot shift the effective reserve target by more than this amount. | 0.6 |
+| `SYNC_INT_DECAY_MS` | `sync_reserve_integral_decay_ms` | Reserved for future integral decay rate. 0 = hold integral value when frozen. | 0 |
+| `EST_SIGMA_CAP` | `est_sigma_hard_cap_mm` | Estimator sigma hard cap in mm. Confidence (`EC`) drops to 0 when the physics-based position uncertainty reaches this level. | 1.5 |
+| `EST_LOW_CF_THR` | `est_low_cf_warn_threshold` | `EV:BUF,EST_LOW_CF` fires when estimator confidence falls below this threshold (runtime-only, not persisted). | 0.5 |
+| `EST_FALLBACK_THR` | `est_fallback_cf_threshold` | Integral centering freezes when confidence falls below this threshold. Also the floor below which `EV:BUF,EST_FALLBACK` is eligible (runtime-only). | 0.2 |
 | `POST_PRINT_STAB_MS` | `post_print_stab_delay_ms` | Delay before idle+`TRAILING` recovery starts; once triggered, the low-speed post-print stabilization move settles the buffer back to `MID` and only falls back to the advance-side handoff if it overshoots center. `0` starts immediately | 0 |
 | `RELOAD_Y_MS` | `reload_y_timeout_ms` | Max time for tail to clear Y during RELOAD | 10000 |
 | `RELOAD_JOIN_MS` | `reload_join_delay_ms` | Extra RELOAD-only settling delay after tail and Y clear before `RELOAD:JOINING` starts | 500 |
@@ -172,6 +178,10 @@ These fields are appended after `SS:` in the `?:` response. They are additive an
 | `EA` | ms | Age of the extruder velocity estimate — time since the estimator was last updated by a zone transition or bleed. |
 | `SK` | enum | Active buffer sensor kind: `0` = virtual endstop, `1` = analog. |
 | `CF` | 0.0–1.0 | Signal confidence from the active source. Below ~0.5 indicates saturation or stale data; the control loop treats values below 0.4 as unreliable. |
+| `RI` | mm (signed) | Reserve integral term — slow centering correction added to the reserve target. |
+| `RC` | 0–100 | Effective integral gain scalar (0 = frozen/disabled, 100 = active). |
+| `ES` | mm | Estimator sigma — physics-based position uncertainty in mm. |
+| `EC` | 0–100 | Estimator confidence based on sigma (independent of source `CF`). |
 
 ---
 
@@ -189,7 +199,8 @@ These fields are appended after `SS:` in the `?:` response. They are additive an
 | `MOVE_DONE` | `lane` | Exact move completed. |
 | `ACTIVE` | `lane\|NONE`| Reported when the active lane changes. |
 | `FAULT:DRY_SPIN`| `lane` | Motor spinning > 8s without filament (`IN` clear). |
-| `SYNC` | `AUTO_START\|AUTO_STOP\|ADV_DWELL_STOP` | Automatic sync state transitions. `ADV_DWELL_STOP` fires when the buffer arm has been continuously pinned at the advance endstop for longer than `SYNC_ADV_STOP_MS`. |
+| `SYNC` | `AUTO_START\|AUTO_STOP\|ADV_DWELL_STOP\|ADV_DWELL_WARN` | Automatic sync state transitions. `ADV_DWELL_STOP` fires when pinned at advance for `SYNC_ADV_STOP_MS`. `ADV_DWELL_WARN` fires when centering drift reaches a significant threshold. |
+| `BUF` | `EST_LOW_CF\|EST_FALLBACK` | Buffer estimator events. `EST_LOW_CF` fires when confidence drops; `EST_FALLBACK` fires when sigma exceeds the hard cap. |
 | `BUF_STAB` | `START\|DONE\|TIMEOUT` | Buffer neutralization started, reached `MID`, or hit its safety timeout. |
 | `BS` | Mode-specific snapshot | Periodic buffer/sync status event used during sync and RELOAD follow. |
 | `TC:*` | Phase-specific | Toolchange progress events such as `TC:UNLOADING`, `TC:SWAPPING`, `TC:LOADING`, `TC:DONE`, `TC:ERROR`. |
