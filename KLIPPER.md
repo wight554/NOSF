@@ -293,6 +293,11 @@ the tuner tails that file while it remains the only process owning
 forwards markers through firmware `MARK:`/`MK:`, but should not be used while
 the live tuner owns the serial port.
 
+Use `--debug` for tuning bring-up. It prints marker changes plus throttled
+per-bucket progress lines showing samples, variance, learned `x`, live `EST`,
+bias, confidence, state, and why the bucket is waiting. The cadence is
+controlled by `--progress-interval 10`; use `0` for marker-only debug output.
+
 `nosf_live_tuner.py` and `nosf_logger.py` both own the NOSF USB TTY. Do not run
 them against the same `/dev/ttyACM*` at the same time. Use the live tuner for
 tuning prints, and use `nosf_logger.py` for passive reference soaks or debugging

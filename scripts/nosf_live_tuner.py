@@ -92,6 +92,8 @@ class Bucket:
     last_seen: float = 0.0
     stable_since: float = 0.0
     locked: bool = False
+    last_debug_t: float = 0.0
+    last_debug_state: str = ""
 
 
 def default_state_path(machine_id: str) -> str:
@@ -163,6 +165,7 @@ class Tuner:
         self.last_rate_limit_warn_t = -999.0
         self.allow_baseline_writes = False
         self.last_baseline_skip_warn_t = -999.0
+        self.progress_interval = 10.0
         self._load_state()
 
     def _load_state(self) -> None:
@@ -367,9 +370,16 @@ class Tuner:
 
         if b.state == "LOCKED" or b.locked:
             if abs(est - b.x) * abs(est - b.x) > 4.0 * (b.P + R_BASE):
+                if self.debug:
+                    print(
+                        f"[tuner] bucket {b.label} unlock outlier "
+                        f"est={est:.0f} x={b.x:.0f} P={b.P:.1f}",
+                        file=sys.stderr,
+                    )
                 b.state = "TRACKING"
                 b.locked = False
                 b.P = max(b.P, 1e4)
+            self._debug_bucket_progress(b, now, est, bp, cf, apx)
             return
 
         kf_predict_update(b, est, cf, apx, dt_s)
@@ -378,6 +388,39 @@ class Tuner:
         b.bias = max(0.0, min(0.7, 0.95 * b.bias + 0.05 * bias_target))
         self._maybe_emit_set(b, now)
         self._maybe_lock(b, now)
+        self._debug_bucket_progress(b, now, est, bp, cf, apx)
+
+    def _bucket_wait_reason(self, b: Bucket, now: float) -> str:
+        if b.state == "LOCKED" or b.locked:
+            return "locked"
+        if b.n < N_MIN_SAMPLES:
+            return f"samples {b.n}/{N_MIN_SAMPLES}"
+        if b.P > 4.0 * P_STABLE_THR:
+            return f"variance P>{4.0 * P_STABLE_THR:.0f}"
+        if abs(b.x - b.last_set_x) >= SET_DEADBAND_SPS and not self.allow_baseline_writes:
+            return "baseline observe-only"
+        if abs(b.bias - b.last_set_bias) >= BIAS_DEADBAND:
+            return "bias write pending"
+        if b.state == "STABLE":
+            remain = max(0.0, BUCKET_LOCK_S - (now - b.stable_since))
+            return f"lock in {remain:.0f}s"
+        return "tracking"
+
+    def _debug_bucket_progress(self, b: Bucket, now: float, est: float, bp: float, cf: float, apx: int) -> None:
+        if not self.debug or self.progress_interval <= 0.0:
+            return
+        state_changed = b.state != b.last_debug_state
+        if not state_changed and now - b.last_debug_t < self.progress_interval:
+            return
+        b.last_debug_t = now
+        b.last_debug_state = b.state
+        wait = self._bucket_wait_reason(b, now)
+        print(
+            f"[tuner] bucket {b.label} n={b.n} P={b.P:.1f} "
+            f"x={b.x:.0f} est={est:.0f} bias={b.bias:.3f} "
+            f"bp={bp:.2f} cf={cf:.2f} apx={apx} state={b.state} wait={wait}",
+            file=sys.stderr,
+        )
 
     def _maybe_emit_set(self, b: Bucket, now: float) -> None:
         if now - self.last_set_t < MIN_SET_SPACING:
@@ -390,7 +433,7 @@ class Tuner:
             if not self.allow_baseline_writes:
                 if self.debug and now - self.last_baseline_skip_warn_t >= 30.0:
                     print(
-                        "[tuner] baseline write skipped; pass --allow-baseline-writes to enable",
+                        f"[tuner] baseline write skipped for {b.label}; pass --allow-baseline-writes to enable",
                         file=sys.stderr,
                     )
                     self.last_baseline_skip_warn_t = now
@@ -681,6 +724,7 @@ def run_loop(args) -> None:
         tuner = Tuner(ser, args.state, args.machine_id, port=args.port, baud=args.baud)
         tuner.debug = args.debug
         tuner.allow_baseline_writes = args.allow_baseline_writes
+        tuner.progress_interval = max(0.0, args.progress_interval)
         poll_interval = 1.0 / args.poll_hz
         next_poll = time.monotonic()
         while True:
@@ -755,6 +799,12 @@ def main() -> None:
     ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, unlock, SV:, emit /tmp/nosf-patch.ini, and exit")
     ap.add_argument("--klipper-log", help="Tail klippy.log for NOSF_TUNE marker echoes while tuning")
     ap.add_argument("--marker-file", help="Tail local marker file written by scripts/nosf_marker.py")
+    ap.add_argument(
+        "--progress-interval",
+        type=float,
+        default=10.0,
+        help="Seconds between per-bucket --debug progress lines; 0 disables progress lines",
+    )
     ap.add_argument(
         "--allow-baseline-writes",
         action="store_true",

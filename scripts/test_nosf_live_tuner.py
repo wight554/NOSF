@@ -5,6 +5,8 @@ import json
 import os
 import sys
 import tempfile
+from contextlib import redirect_stderr
+from io import StringIO
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -162,6 +164,23 @@ def test_baseline_writes_disabled_by_default():
         return "baseline SETs are opt-in only"
 
 
+def test_debug_bucket_progress_line():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t, _fake = make_tuner(os.path.join(td, "state.json"), clock)
+        t.debug = True
+        t.progress_interval = 1.0
+        b = tuner_mod.Bucket(label="PERIMETER_v40", x=1300.0, P=50.0, n=25, bias=0.39)
+        out = StringIO()
+        with redirect_stderr(out):
+            t._debug_bucket_progress(b, 2.0, 1280.0, -6.5, 0.96, 1)
+        line = out.getvalue()
+        assert "bucket PERIMETER_v40" in line, line
+        assert "n=25" in line, line
+        assert "wait=samples 25/200" in line, line
+        return "debug progress reports active bucket state"
+
+
 def test_commit_idle_requires_activity():
     with tempfile.TemporaryDirectory() as td:
         clock = Clock()
@@ -211,6 +230,7 @@ def main():
         ("halt", test_adv_dwell_stop_halts),
         ("rate-limit", test_rate_limit_three_sets_per_window),
         ("baseline-off", test_baseline_writes_disabled_by_default),
+        ("debug-log", test_debug_bucket_progress_line),
         ("idle-arm", test_commit_idle_requires_activity),
         ("mk-marker", test_status_mk_marker_fallback),
     ]
