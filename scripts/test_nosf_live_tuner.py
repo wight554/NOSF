@@ -512,6 +512,50 @@ def test_status_mk_marker_fallback():
         return "firmware MK status marker seeds active bucket"
 
 
+def test_csv_out_writes_rows():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        state_path = os.path.join(td, "state.json")
+        csv_path = os.path.join(td, "run.csv")
+        t, fake = make_tuner(state_path, clock)
+        t.csv_emitter = tuner_mod.CsvEmitter(csv_path)
+        for i in range(5):
+            clock.step(1.0)
+            t.on_status(status(est=1800 + i))
+        t.csv_emitter.close()
+        
+        with open(csv_path) as fh:
+            lines = fh.readlines()
+        assert len(lines) == 6, lines
+        assert "wall_ts" in lines[0], lines[0]
+        assert "1800" in lines[1], lines[1]
+        return "CsvEmitter writes header and rows"
+
+
+def test_csv_out_appends_across_runs():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        state_path = os.path.join(td, "state.json")
+        csv_path = os.path.join(td, "run.csv")
+        t1, fake1 = make_tuner(state_path, clock)
+        t1.csv_emitter = tuner_mod.CsvEmitter(csv_path)
+        t1.on_status(status(est=1800))
+        t1.csv_emitter.close()
+        
+        t2, fake2 = make_tuner(state_path, clock)
+        t2.csv_emitter = tuner_mod.CsvEmitter(csv_path)
+        t2.on_status(status(est=1801))
+        t2.csv_emitter.close()
+        
+        with open(csv_path) as fh:
+            lines = fh.readlines()
+        assert len(lines) == 3, lines
+        assert "wall_ts" in lines[0], lines[0]
+        assert "1800" in lines[1], lines[1]
+        assert "1801" in lines[2], lines[2]
+        return "CsvEmitter appends without duplicating header"
+
+
 def main():
     tests = [
         ("warm-up", test_cold_start_no_set),
@@ -535,6 +579,8 @@ def main():
         ("debug-log", test_debug_bucket_progress_line),
         ("idle-arm", test_commit_idle_requires_activity),
         ("mk-marker", test_status_mk_marker_fallback),
+        ("csv-out-write", test_csv_out_writes_rows),
+        ("csv-out-append", test_csv_out_appends_across_runs),
     ]
     print(f"{'case':<14} result")
     print(f"{'-' * 14} {'-' * 40}")

@@ -156,6 +156,30 @@ def kf_predict_update(bucket: Bucket, z: float, cf: float, apx: int, dt_s: float
     bucket.n += 1
 
 
+class CsvEmitter:
+    def __init__(self, path: str):
+        self.path = path
+        self.fields = [
+            "wall_ts", "run_seq", "layer", "feature", "v_fil",
+            "BL", "BP", "BPV", "EST", "RT", "AD", "APX", "CF", "TC", "BUF", "MK_seq"
+        ]
+        parent = os.path.dirname(os.path.abspath(path))
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        if not os.path.exists(path) or os.path.getsize(path) == 0:
+            with open(path, "w") as fh:
+                fh.write(",".join(self.fields) + "\n")
+        self.fh = open(path, "a")
+
+    def emit(self, row: dict) -> None:
+        line = ",".join(str(row.get(f, "")) for f in self.fields)
+        self.fh.write(line + "\n")
+        self.fh.flush()
+
+    def close(self) -> None:
+        self.fh.close()
+
+
 def migrate_state_data(data: dict) -> dict:
     schema = data.get("_schema")
     if schema == SCHEMA_VERSION:
@@ -216,6 +240,7 @@ class Tuner:
         self.last_low_flow_warn_t = -999.0
         self.last_bias_rail_warn_t = -999.0
         self.progress_interval = 10.0
+        self.csv_emitter = None
         self._load_state()
 
     def _load_state(self) -> None:
@@ -428,6 +453,22 @@ class Tuner:
         fields = parse_status(line)
         if not fields:
             return
+
+        if self.csv_emitter:
+            row = fields.copy()
+            row["wall_ts"] = self.wall_fn()
+            row["run_seq"] = self.run_seq
+            row["layer"] = self.current_layer
+            row["feature"] = self.last_feature
+            row["v_fil"] = self.last_v_fil
+            row["MK_seq"] = self.last_marker_seq if self.last_marker_seq >= 0 else ""
+            if row.get("BPV"):
+                try:
+                    row["BPV"] = float(row["BPV"]) / 100.0
+                except ValueError:
+                    pass
+            self.csv_emitter.emit(row)
+
         tc = fields.get("TC", "")
         if tc and tc != "IDLE":
             self.idle_since = 0.0
@@ -958,6 +999,8 @@ def run_loop(args) -> None:
         tuner.allow_bias_writes = args.allow_bias_writes
         tuner.allow_baseline_writes = args.allow_baseline_writes
         tuner.progress_interval = max(0.0, args.progress_interval)
+        if hasattr(args, "csv_out") and args.csv_out:
+            tuner.csv_emitter = CsvEmitter(args.csv_out)
         poll_interval = 1.0 / args.poll_hz
         next_poll = time.monotonic()
         while True:
@@ -1008,6 +1051,8 @@ def run_loop(args) -> None:
         tuner._persist()
         print("[tuner] persisted state on exit", file=sys.stderr)
     finally:
+        if tuner.csv_emitter:
+            tuner.csv_emitter.close()
         if klipper_log:
             klipper_log.close()
         if marker_file:
@@ -1030,6 +1075,7 @@ def main() -> None:
     ap.add_argument("--unlock", metavar="FEATURE", help="Unlock matching bucket label or feature prefix and exit")
     ap.add_argument("--state-info", action="store_true", help="Print state summary table and exit")
     ap.add_argument("--csv", action="store_true", help="With --state-info, emit machine-readable CSV rows")
+    ap.add_argument("--csv-out", metavar="PATH", help="Append per-status-row CSV alongside JSON state")
     ap.add_argument("--reset-runtime", action="store_true", help="Send LIVE_TUNE_LOCK:0 and LD:, then exit")
     ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, emit /tmp/nosf-patch.ini and exit")
     ap.add_argument("--commit-on-finish", action="store_true", help="Exit immediately on FINISH marker (no idle wait); implies commit if locked buckets exist")
