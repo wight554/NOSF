@@ -78,6 +78,15 @@ Q_PROCESS = 25.0
 R_BASE = 100.0
 SCHEMA_VERSION = 2
 DEFAULT_STATE_DIR = os.path.expanduser("~/nosf-state")
+PATCH_KEYS = [
+    "baseline_rate",
+    "sync_trailing_bias_frac",
+    "mid_creep_timeout_ms",
+    "mid_creep_rate_sps_per_s",
+    "mid_creep_cap_frac",
+    "buf_variance_blend_frac",
+    "buf_variance_blend_ref_mm",
+]
 
 STATUS_FIELD_RE = re.compile(r"(?P<key>[A-Z0-9]+):(?P<val>-?\d+(?:\.\d+)?|[A-Z_]+|[^,]*)")
 EVENT_RE = re.compile(r"^EV:([A-Z_]+),([A-Z_]+)")
@@ -826,22 +835,43 @@ def emit_patch(state_path: str, machine_id: str, out_path: str) -> None:
     total_w = sum(weights.values()) or 1.0
     baseline = sum(float(v.get("x", 0.0)) * weights[k] for k, v in locked.items()) / total_w
     bias = sum(float(v.get("bias", 0.4)) * weights[k] for k, v in locked.items()) / total_w
+    suggestions = {
+        "baseline_rate": (
+            f"{int(round(baseline))}",
+            "LOW",
+            "single-source tuner estimate; verify with nosf_analyze.py",
+        ),
+        "sync_trailing_bias_frac": (
+            f"{bias:.3f}",
+            "LOW",
+            f"{len(locked)} locked buckets, recency weighted",
+        ),
+    }
     with open(out_path, "w") as fh:
         fh.write("# nosf_live_tuner.py emitted patch\n")
-        fh.write("# Apply to config.ini after review.\n")
+        fh.write(f"# Source: tuner state, {sum(int(v.get('n', 0)) for v in locked.values())} samples, {len(locked)} LOCKED buckets\n")
+        fh.write("# Acceptance gate: NOT RUN\n")
+        fh.write("# WARNING: do not blindly apply; review against config.ini first.\n")
         fh.write("# recency weight: n / (1 + age_seconds / 86400)\n")
-        fh.write(f"# locked buckets: {len(locked)}\n")
         for label, raw in sorted(locked.items()):
             fh.write(
                 f"#   {label}: x={float(raw.get('x', 0.0)):.0f} "
                 f"bias={float(raw.get('bias', 0.4)):.3f} "
                 f"n={int(raw.get('n', 0))} weight={weights[label]:.1f}\n"
             )
-        fh.write(
-            f"# baseline_rate_sps_suggestion: {int(round(baseline))} "
-            "(experimental; verify manually before applying)\n"
-        )
-        fh.write(f"sync_trailing_bias_frac: {bias:.3f}\n")
+        fh.write("\n[nosf_review]\n")
+        fh.write("# Each line: current_value -> suggested_value (confidence)\n")
+        for key in PATCH_KEYS:
+            suggested, conf, detail = suggestions.get(
+                key,
+                ("no-suggestion", "DEFAULT", "requires multi-run nosf_analyze.py"),
+            )
+            fh.write(f"# {key:<28} {'review':>7} -> {suggested:<13} ({conf}, {detail})\n")
+        fh.write("\n")
+        fh.write("# To apply, copy reviewed values into config.ini, then run:\n")
+        fh.write("#   python3 scripts/gen_config.py\n")
+        fh.write("#   ninja -C build_local\n")
+        fh.write("#   bash scripts/flash_nosf.sh\n")
     print(f"[tuner] wrote patch: {out_path}", file=sys.stderr)
 
 
