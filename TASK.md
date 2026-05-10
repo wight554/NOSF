@@ -277,3 +277,4 @@ Settings version 46u → 47u.
 - 2.9.14 done: added embedded logger CSV emission; committed and pushed d35f036.
 - 2.9.8 done: implemented dual-path lock criteria; committed and pushed 1bda999.
 - 2.9.9 done: implemented schema 3 and watermark; committed and pushed 7ca94a0.
+- 2.9.10 done: implemented recommend-recheck mode; committed and pushed 3b2e6d8.
