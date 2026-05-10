@@ -272,3 +272,4 @@ Settings version 46u → 47u.
 
 ### Completed Steps
 - Phase 2.9 Continuation pre-work: read specs and updated TASK.md.
+- 2.9.16 done: removed --commit-flash and SV: code path; committed and pushed 328619c.
