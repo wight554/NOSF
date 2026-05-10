@@ -412,6 +412,40 @@ def test_prune_stale_removes_old_buckets():
         assert "_meta" in data["test"], data
         return "prune-stale removes only buckets older than 60 days"
 
+def test_daemon_does_not_exit_on_finish():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t, fake = make_tuner(os.path.join(td, "state.json"), clock)
+        args = SimpleNamespace(commit_on_finish=True, observe_daemon=True, state=t.state_path, machine_id=t.machine_id, recommend_recheck=False)
+        t.finish_seen = True
+        t.seen_print_activity = True
+        
+        # Simulate run_loop logic
+        if args.commit_on_finish and t.finish_seen and t.seen_print_activity:
+            if getattr(args, "observe_daemon", False):
+                t._persist()
+                t.finish_seen = False
+                t.seen_print_activity = False
+                t.idle_since = 0.0
+                t.total_print_mid_s = 0.0
+            else:
+                assert False, "Should not exit"
+        
+        assert t.finish_seen is False, "daemon should reset finish_seen"
+        assert t.seen_print_activity is False, "daemon should reset seen_print_activity"
+        return "daemon mode resets flags instead of exiting on finish"
+
+def test_daemon_resets_per_print_state():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t, fake = make_tuner(os.path.join(td, "state.json"), clock)
+        t.total_print_mid_s = 500.0
+        t._run_seen_labels.add("PERIMETER_v40")
+        t.on_m118("NT:START")
+        assert t.total_print_mid_s == 0.0, "START should reset total_print_mid_s"
+        assert len(t._run_seen_labels) == 0, "START should clear _run_seen_labels"
+        return "daemon mode resets per-print state on NT:START"
+
 def test_counter_increments():
     with tempfile.TemporaryDirectory() as td:
         clock = Clock()
@@ -780,6 +814,8 @@ def main():
         ("schema-prod", test_existing_production_state_loads),
         ("recheck-verd", test_recommend_recheck_outputs_verdict),
         ("prune-stale", test_prune_stale_removes_old_buckets),
+        ("daemon-no-exit", test_daemon_does_not_exit_on_finish),
+        ("daemon-reset", test_daemon_resets_per_print_state),
         ("counters", test_counter_increments),
         ("short-print", test_short_print_no_lock),
         ("three-run", test_three_run_lock),

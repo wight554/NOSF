@@ -1111,8 +1111,19 @@ def run_loop(args) -> None:
                     (args.commit_on_finish and tuner.finish_seen and tuner.seen_print_activity)
                 )
                 if commit_now:
-                    finish_commit(tuner, args)
-                    return
+                    if getattr(args, "observe_daemon", False):
+                        tuner._persist()
+                        print(f"[tuner] print {tuner.run_seq} complete, {tuner.locked_bucket_count()} LOCKED buckets", file=sys.stderr)
+                        tuner.finish_seen = False
+                        tuner.seen_print_activity = False
+                        tuner.idle_since = 0.0
+                        tuner.total_print_mid_s = 0.0
+                        if args.recommend_recheck:
+                            do_recommend_recheck(args.state, args.machine_id)
+                        continue
+                    else:
+                        finish_commit(tuner, args)
+                        return
     except KeyboardInterrupt:
         tuner._persist()
         print("[tuner] persisted state on exit", file=sys.stderr)
@@ -1252,6 +1263,8 @@ def main() -> None:
     ap.add_argument("--csv", action="store_true", help="With --state-info, emit machine-readable CSV rows")
     ap.add_argument("--csv-out", metavar="PATH", help="Append per-status-row CSV alongside JSON state")
     ap.add_argument("--recommend-recheck", action="store_true", help="Evaluate watermark drift and suggest if analyzer should be run")
+    ap.add_argument("--prune-stale", action="store_true", help="Remove buckets not seen in >60 days from state file")
+    ap.add_argument("--observe-daemon", action="store_true", help="Persist and continue on FINISH instead of exiting")
     ap.add_argument("--reset-runtime", action="store_true", help="Send LIVE_TUNE_LOCK:0 and LD:, then exit")
     ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, emit /tmp/nosf-patch.ini and exit")
     ap.add_argument("--commit-on-finish", action="store_true", help="Exit immediately on FINISH marker (no idle wait); implies commit if locked buckets exist")
