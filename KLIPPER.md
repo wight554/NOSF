@@ -238,17 +238,17 @@ oscillates.
 
 ---
 
-## Telemetry and Tuning — nosf_logger.py
+## Telemetry and Tuning — nosf_live_tuner.py
 
-Phase 2.7 adds high-speed diagnostic capture. Use `scripts/nosf_logger.py` to
+Phase 2.7 adds high-speed diagnostic capture. Use `scripts/nosf_live_tuner.py --csv-out` to
 stream internal state to a CSV file for offline analysis.
 
-1. Start the logger on the Pi:
+1. Start the tuner on the Pi:
    ```bash
-   python3 scripts/nosf_logger.py --port /dev/ttyACM0 --out run1.csv
+   python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 --csv-out run1.csv --observe-daemon
    ```
 2. Run your print.
-3. Stop the logger (Ctrl+C).
+3. Stop the tuner (Ctrl+C) or leave it running across prints.
 4. Analyze the results with `scripts/nosf_analyze.py`:
    ```bash
    python3 scripts/nosf_analyze.py --in run1.csv --out patch.ini
@@ -260,30 +260,36 @@ Phase 2.9 uses calibration prints to bake standalone defaults. The normal flow
 is observe-only: gather telemetry, run the analyzer, review a patch, merge
 chosen values into `config.ini`, rebuild, flash, then detach the host.
 
-Preprocess calibration G-code with local marker delivery and layer markers:
+Before running the first 2.9.9 build, please back up your state file:
+```bash
+cp ~/nosf-state/buckets-<id>.json ~/nosf-state/buckets-<id>.json.schema2.bak
+```
+
+Preprocess calibration G-code with local marker delivery:
 
 ```bash
 python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode \
-    --emit file --every-layer
+    --emit file
 ```
 
-`--every-layer` recognizes both `;LAYER:<n>` and OrcaSlicer
-`;LAYER_CHANGE` comments.
+By default, layer changes are recognized (both `;LAYER:<n>` and OrcaSlicer
+`;LAYER_CHANGE` comments). Use `--no-layer-markers` to disable.
 
 Run the observe-only tuner during a calibration print:
 
 ```bash
 python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
     --machine-id myprinter \
-    --commit-on-idle \
+    --observe-daemon \
+    --csv-out ~/nosf-runs/run1.csv \
     --marker-file /tmp/nosf-markers-myprinter.log &
 ```
 
 `--emit file` inserts `RUN_SHELL_COMMAND CMD=nosf_marker PARAMS="..."` lines.
 `nosf_marker.py` appends each marker to `/tmp/nosf-markers-myprinter.log`, and
 the tuner tails that file while it remains the only process owning
-`/dev/ttyACM0`. In observe mode the tuner emits `/tmp/nosf-patch.ini` at print
-idle/finish but sends no `SET:` commands and no `SV:`.
+`/dev/ttyACM0`. In observe mode the tuner persists its tracking state
+but sends no `SET:` commands and no `SV:`.
 The tuner truncates `--marker-file` when it starts, so each calibration run
 starts from fresh marker state. Add `--keep-marker-file` only when attaching to
 a print that is already in progress.
@@ -298,14 +304,16 @@ python3 scripts/nosf_analyze.py \
     --acceptance-gate
 ```
 
-`nosf_live_tuner.py` and `nosf_logger.py` both own the NOSF USB TTY. Do not run
-them against the same `/dev/ttyACM*` at the same time. Recommended pattern:
-logger for reference CSV runs, tuner for bucket-state runs, analyzer after the
-calibration corpus is ready.
+If the patch is applied to `config.ini` and flashed, update the watermark:
+```bash
+python3 scripts/nosf_analyze.py --commit-watermark --state ~/nosf-state/buckets-myprinter.json
+```
+
+`nosf_live_tuner.py` owns the NOSF USB TTY. Do not run
+multiple instances against the same `/dev/ttyACM*` at the same time.
 
 Debug-only live writes still exist for controlled experiments:
-`--allow-bias-writes`, `--allow-baseline-writes`, and `--commit-flash`.
-`--commit-flash` is the only tuner mode that sends `SV:`.
+`--allow-bias-writes` and `--allow-baseline-writes`.
 
 ---
 

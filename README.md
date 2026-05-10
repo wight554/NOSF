@@ -108,7 +108,7 @@ python3 scripts/nosf_cmd.py "SV:"
 ## Helper Scripts
 
 - `scripts/nosf_cmd.py`: Serial helper — send commands and dump live config
-- `scripts/nosf_logger.py`: High-speed CSV telemetry capture (10 Hz polling)
+- `scripts/nosf_logger.py`: Deprecated. Use `nosf_live_tuner.py --csv-out` instead.
 - `scripts/nosf_analyze.py`: Offline calibration analyzer with seven-tunable review patch and acceptance gate
 - `scripts/nosf_live_tuner.py`: Observe-only calibration bucket learner; emits reviewable patches, with live writes reserved for explicit debug flags
 - `scripts/gcode_marker.py`: G-code metadata injector for telemetry correlation; use `--emit file` for live tuner prints

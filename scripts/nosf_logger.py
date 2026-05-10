@@ -68,6 +68,7 @@ def build_row(m, last_f):
     return row
 
 def main():
+    print("Warning: nosf_logger.py is deprecated. Use nosf_live_tuner.py --csv-out instead.", file=sys.stderr)
     ap = argparse.ArgumentParser()
     ap.add_argument('--port', required=True)
     ap.add_argument('--baud', type=int, default=115200)

@@ -254,20 +254,25 @@ The goal is to run several marked calibration prints, analyze the telemetry,
 review a patch, bake accepted values into `config.ini`, flash firmware, and
 then disconnect the host so NOSF runs standalone.
 
+Before running the first 2.9.9 build, please back up your state file:
+```bash
+cp ~/nosf-state/buckets-<id>.json ~/nosf-state/buckets-<id>.json.schema2.bak
+```
+
 1. Postprocess calibration G-code with markers:
    ```bash
    python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode \
-       --emit file --every-layer
+       --emit file
    ```
-   `--every-layer` recognizes both `;LAYER:<n>` and OrcaSlicer
-   `;LAYER_CHANGE` comments.
-2. Capture data. Use either `nosf_logger.py` for CSVs or the observe-only tuner
-   for bucket state; they cannot both own the same `/dev/ttyACM*` port.
+   By default, layer changes are recognized (both `;LAYER:<n>` and OrcaSlicer
+   `;LAYER_CHANGE` comments). Use `--no-layer-markers` to disable.
+2. Capture data using the observe-only tuner in daemon mode, emitting CSV:
    ```bash
    python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
        --machine-id myprinter \
        --marker-file /tmp/nosf-markers-myprinter.log \
-       --commit-on-finish
+       --csv-out ~/nosf-runs/run1.csv \
+       --observe-daemon &
    ```
    The tuner truncates `--marker-file` on startup so stale markers from a
    previous calibration run cannot hide `NT:START`. Use `--keep-marker-file`
@@ -289,6 +294,10 @@ then disconnect the host so NOSF runs standalone.
    ninja -C build_local
    bash scripts/flash_nosf.sh
    ```
+6. Update the watermark in your state file so drift tracking works:
+   ```bash
+   python3 scripts/nosf_analyze.py --commit-watermark --state ~/nosf-state/buckets-myprinter.json
+   ```
 
 The acceptance gate requires broad locked-bucket coverage, consistent baseline
 and bias estimates across runs, clean estimator telemetry, at least three
@@ -299,22 +308,23 @@ a patch with `Acceptance gate: FAIL` and prints explicit reasons to stderr.
 `scripts/nosf_live_tuner.py` now defaults to observe-only. It reads status and
 marker tags, updates bucket Kalman state, persists JSON, and emits a review
 patch at `--commit-on-idle` or `--commit-on-finish`. It does not send `SET:`,
-`SET:LIVE_TUNE_LOCK`, or `SV:` in default mode.
+`SET:LIVE_TUNE_LOCK`, or `SV:` in default mode. Use `--observe-daemon` to run
+continuously across prints.
 
 Mode flags:
 
 - default observe mode: no firmware writes, no save.
 - `--allow-bias-writes`: debug-only live `SET:TRAIL_BIAS_FRAC` writes.
 - `--allow-baseline-writes`: debug-only live `SET:BASELINE_SPS` writes.
-- `--commit-flash`: debug-only; implies both write flags and sends `SV:` at
-  commit time.
 - `--keep-marker-file`: debug/attach-only; preserve existing `--marker-file`
   contents instead of truncating it on startup.
+- `--recommend-recheck`: compares current buckets against watermark drift flags.
+- `--prune-stale`: removes buckets not seen in >60 days.
 
 Inspect state with:
 
 ```bash
-python3 scripts/nosf_live_tuner.py --machine-id myprinter --state-info
+python3 scripts/nosf_live_tuner.py --machine-id myprinter --state-info --include-stale
 python3 scripts/nosf_live_tuner.py --machine-id myprinter --state-info --csv
 ```
 
