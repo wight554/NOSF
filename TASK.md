@@ -182,3 +182,4 @@ Settings version 46u → 47u.
 
 ### Completed Steps
 - Preflight read done; Phase 2.8 DONE confirmed; 2.9.7 marked deferred before implementation.
+- 2.9.0 done: observe-only default, `--allow-bias-writes`, `--commit-flash`, and tuner tests added; py_compile and tuner self-test passed. Commit SHA reported after push.

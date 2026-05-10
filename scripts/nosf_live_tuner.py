@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""nosf_live_tuner.py - closed-loop live tuner for NOSF Phase 2.8.
+"""nosf_live_tuner.py - observe-only calibration tuner for NOSF Phase 2.9.
 
 Pure stdlib plus pyserial. No numpy, scipy, sklearn, or pandas.
 
@@ -10,13 +10,19 @@ Usage examples:
     python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 --reset-runtime
 
 The live loop reads NOSF status and marker lines, learns per
-(feature, v_fil_bin) buckets, and writes bounded SET updates for
-TRAIL_BIAS_FRAC. Runtime BASELINE_SPS writes are disabled by default
-because the status EST field is a live flow estimate, not a safe global
-baseline target; use --allow-baseline-writes only for controlled
-experiments. If a serial write fails, the tuner waits 1 s and attempts
-to reopen the configured port up to five times. If reconnect fails, it
-exits non-zero without modifying the state file.
+(feature, v_fil_bin) buckets, and persists calibration state. Default
+mode is observe-only: no SET writes and no SAVE. Research/debug modes:
+    --allow-bias-writes      allow guarded SET:TRAIL_BIAS_FRAC writes
+    --allow-baseline-writes  allow guarded SET:BASELINE_SPS writes
+    --commit-flash           enable both write flags and send SV: at
+                             end-of-print commit time
+
+Runtime BASELINE_SPS writes are disabled by default because the status
+EST field is a live flow estimate, not a safe global baseline target;
+use --allow-baseline-writes only for controlled experiments. If a
+serial write fails, the tuner waits 1 s and attempts to reopen the
+configured port up to five times. If reconnect fails, it exits non-zero
+without modifying the state file.
 
 Config patch emission uses recency-weighted bucket means:
     weight = n / (1 + age_seconds / 86400)
@@ -167,8 +173,10 @@ class Tuner:
         self.debug = False
         self.recent_sets = deque()
         self.last_rate_limit_warn_t = -999.0
+        self.allow_bias_writes = False
         self.allow_baseline_writes = False
         self.last_baseline_skip_warn_t = -999.0
+        self.last_bias_skip_warn_t = -999.0
         self.last_low_flow_warn_t = -999.0
         self.last_bias_rail_warn_t = -999.0
         self.progress_interval = 10.0
@@ -467,6 +475,14 @@ class Tuner:
                 self.last_set_t = now
                 return
         if abs(b.bias - b.last_set_bias) >= BIAS_DEADBAND:
+            if not self.allow_bias_writes:
+                if self.debug and now - self.last_bias_skip_warn_t >= 30.0:
+                    print(
+                        f"[tuner] bias write skipped for {b.label}; pass --allow-bias-writes to enable",
+                        file=sys.stderr,
+                    )
+                    self.last_bias_skip_warn_t = now
+                return
             if not self._bias_in_safe_range(b.bias):
                 if self.debug and now - self.last_bias_rail_warn_t >= max(1.0, self.progress_interval):
                     print(
@@ -699,6 +715,19 @@ def emit_patch(state_path: str, machine_id: str, out_path: str) -> None:
     print(f"[tuner] wrote patch: {out_path}", file=sys.stderr)
 
 
+def finish_commit(tuner: Tuner, args, out_path: str = "/tmp/nosf-patch.ini", sleep_fn=time.sleep) -> None:
+    tuner._persist()
+    if tuner.locked_bucket_count() == 0:
+        print("[tuner] FINISH seen, but no LOCKED buckets yet; persisted tracking state without SV", file=sys.stderr)
+        raise SystemExit(1)
+    if args.commit_flash:
+        tuner._send("SET:LIVE_TUNE_LOCK:0", count_rate=False)
+        sleep_fn(0.1)
+        tuner._send("SV:", count_rate=False)
+    emit_patch(args.state, args.machine_id, out_path)
+    print(f"[tuner] commit patch: {out_path}", file=sys.stderr)
+
+
 def unlock_bucket(state_path: str, machine_id: str, feature: str) -> None:
     if not os.path.exists(state_path):
         print("[tuner] no state file", file=sys.stderr)
@@ -756,6 +785,7 @@ def run_loop(args) -> None:
         threading.Thread(target=reader, args=(ser, lines), daemon=True).start()
         tuner = Tuner(ser, args.state, args.machine_id, port=args.port, baud=args.baud)
         tuner.debug = args.debug
+        tuner.allow_bias_writes = args.allow_bias_writes
         tuner.allow_baseline_writes = args.allow_baseline_writes
         tuner.progress_interval = max(0.0, args.progress_interval)
         poll_interval = 1.0 / args.poll_hz
@@ -802,15 +832,7 @@ def run_loop(args) -> None:
                     (args.commit_on_finish and tuner.finish_seen and tuner.seen_print_activity)
                 )
                 if commit_now:
-                    tuner._persist()
-                    if tuner.locked_bucket_count() == 0:
-                        print("[tuner] FINISH seen, but no LOCKED buckets yet; persisted tracking state without SV", file=sys.stderr)
-                        raise SystemExit(1)
-                    tuner._send("SET:LIVE_TUNE_LOCK:0", count_rate=False)
-                    time.sleep(0.1)
-                    tuner._send("SV:", count_rate=False)
-                    emit_patch(args.state, args.machine_id, "/tmp/nosf-patch.ini")
-                    print("[tuner] commit-on-idle patch: /tmp/nosf-patch.ini", file=sys.stderr)
+                    finish_commit(tuner, args)
                     return
     except KeyboardInterrupt:
         tuner._persist()
@@ -838,8 +860,9 @@ def main() -> None:
     ap.add_argument("--unlock", metavar="FEATURE", help="Unlock matching bucket label or feature prefix and exit")
     ap.add_argument("--state-info", action="store_true", help="Print state summary table and exit")
     ap.add_argument("--reset-runtime", action="store_true", help="Send LIVE_TUNE_LOCK:0 and LD:, then exit")
-    ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, unlock, SV:, emit /tmp/nosf-patch.ini, and exit")
+    ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, emit /tmp/nosf-patch.ini and exit; SV: only with --commit-flash")
     ap.add_argument("--commit-on-finish", action="store_true", help="Exit immediately on FINISH marker (no idle wait); implies commit if locked buckets exist")
+    ap.add_argument("--commit-flash", action="store_true", help="Debug/research: allow live writes and send SV: at commit time")
     ap.add_argument("--klipper-log", help="Tail klippy.log for NOSF_TUNE marker echoes while tuning")
     ap.add_argument("--marker-file", help="Tail local marker file written by scripts/nosf_marker.py")
     ap.add_argument(
@@ -847,6 +870,11 @@ def main() -> None:
         type=float,
         default=10.0,
         help="Seconds between per-bucket --debug progress lines; 0 disables progress lines",
+    )
+    ap.add_argument(
+        "--allow-bias-writes",
+        action="store_true",
+        help="Experimental: allow live SET:TRAIL_BIAS_FRAC writes from learned buckets",
     )
     ap.add_argument(
         "--allow-baseline-writes",
@@ -857,6 +885,9 @@ def main() -> None:
     args = ap.parse_args()
     if args.state is None:
         args.state = default_state_path(args.machine_id)
+    if args.commit_flash:
+        args.allow_bias_writes = True
+        args.allow_baseline_writes = True
 
     if args.emit_config_patch:
         emit_patch(args.state, args.machine_id, args.emit_config_patch)

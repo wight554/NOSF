@@ -7,6 +7,7 @@ import sys
 import tempfile
 from contextlib import redirect_stderr
 from io import StringIO
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -164,6 +165,71 @@ def test_baseline_writes_disabled_by_default():
         return "baseline SETs are opt-in only"
 
 
+def test_observe_default_no_writes():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t, fake = make_tuner(os.path.join(td, "state.json"), clock)
+        b = tuner_mod.Bucket(
+            label="PERIMETER_v40",
+            x=1600.0,
+            P=50.0,
+            n=250,
+            bias=0.470,
+            last_set_x=1600.0,
+            last_set_bias=0.400,
+        )
+        clock.step(3.0)
+        t._maybe_emit_set(b, clock.now())
+        assert not fake.writes, fake.writes
+        return "observe mode emits zero SET writes by default"
+
+
+def test_allow_bias_writes_writes():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t, fake = make_tuner(os.path.join(td, "state.json"), clock)
+        t.allow_bias_writes = True
+        b = tuner_mod.Bucket(
+            label="PERIMETER_v40",
+            x=1600.0,
+            P=50.0,
+            n=250,
+            bias=0.470,
+            last_set_x=1600.0,
+            last_set_bias=0.400,
+        )
+        clock.step(3.0)
+        t._maybe_emit_set(b, clock.now())
+        assert "SET:LIVE_TUNE_LOCK:1" in fake.writes, fake.writes
+        assert "SET:TRAIL_BIAS_FRAC:0.470" in fake.writes, fake.writes
+        return "explicit bias-write mode still emits guarded bias SETs"
+
+
+def test_commit_flash_invokes_sv():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        state_path = os.path.join(td, "state.json")
+        patch_path = os.path.join(td, "patch.ini")
+        fake = FakeSerial()
+        t = tuner_mod.Tuner(fake, state_path, "test", now_fn=clock.now, wall_fn=clock.now)
+        t.buckets["PERIMETER_v40"] = tuner_mod.Bucket(
+            label="PERIMETER_v40",
+            x=1820.0,
+            P=20.0,
+            n=250,
+            bias=0.420,
+            state="LOCKED",
+            locked=True,
+            last_seen=clock.now(),
+        )
+        args = SimpleNamespace(commit_flash=True, state=state_path, machine_id="test")
+        tuner_mod.finish_commit(t, args, patch_path, sleep_fn=lambda _dt: None)
+        assert "SET:LIVE_TUNE_LOCK:0" in fake.writes, fake.writes
+        assert "SV:" in fake.writes, fake.writes
+        assert os.path.exists(patch_path), patch_path
+        return "commit-flash sends SV and emits patch"
+
+
 def test_low_flow_samples_are_ignored():
     with tempfile.TemporaryDirectory() as td:
         clock = Clock()
@@ -263,6 +329,9 @@ def main():
         ("halt", test_adv_dwell_stop_halts),
         ("rate-limit", test_rate_limit_three_sets_per_window),
         ("baseline-off", test_baseline_writes_disabled_by_default),
+        ("observe-default", test_observe_default_no_writes),
+        ("bias-on", test_allow_bias_writes_writes),
+        ("commit-flash", test_commit_flash_invokes_sv),
         ("low-flow", test_low_flow_samples_are_ignored),
         ("bias-rail", test_bias_rail_guard_blocks_set_and_lock),
         ("debug-log", test_debug_bucket_progress_line),
