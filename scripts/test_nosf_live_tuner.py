@@ -393,6 +393,34 @@ def test_start_and_layer_markers_increment_counters():
         return "START and layer markers increment cumulative counters once"
 
 
+def test_bucket_sample_credits_current_layer_once():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t = tuner_mod.Tuner(FakeSerial(), os.path.join(td, "state.json"), "test", now_fn=clock.now, wall_fn=clock.now)
+        t.on_m118("NT:START")
+        t.on_m118("NT:LAYER:0")
+        t.on_m118("echo: NOSF_TUNE:PERIMETER:V40:W0.45:H0.20")
+        clock.step(1.0)
+        t.on_status(status(est=1800))
+        b = t.buckets["PERIMETER_v50"]
+        assert b.layers_seen == 1, b.layers_seen
+        clock.step(1.0)
+        t.on_status(status(est=1810))
+        assert b.layers_seen == 1, b.layers_seen
+
+        t.on_m118("NT:LAYER:1")
+        assert b.layers_seen == 2, b.layers_seen
+        t.on_m118("echo: NOSF_TUNE:Sparse_infill:V40:W0.45:H0.20")
+        clock.step(1.0)
+        t.on_status(status(est=1700))
+        s = t.buckets["Sparse_infill_v50"]
+        assert s.layers_seen == 1, s.layers_seen
+        clock.step(1.0)
+        t.on_status(status(est=1710))
+        assert s.layers_seen == 1, s.layers_seen
+        return "bucket samples credit current layer once per bucket"
+
+
 def test_low_flow_samples_are_ignored():
     with tempfile.TemporaryDirectory() as td:
         clock = Clock()
@@ -501,6 +529,7 @@ def main():
         ("three-run", test_three_run_lock),
         ("layer-gate", test_layer_count_required),
         ("markers", test_start_and_layer_markers_increment_counters),
+        ("sample-layer", test_bucket_sample_credits_current_layer_once),
         ("low-flow", test_low_flow_samples_are_ignored),
         ("bias-rail", test_bias_rail_guard_blocks_set_and_lock),
         ("debug-log", test_debug_bucket_progress_line),

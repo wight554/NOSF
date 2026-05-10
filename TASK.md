@@ -208,3 +208,22 @@ Settings version 46u → 47u.
 
 ### Completed Steps
 - Implemented Orca `;LAYER_CHANGE` support and docs; validation/commit pending.
+- Done: committed and pushed `bbff987`.
+
+---
+
+## Layer Credit Fix
+
+### Findings
+- Interactive run 2 showed `NT:LAYER` markers arrive and some buckets lock, but many high-sample buckets remain blocked at `layers 0/3`.
+- Current tuner increments `layers_seen` only for the bucket active at the exact layer-boundary marker. For Orca prints, layer marker arrives before the per-feature markers for the new layer, so most useful buckets never receive layer credit.
+- Better calibration semantics: remember current layer from `NT:LAYER:<n>` and credit a bucket the first time it receives a valid MID sample on that layer.
+
+### Plan
+- Update `scripts/nosf_live_tuner.py` to track `current_layer` and increment `layers_seen` on first valid MID sample per `(run, bucket, layer)`.
+- Keep direct layer-boundary credit as harmless fallback for already-active buckets.
+- Update `scripts/test_nosf_live_tuner.py` to assert sample-on-layer increments layer counters.
+- Validate with `python3 -m py_compile scripts/*.py` and `python3 scripts/test_nosf_live_tuner.py`.
+
+### Completed Steps
+- Implemented sample-based layer credit; validation passed; commit pending.

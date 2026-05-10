@@ -204,6 +204,7 @@ class Tuner:
         self.debug = False
         self.run_seq = 0
         self.current_run_id = ""
+        self.current_layer = ""
         self._run_seen_labels = set()
         self._seen_layer_keys = set()
         self.recent_sets = deque()
@@ -341,6 +342,7 @@ class Tuner:
             self.start_seen = True
             self.run_seq += 1
             self.current_run_id = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.wall_fn()))
+            self.current_layer = ""
             self._run_seen_labels.clear()
             self._seen_layer_keys.clear()
             if self.debug:
@@ -351,13 +353,11 @@ class Tuner:
             self.seen_print_activity = True
             self.last_marker_t = self.now_fn()
             self.idle_since = 0.0
+            self.current_layer = layer.group("layer")
             if self.active_label:
-                key = (self.run_seq, self.active_label, layer.group("layer"))
-                if key not in self._seen_layer_keys:
-                    b = self.buckets.get(self.active_label)
-                    if b:
-                        b.layers_seen += 1
-                    self._seen_layer_keys.add(key)
+                b = self.buckets.get(self.active_label)
+                if b:
+                    self._credit_layer(self.active_label, b)
             if self.debug:
                 print(f"[tuner] marker LAYER {layer.group('layer')}", file=sys.stderr)
             return
@@ -389,6 +389,15 @@ class Tuner:
             self.last_v_fil = 0.0
         if self.debug:
             print(f"[tuner] marker {self.last_feature}_v{int(round(self.last_v_fil / 5.0)) * 5}", file=sys.stderr)
+
+    def _credit_layer(self, label: str, b: Bucket) -> None:
+        if not self.current_layer:
+            return
+        key = (self.run_seq, label, self.current_layer)
+        if key in self._seen_layer_keys:
+            return
+        b.layers_seen += 1
+        self._seen_layer_keys.add(key)
 
     def on_status_marker(self, raw: str) -> None:
         m = MARK_RE.search(raw)
@@ -466,6 +475,7 @@ class Tuner:
             if not b.first_seen_run:
                 b.first_seen_run = self.current_run_id
             self._run_seen_labels.add(label)
+        self._credit_layer(label, b)
         b.last_seen = wall_now
         if b.first_seen == 0.0:
             b.first_seen = wall_now
