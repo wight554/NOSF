@@ -274,3 +274,4 @@ Settings version 46u → 47u.
 - Phase 2.9 Continuation pre-work: read specs and updated TASK.md.
 - 2.9.16 done: removed --commit-flash and SV: code path; committed and pushed 328619c.
 - 2.9.15 done: made layer markers default in gcode_marker.py; committed and pushed b98af3a.
+- 2.9.14 done: added embedded logger CSV emission; committed and pushed d35f036.
