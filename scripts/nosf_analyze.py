@@ -403,9 +403,12 @@ def run(args):
                 last_commit[key] = {
                     "value": rec,
                     "applied_at": now_ts,
-                    "source": "analyzer"
+                    "source": "config.ini"
                 }
         tmp = args.state + ".tmp"
+        machine_meta["last_commit_sample_total"] = sum(
+            b.get("n", 0) for k, b in data.get(args.machine_id, {}).items() if not k.startswith("_")
+        )
         with open(tmp, "w") as fh:
             json.dump(data, fh, indent=2, sort_keys=True)
             fh.write("\n")

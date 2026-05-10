@@ -5,7 +5,7 @@ import json
 import os
 import sys
 import tempfile
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from types import SimpleNamespace
 
@@ -373,6 +373,18 @@ def test_existing_production_state_loads():
     return "skipped (no production state file in dev)"
 
 
+def test_recommend_recheck_outputs_verdict():
+    with tempfile.TemporaryDirectory() as td:
+        state_path = os.path.join(td, "state.json")
+        with open(state_path, "w") as fh:
+            json.dump({"_schema": 3, "test": {"_meta": {}}}, fh)
+        out = StringIO()
+        with redirect_stderr(out), redirect_stdout(out):
+            tuner_mod.do_recommend_recheck(state_path, "test")
+        text = out.getvalue()
+        assert "RECOMMEND: no" in text, text
+        return "recommend-recheck outputs negative verdict for empty state"
+
 def test_counter_increments():
     with tempfile.TemporaryDirectory() as td:
         clock = Clock()
@@ -739,6 +751,7 @@ def main():
         ("schema-chain", test_schema_chain_1_to_3),
         ("schema-too-new", test_schema_too_new_refused),
         ("schema-prod", test_existing_production_state_loads),
+        ("recheck-verd", test_recommend_recheck_outputs_verdict),
         ("counters", test_counter_increments),
         ("short-print", test_short_print_no_lock),
         ("three-run", test_three_run_lock),

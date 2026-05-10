@@ -77,6 +77,9 @@ MIN_MID_TIME_S = 60.0
 N_SINGLE_PRINT_SAMPLES = 500
 N_SINGLE_PRINT_LAYERS = 5
 MIN_PRINT_MID_S = 300.0
+RECHECK_NEW_LOCKED = 3
+RECHECK_SAMPLE_PCT = 25.0
+RECHECK_AGE_DAYS = 30
 Q_PROCESS = 25.0
 R_BASE = 100.0
 SCHEMA_VERSION = 3
@@ -1114,6 +1117,74 @@ def run_loop(args) -> None:
         release_state_lock(lock_path)
 
 
+def do_recommend_recheck(state_path: str, machine_id: str) -> None:
+    if not os.path.exists(state_path):
+        print(f"[recommend-recheck] no state file: {state_path}")
+        sys.exit(0)
+    try:
+        with open(state_path) as fh:
+            data = json.load(fh)
+        data = migrate_state_data(data)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"[recommend-recheck] error reading state: {exc}")
+        sys.exit(0)
+    
+    machine_data = data.get(machine_id, {})
+    meta = machine_data.get("_meta", {})
+    
+    total_samples = 0
+    locked_buckets = []
+    for k, v in machine_data.items():
+        if k.startswith("_"): continue
+        total_samples += v.get("n", 0)
+        if v.get("locked") or v.get("state") == "LOCKED":
+            locked_buckets.append(v)
+            
+    last_commit_vals = meta.get("last_commit_values", {})
+    last_commit_samples = meta.get("last_commit_sample_total", 0)
+    
+    config_applied_ats = [v["applied_at"] for v in last_commit_vals.values() if v.get("source") == "config.ini" and v.get("applied_at")]
+    last_commit_at = max(config_applied_ats) if config_applied_ats else 0
+    
+    now_ts = time.time()
+    days_since = (now_ts - last_commit_at) / 86400.0 if last_commit_at else 0.0
+    
+    new_locked = [b for b in locked_buckets if b.get("last_seen", 0) > last_commit_at]
+    sample_diff = total_samples - last_commit_samples
+    sample_pct = (sample_diff / max(1, last_commit_samples)) * 100.0
+    
+    drift_count = 0
+    baseline_val = last_commit_vals.get("baseline_rate", {})
+    if baseline_val.get("source") == "config.ini" and baseline_val.get("value"):
+        import math
+        ref = float(baseline_val["value"])
+        thr = math.sqrt(P_STABLE_THR)
+        for b in locked_buckets:
+            if abs(b.get("x", ref) - ref) > thr:
+                drift_count += 1
+
+    reasons = []
+    if len(new_locked) >= RECHECK_NEW_LOCKED:
+        reasons.append(f"new LOCKED")
+    if sample_pct >= RECHECK_SAMPLE_PCT and sample_diff > 0:
+        reasons.append(f"sample mass")
+    if drift_count >= 1:
+        reasons.append(f"drift")
+    if last_commit_at and days_since >= RECHECK_AGE_DAYS:
+        reasons.append(f"age")
+        
+    date_str = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(last_commit_at)) if last_commit_at else "never"
+    print(f"[recommend-recheck] last commit: {date_str} ({days_since:.1f} days ago)")
+    print(f"[recommend-recheck] sample mass since commit: +{sample_diff} ({sample_pct:.1f}%)")
+    print(f"[recommend-recheck] new LOCKED buckets since commit: {len(new_locked)}")
+    print(f"[recommend-recheck] flagged buckets (drift > 1σ from committed): {drift_count}")
+    
+    if reasons:
+        print("[recommend-recheck] RECOMMEND: yes — re-run analyze")
+    else:
+        print("[recommend-recheck] RECOMMEND: no")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="Closed-loop live tuner for NOSF sync buckets.",
@@ -1130,6 +1201,7 @@ def main() -> None:
     ap.add_argument("--state-info", action="store_true", help="Print state summary table and exit")
     ap.add_argument("--csv", action="store_true", help="With --state-info, emit machine-readable CSV rows")
     ap.add_argument("--csv-out", metavar="PATH", help="Append per-status-row CSV alongside JSON state")
+    ap.add_argument("--recommend-recheck", action="store_true", help="Evaluate watermark drift and suggest if analyzer should be run")
     ap.add_argument("--reset-runtime", action="store_true", help="Send LIVE_TUNE_LOCK:0 and LD:, then exit")
     ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, emit /tmp/nosf-patch.ini and exit")
     ap.add_argument("--commit-on-finish", action="store_true", help="Exit immediately on FINISH marker (no idle wait); implies commit if locked buckets exist")
@@ -1166,6 +1238,9 @@ def main() -> None:
         return
     if args.state_info:
         print_state_info(args.state, args.machine_id, csv_mode=args.csv)
+        return
+    if args.recommend_recheck:
+        do_recommend_recheck(args.state, args.machine_id)
         return
     if args.unlock:
         unlock_bucket(args.state, args.machine_id, args.unlock)
