@@ -93,7 +93,7 @@ Skip for doc-only edits, script changes, or build/config work — save context b
 8. **MANDATORY: Runtime tunable protocol parity** — Whenever adding or modifying any runtime/serial tunable, verify the full surface together: `SET:` handler, matching `GET:` handler, `scripts/nosf_cmd.py --dump` entry when it belongs in live dumps, and docs. Do not stop after `SET:` only.
 9. **MANDATORY: Specify model in commit messages** — Always include exact model name in `Generated-By` footer. Examples: `Generated-By: Antigravity (Gemini 3.1 Flash)`. Creates audit trail. No need to repeat in chat.
 10. **MANDATORY: Analyze regression impact for new features** — Unless user asks to change current behavior, every new feature needs code-level impact review of affected flows (preload, load, unload, toolchange, sync, RELOAD, persistence, protocol, docs) and validation those flows stay intact.
-11. **MANDATORY: Use shell git for commits and pushes** — Don't use Git MCP for `git add`, `git commit`, or `git push`. Use non-interactive shell git instead.
+11. **MANDATORY: Prefer Git MCP for git operations when available and applicable.** Use Git MCP for `status`, `diff`, `add`, `commit`, `log`, `show`, `branch`, and `checkout`. Fall back to non-interactive shell git when Git MCP is unavailable, lacks the needed operation, fails, or when pushing/remotes require shell git.
 12. **MANDATORY: Do NOT commit local AI config** — Never commit `.agents/`, `.claude/`, or `skills-lock.json`. All AI config stays global per `AI.md`.
 
 ## Commit Format
@@ -125,7 +125,7 @@ Rules:
 - Body: explain *why*, not just what
 - **Always include model in `Generated-By`:** `Generated-By: <Agent Name> (<Model>)`. Examples: `GitHub Copilot (Claude Haiku 4.5)`, `Gemini 3.1 Pro (High)`. Creates audit trail.
 - Push immediately after every commit: `git push`
-- Use shell git for add / commit / push; no Git MCP commit helpers.
+- Use Git MCP first for add / commit when available; use shell git as fallback. Use shell git for `git push` unless a reliable push-capable MCP is explicitly available.
 
 ## TASK.md Workflow — Required Before Writing Any Code
 
