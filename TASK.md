@@ -280,3 +280,4 @@ Settings version 46u → 47u.
 - 2.9.10 done: implemented recommend-recheck mode; committed and pushed 3b2e6d8.
 - 2.9.11 done: implemented stale bucket handling and prune utility; committed and pushed b881c6b.
 - 2.9.12 done: implemented observe-daemon mode; committed and pushed eb30a04.
+- 2.9.13 done: updated documentation and deprecated nosf_logger.py; committed and pushed b387fab.
