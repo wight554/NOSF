@@ -281,3 +281,4 @@ Settings version 46u → 47u.
 - 2.9.11 done: implemented stale bucket handling and prune utility; committed and pushed b881c6b.
 - 2.9.12 done: implemented observe-daemon mode; committed and pushed eb30a04.
 - 2.9.13 done: updated documentation and deprecated nosf_logger.py; committed and pushed b387fab.
+- bugfix: restored missing --include-stale flag; committed and pushed d6b089a.
