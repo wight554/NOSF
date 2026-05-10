@@ -191,3 +191,20 @@ Settings version 46u → 47u.
 - 2.9.5 done: tuner patch emission now uses review-only `[nosf_review]` format with warning header and no raw config assignment lines; py_compile, tuner/analyzer self-tests, and sample patch emission passed; committed and pushed `4e9db9f`.
 - 2.9.6 done: documented observe-only calibration workflow across MANUAL/KLIPPER/README/CONTEXT and noted Phase 2.8 live-write deprecation; docs-only diff checked. Commit SHA reported after push.
 - 2.9.7 deferred: `LIVE_TUNE_LOCK` remains in firmware until at least five real-print observe-only soaks validate removal.
+
+---
+
+## Orca Layer Marker Fix
+
+### Findings
+- Interactive calibration showed every bucket had `layers_seen=0`, so Phase 2.9 lock criteria could not pass even after samples/runs/MID time were sufficient.
+- User's OrcaSlicer G-code uses `;LAYER_CHANGE`, `;Z:<height>`, and `;HEIGHT:<height>` instead of `;LAYER:<n>`.
+- Current `scripts/gcode_marker.py --every-layer` only recognizes `;LAYER:<n>`, so layer markers were never injected for Orca prints.
+
+### Plan
+- Update `scripts/gcode_marker.py` to count Orca `;LAYER_CHANGE` lines and emit `NT:LAYER:<index>` while preserving existing `;LAYER:<n>` support and in-place mode.
+- Update docs to mention Orca `;LAYER_CHANGE` support for calibration G-code.
+- Validate with `python3 -m py_compile scripts/*.py` and a sample marker injection grep.
+
+### Completed Steps
+- Implemented Orca `;LAYER_CHANGE` support and docs; validation/commit pending.

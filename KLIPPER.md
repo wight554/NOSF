@@ -267,6 +267,9 @@ python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode \
     --emit file --every-layer
 ```
 
+`--every-layer` recognizes both `;LAYER:<n>` and OrcaSlicer
+`;LAYER_CHANGE` comments.
+
 Run the observe-only tuner during a calibration print:
 
 ```bash

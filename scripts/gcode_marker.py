@@ -24,6 +24,7 @@ WIDTH_RE = re.compile(r"^;WIDTH:([-+]?\d*\.?\d*)")
 HEIGHT_RE = re.compile(r"^;HEIGHT:([-+]?\d*\.?\d*)")
 LHEIGHT_RE = re.compile(r"^;layer_height=([-+]?\d*\.?\d*)")
 LAYER_RE = re.compile(r"^;LAYER:(\d+)")
+LAYER_CHANGE_RE = re.compile(r"^;LAYER_CHANGE\b")
 
 def compact_feature(name, max_len=18):
     slug = re.sub(r"[^A-Za-z0-9]+", "_", name.strip()).strip("_")
@@ -72,6 +73,8 @@ def process_gcode(input_path, output_path, filament_dia=1.75, every_layer=False,
     last_reported_w = -1
     last_reported_h = -1
     injected_count = 0
+    last_layer_n = None
+    layer_change_n = -1
     
     fil_area = math.pi * (filament_dia / 2)**2
 
@@ -87,8 +90,15 @@ def process_gcode(input_path, output_path, filament_dia=1.75, every_layer=False,
                 layer_match = LAYER_RE.match(raw_line)
                 if layer_match:
                     layer_n = layer_match.group(1)
+                elif LAYER_CHANGE_RE.match(raw_line):
+                    layer_change_n += 1
+                    layer_n = str(layer_change_n)
+                else:
+                    layer_n = None
+                if layer_n is not None and layer_n != last_layer_n:
                     for marker in marker_lines(f"NOSF_TUNE:LAYER:{layer_n}:0:0", emit, shell_cmd):
                         fout.write(marker)
+                    last_layer_n = layer_n
                     injected_count += 1
 
             # Capture Metadata

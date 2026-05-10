@@ -259,6 +259,8 @@ then disconnect the host so NOSF runs standalone.
    python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode \
        --emit file --every-layer
    ```
+   `--every-layer` recognizes both `;LAYER:<n>` and OrcaSlicer
+   `;LAYER_CHANGE` comments.
 2. Capture data. Use either `nosf_logger.py` for CSVs or the observe-only tuner
    for bucket state; they cannot both own the same `/dev/ttyACM*` port.
    ```bash
