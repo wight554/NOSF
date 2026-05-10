@@ -133,7 +133,7 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `ZONE_BIAS_RAMP`| `zone_bias_ramp_rate`| Extra reserve-recovery ramp while buffer stays away from target (mm/min per second) | 30 |
 | `ZONE_BIAS_MAX` | `zone_bias_max_rate` | Max reserve-recovery correction (mm/min) | 600 |
 | `RELOAD_LEAN`  | `reload_lean_factor` | RELOAD follow under-feed factor (0.0 to 1.0) | 0.85 |
-| `LIVE_TUNE_LOCK` | _(runtime only)_ | Host live-tuning guard. `SET:LIVE_TUNE_LOCK:1` blocks live writes to `BASELINE_RATE`/`BASELINE_SPS`, `TRAIL_BIAS_FRAC`, `MID_CREEP_*`, and `VAR_BLEND_*`/`BUF_VARIANCE_*`; `GET:LIVE_TUNE_LOCK` returns `0` or `1`. Not persisted; resets to `0` on boot. | 0 |
+| `LIVE_TUNE_LOCK` | _(runtime only)_ | Debug-only host live-write guard. The default observe-only tuner does not use it. `SET:LIVE_TUNE_LOCK:1` blocks live writes to `BASELINE_RATE`/`BASELINE_SPS`, `TRAIL_BIAS_FRAC`, `MID_CREEP_*`, and `VAR_BLEND_*`/`BUF_VARIANCE_*`; `GET:LIVE_TUNE_LOCK` returns `0` or `1`. Not persisted; resets to `0` on boot. | 0 |
 
 ### Safety & Timeouts
 | Parameter | `config.ini` Key | Description | Default |
@@ -243,100 +243,79 @@ For slow-extrusion soak workflows, use this SET sequence to converge the baselin
 2. `SET:TRAIL_BIAS_FRAC:0.4`
 3. `SAVE`
 4. Soak 5+ minutes. Verify the post-blend position `BPV:` shifts ≥ 1.5 mm toward trailing without increasing `AD:` counts or causing extruder stall.
-r causing extruder stall.
-or causing extruder stall.
-r causing extruder stall.
 
 ---
 
 ## Tools
 
-### Live Tuning
-`scripts/nosf_live_tuner.py` is the Phase 2.8 closed-loop host tuner. It reads
-`STATUS`/`EV:` output plus `NOSF_TUNE` marker tags, learns per
-`feature_v_fil` buckets, and live-adjusts only:
+### Calibration Workflow
+Phase 2.9 tuning is a calibration-time workflow, not a normal-print service.
+The goal is to run several marked calibration prints, analyze the telemetry,
+review a patch, bake accepted values into `config.ini`, flash firmware, and
+then disconnect the host so NOSF runs standalone.
 
-- `TRAIL_BIAS_FRAC`
+1. Postprocess calibration G-code with markers:
+   ```bash
+   python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode \
+       --emit file --every-layer
+   ```
+2. Capture data. Use either `nosf_logger.py` for CSVs or the observe-only tuner
+   for bucket state; they cannot both own the same `/dev/ttyACM*` port.
+   ```bash
+   python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
+       --machine-id myprinter \
+       --marker-file /tmp/nosf-markers-myprinter.log \
+       --commit-on-finish
+   ```
+3. After at least three calibration runs, analyze the CSV corpus and tuner
+   state:
+   ```bash
+   python3 scripts/nosf_analyze.py \
+       --in ~/nosf-runs/run1.csv ~/nosf-runs/run2.csv ~/nosf-runs/run3.csv \
+       --state ~/nosf-state/buckets-myprinter.json \
+       --out config.patch.ini \
+       --acceptance-gate
+   ```
+4. Review `config.patch.ini`. It is commented review text only; copy chosen
+   values into `config.ini` by hand.
+5. Regenerate and flash:
+   ```bash
+   python3 scripts/gen_config.py
+   ninja -C build_local
+   bash scripts/flash_nosf.sh
+   ```
 
-It records learned bucket `x` values in the state file for review, but live
-`BASELINE_SPS` writes are disabled by default. `EST` is a live flow estimate,
-not a safe global baseline target during an active print. Use
-`--allow-baseline-writes` only for controlled experiments after validating the
-measurement stream on the specific machine.
+The acceptance gate requires broad locked-bucket coverage, consistent baseline
+and bias estimates across runs, clean estimator telemetry, at least three
+locked buckets, and enough print duration. On failure, the analyzer still writes
+a patch with `Acceptance gate: FAIL` and prints explicit reasons to stderr.
 
-Start it during a tuning print:
+### Live Tuner Modes
+`scripts/nosf_live_tuner.py` now defaults to observe-only. It reads status and
+marker tags, updates bucket Kalman state, persists JSON, and emits a review
+patch at `--commit-on-idle` or `--commit-on-finish`. It does not send `SET:`,
+`SET:LIVE_TUNE_LOCK`, or `SV:` in default mode.
 
-```bash
-python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 --machine-id myprinter
-```
+Mode flags:
 
-For normal tuning runs, prefer automatic end-of-print commit:
+- default observe mode: no firmware writes, no save.
+- `--allow-bias-writes`: debug-only live `SET:TRAIL_BIAS_FRAC` writes.
+- `--allow-baseline-writes`: debug-only live `SET:BASELINE_SPS` writes.
+- `--commit-flash`: debug-only; implies both write flags and sends `SV:` at
+  commit time.
 
-```bash
-python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
-    --machine-id myprinter --commit-on-idle \
-    --marker-file /tmp/nosf-markers-myprinter.log
-```
-
-For this mode, preprocess G-code with local marker-file delivery:
-
-```bash
-python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode --emit file
-```
-
-`--emit file` inserts `RUN_SHELL_COMMAND CMD=nosf_marker PARAMS="..."` lines.
-`scripts/nosf_marker.py` appends those tags to the marker file, and the tuner
-tails that file while remaining the only process that opens `/dev/ttyACM0`.
-`--emit m118` remains available for passive console/log workflows, and
-`--emit mark` forwards through firmware `MARK:`/`MK:` for non-live-tuner tests.
-With `--commit-on-idle`, the tuner waits for the final `FINISH` marker before
-considering the print done.
-
-Add `--debug` during bring-up to print marker activity and per-bucket progress:
-sample count, Kalman variance `P`, learned `x`, live `EST`, bias, buffer
-position, confidence, state, and the current wait reason. Progress lines are
-rate-limited by `--progress-interval 10`; set `--progress-interval 0` to keep
-marker-only debug output.
-
-Very low `EST` samples below 100 steps/s are ignored so pauses, coasting, and
-near-zero-flow top-surface segments do not create stable buckets or push global
-`TRAIL_BIAS_FRAC` to a rail. Buckets with learned bias outside `0.05..0.65` are
-also kept out of live writes and lock/commit eligibility.
-
-The tuner first sends `SET:LIVE_TUNE_LOCK:1` before writing live tuning values.
-That lock is not persisted and resets to `0` on boot. While it is enabled,
-manual writes to baseline, trailing bias, mid-creep, and variance-blend tuning
-fields return `ER:LIVE_TUNE_LOCKED`; other commands still work normally.
-
-Learning state lives in `~/nosf-state/buckets-<machine-id>.json` by default.
-Inspect it with:
+Inspect state with:
 
 ```bash
 python3 scripts/nosf_live_tuner.py --machine-id myprinter --state-info
+python3 scripts/nosf_live_tuner.py --machine-id myprinter --state-info --csv
 ```
 
-Convergence rule:
+Bucket lock is cumulative across calibration runs: samples, run count, layer
+count, and time spent in `MID` must all pass before a bucket becomes `LOCKED`.
+Very low `EST` samples below 100 steps/s and rail-clamped bias buckets are
+tracked as diagnostics but excluded from lock/write eligibility.
 
-1. Run 1: tuner emits bounded live bias `SET:` writes and locks populated buckets.
-2. Run 2: locked buckets warm-start; matching buckets should emit no new writes.
-3. Run 3: if the same profile again emits no writes, treat the tune as stable.
-
-To make a converged tune permanent, run:
-
-```bash
-python3 scripts/nosf_live_tuner.py --machine-id myprinter \
-    --emit-config-patch /tmp/nosf-patch.ini
-```
-
-Review the patch, merge the values into `config.ini`, regenerate `tune.h`, and
-build/flash as usual. With `--commit-on-idle`, the tuner unlocks the firmware,
-sends `SV:`, emits `/tmp/nosf-patch.ini`, logs the patch path to stderr, and
-exits after the print has been idle for at least 30 s.
-
-The emitted baseline suggestion is commented as experimental. Do not apply it
-blindly; keep the live baseline near the known-good value unless a separate
-manual test confirms the new target.
-
-If a serial write fails, the tuner waits 1 s and attempts to reopen the same
-port up to five times. If the port cannot be reopened, it exits non-zero and
-leaves the state file unchanged.
+If a serial write fails in an explicit live-write mode, the tuner waits 1 s and
+attempts to reopen the same port up to five times. If reconnect fails, it exits
+non-zero and leaves the state file unchanged.

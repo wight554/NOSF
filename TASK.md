@@ -94,6 +94,7 @@ Settings version 46u → 47u.
 - 2.8.4 done: added recency-weighted patch emission and `--commit-on-idle` flow; py_compile/self-test passed; committed and pushed `a151dd9`.
 - 2.8.5 done: documented live tuner flow across MANUAL/KLIPPER/README/CONTEXT; diff check passed; committed and pushed `c52eb9f`.
 - Final verification passed: `ninja -C build_local`, `python3 -m py_compile scripts/*.py`, and `python3 scripts/test_nosf_live_tuner.py`.
+- Phase 2.9 follow-up: Phase 2.8 live writes are deprecated as the default workflow; observe-only calibration is canonical and live writes are explicit debug modes.
 
 ---
 
@@ -187,4 +188,6 @@ Settings version 46u → 47u.
 - 2.9.2 done: cumulative lock criteria, run/layer counters, layer marker support, and lock-gate tests added; py_compile and tuner self-test passed; committed and pushed `ae6745e`.
 - 2.9.3 done: `--state-info` now reports runs/layers/MID time/age/wait and supports `--csv`; py_compile and tuner self-test passed; committed and pushed `1d954cc`.
 - 2.9.4 done: analyzer uses 25-bin parity, computes all seven review tunables, supports state JSON and acceptance gate, and has stdlib analyzer tests; py_compile/analyzer self-test passed; committed and pushed `b428e2c`.
-- 2.9.5 done: tuner patch emission now uses review-only `[nosf_review]` format with warning header and no raw config assignment lines; py_compile, tuner/analyzer self-tests, and sample patch emission passed. Commit SHA reported after push.
+- 2.9.5 done: tuner patch emission now uses review-only `[nosf_review]` format with warning header and no raw config assignment lines; py_compile, tuner/analyzer self-tests, and sample patch emission passed; committed and pushed `4e9db9f`.
+- 2.9.6 done: documented observe-only calibration workflow across MANUAL/KLIPPER/README/CONTEXT and noted Phase 2.8 live-write deprecation; docs-only diff checked. Commit SHA reported after push.
+- 2.9.7 deferred: `LIVE_TUNE_LOCK` remains in firmware until at least five real-print observe-only soaks validate removal.

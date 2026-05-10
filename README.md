@@ -109,8 +109,8 @@ python3 scripts/nosf_cmd.py "SV:"
 
 - `scripts/nosf_cmd.py`: Serial helper — send commands and dump live config
 - `scripts/nosf_logger.py`: High-speed CSV telemetry capture (10 Hz polling)
-- `scripts/nosf_analyze.py`: Offline regression and auto-tuning patch generator
-- `scripts/nosf_live_tuner.py`: Phase 2.8 closed-loop live tuner; learns marker buckets during tuning prints, writes guarded bias SET updates, and emits a reviewable config patch
+- `scripts/nosf_analyze.py`: Offline calibration analyzer with seven-tunable review patch and acceptance gate
+- `scripts/nosf_live_tuner.py`: Observe-only calibration bucket learner; emits reviewable patches, with live writes reserved for explicit debug flags
 - `scripts/gcode_marker.py`: G-code metadata injector for telemetry correlation; use `--emit file` for live tuner prints
 - `scripts/nosf_marker.py`: Klipper marker-file bridge used by `gcode_marker.py --emit file`
 - `scripts/gen_config.py`: Generate `tune.h` from `config.ini`
@@ -133,6 +133,13 @@ python3 scripts/nosf_cmd.py --dump --raw
 
 # Static regression gate before hardware testing
 bash scripts/validate_regression.sh
+```
+
+Calibration workflow:
+
+```text
+marked calibration prints -> analyze CSV/state -> review config.patch.ini
+-> copy accepted values to config.ini -> regenerate/build/flash -> detach host
 ```
 
 ## Build Notes

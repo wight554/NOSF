@@ -254,57 +254,52 @@ stream internal state to a CSV file for offline analysis.
    python3 scripts/nosf_analyze.py --in run1.csv --out patch.ini
    ```
 
-## Closed-Loop Live Tuning
+## Calibration Prints
 
-Phase 2.8 adds `scripts/nosf_live_tuner.py` for online bucket learning during
-tuning prints. It consumes the same `NOSF_TUNE` markers as the logger, learns
-per `feature_v_fil` buckets, and writes guarded live `SET:` updates for
-trailing bias. Runtime baseline writes are disabled by default because `EST` is
-a live flow estimate, not a safe global baseline target during a print.
+Phase 2.9 uses calibration prints to bake standalone defaults. The normal flow
+is observe-only: gather telemetry, run the analyzer, review a patch, merge
+chosen values into `config.ini`, rebuild, flash, then detach the host.
 
-Recommended tuning-print invocation:
+Preprocess calibration G-code with local marker delivery and layer markers:
+
+```bash
+python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode \
+    --emit file --every-layer
+```
+
+Run the observe-only tuner during a calibration print:
 
 ```bash
 python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
-    --machine-id myprinter --commit-on-idle \
+    --machine-id myprinter \
+    --commit-on-idle \
     --marker-file /tmp/nosf-markers-myprinter.log &
-```
-
-`--commit-on-idle` waits until NOSF reports idle for at least 30 s, then sends
-`SET:LIVE_TUNE_LOCK:0`, sends `SV:`, emits `/tmp/nosf-patch.ini`, logs that path
-to stderr, and exits. Review the patch before merging it into repo
-`config.ini`. The emitted baseline suggestion is commented as experimental;
-keep the known-good baseline unless you validate a new target manually.
-
-For live tuning, preprocess with file markers so Klipper never opens the NOSF
-USB serial port for marker delivery:
-
-```bash
-python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode --emit file
 ```
 
 `--emit file` inserts `RUN_SHELL_COMMAND CMD=nosf_marker PARAMS="..."` lines.
 `nosf_marker.py` appends each marker to `/tmp/nosf-markers-myprinter.log`, and
 the tuner tails that file while it remains the only process owning
-`/dev/ttyACM0`. `--commit-on-idle` waits for the final `FINISH` marker from
-`gcode_marker.py` before it tries to save or emit a patch.
+`/dev/ttyACM0`. In observe mode the tuner emits `/tmp/nosf-patch.ini` at print
+idle/finish but sends no `SET:` commands and no `SV:`.
 
-`--emit m118` remains available for passive console/log workflows. `--emit mark`
-forwards markers through firmware `MARK:`/`MK:`, but should not be used while
-the live tuner owns the serial port.
+Recommended analyzer pass after three or more runs:
 
-Use `--debug` for tuning bring-up. It prints marker changes plus throttled
-per-bucket progress lines showing samples, variance, learned `x`, live `EST`,
-bias, confidence, state, and why the bucket is waiting. The cadence is
-controlled by `--progress-interval 10`; use `0` for marker-only debug output.
-Very low `EST` samples below 100 steps/s and rail-clamped bias buckets are
-ignored for live writes so pause/coast/top-surface artifacts do not become a
-global tuning value.
+```bash
+python3 scripts/nosf_analyze.py \
+    --in ~/nosf-runs/run1.csv ~/nosf-runs/run2.csv ~/nosf-runs/run3.csv \
+    --state ~/nosf-state/buckets-myprinter.json \
+    --out config.patch.ini \
+    --acceptance-gate
+```
 
 `nosf_live_tuner.py` and `nosf_logger.py` both own the NOSF USB TTY. Do not run
-them against the same `/dev/ttyACM*` at the same time. Use the live tuner for
-tuning prints, and use `nosf_logger.py` for passive reference soaks or debugging
-runs where no online writes should occur.
+them against the same `/dev/ttyACM*` at the same time. Recommended pattern:
+logger for reference CSV runs, tuner for bucket-state runs, analyzer after the
+calibration corpus is ready.
+
+Debug-only live writes still exist for controlled experiments:
+`--allow-bias-writes`, `--allow-baseline-writes`, and `--commit-flash`.
+`--commit-flash` is the only tuner mode that sends `SV:`.
 
 ---
 
