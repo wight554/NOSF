@@ -250,7 +250,7 @@ def test_status_mk_marker_fallback():
             t.on_status(line)
         assert t.last_feature == "Outer_wall"
         assert t.last_v_fil == 40.0
-        assert t.active_label == "Outer_wall_v40"
+        assert t.active_label == "Outer_wall_v50"
         assert not fake.writes
         return "firmware MK status marker seeds active bucket"
 

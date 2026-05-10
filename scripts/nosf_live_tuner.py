@@ -119,7 +119,7 @@ def cf_value(raw: str) -> float:
 
 
 def bucket_label(feature: str, v_fil: float) -> str:
-    return f"{feature}_v{int(round(v_fil / 5.0)) * 5}"
+    return f"{feature}_v{int(round(v_fil / 25.0)) * 25}"
 
 
 def kf_predict_update(bucket: Bucket, z: float, cf: float, apx: int, dt_s: float) -> None:
@@ -163,6 +163,7 @@ class Tuner:
         self.idle_since = 0.0
         self.seen_print_activity = False
         self.finish_seen = False
+        self.start_seen = False
         self.debug = False
         self.recent_sets = deque()
         self.last_rate_limit_warn_t = -999.0
@@ -273,6 +274,14 @@ class Tuner:
         return False
 
     def on_m118(self, raw: str) -> None:
+        if "NT:START" in raw or raw.strip() == "NT:START":
+            self.finish_seen = False
+            self.seen_print_activity = False
+            self.idle_since = 0.0
+            self.start_seen = True
+            if self.debug:
+                print("[tuner] marker START — resetting print state", file=sys.stderr)
+            return
         if raw.strip() == "FINISH" or "NOSF_TUNE:FINISH" in raw:
             self.seen_print_activity = True
             self.finish_seen = True
@@ -397,7 +406,7 @@ class Tuner:
         kf_predict_update(b, est, cf, apx, dt_s)
         b.bp_ewma = 0.95 * b.bp_ewma + 0.05 * bp if b.n > 1 else bp
         bias_target = 0.4 + (b.bp_ewma - rt) / 7.8
-        b.bias = max(0.0, min(0.7, 0.95 * b.bias + 0.05 * bias_target))
+        b.bias = max(BIAS_SAFE_MIN, min(BIAS_SAFE_MAX, 0.95 * b.bias + 0.05 * bias_target))
         self._maybe_emit_set(b, now)
         self._maybe_lock(b, now)
         self._debug_bucket_progress(b, now, est, bp, cf, apx)
@@ -770,6 +779,11 @@ def run_loop(args) -> None:
                         tuner.on_m118(parts[1])
                     elif parts:
                         tuner.on_m118(parts[0])
+                if tuner.start_seen:
+                    marker_file.seek(0, os.SEEK_END)
+                    tuner.start_seen = False
+                    if tuner.debug:
+                        print("[tuner] marker file rewound to EOF on START", file=sys.stderr)
             try:
                 line = lines.get(timeout=0.05)
             except queue.Empty:
@@ -786,7 +800,11 @@ def run_loop(args) -> None:
                 tuner.on_event(line)
             elif "BUF:" in line and "BP:" in line:
                 tuner.on_status(line)
-                if args.commit_on_idle and tuner.print_idle_ready():
+                commit_now = (
+                    (args.commit_on_idle and tuner.print_idle_ready()) or
+                    (args.commit_on_finish and tuner.finish_seen and tuner.seen_print_activity)
+                )
+                if commit_now:
                     tuner._persist()
                     if tuner.locked_bucket_count() == 0:
                         print("[tuner] FINISH seen, but no LOCKED buckets yet; persisted tracking state without SV", file=sys.stderr)
@@ -824,6 +842,7 @@ def main() -> None:
     ap.add_argument("--state-info", action="store_true", help="Print state summary table and exit")
     ap.add_argument("--reset-runtime", action="store_true", help="Send LIVE_TUNE_LOCK:0 and LD:, then exit")
     ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, unlock, SV:, emit /tmp/nosf-patch.ini, and exit")
+    ap.add_argument("--commit-on-finish", action="store_true", help="Exit immediately on FINISH marker (no idle wait); implies commit if locked buckets exist")
     ap.add_argument("--klipper-log", help="Tail klippy.log for NOSF_TUNE marker echoes while tuning")
     ap.add_argument("--marker-file", help="Tail local marker file written by scripts/nosf_marker.py")
     ap.add_argument(

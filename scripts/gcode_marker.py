@@ -36,6 +36,8 @@ def marker_lines(tag, emit="m118", shell_cmd="nosf"):
     if emit in ("mark", "both", "file"):
         if tag.startswith("NOSF_TUNE:FINISH"):
             mark_tag = "FINISH"
+        elif tag == "NT:START":
+            mark_tag = "NT:START"
         else:
             m = re.match(r"NOSF_TUNE:(?P<feature>[^:]+):V(?P<vfil>[^:]+):", tag)
             if not m:
@@ -69,6 +71,9 @@ def process_gcode(input_path, output_path, filament_dia=1.75, every_layer=False,
     fil_area = math.pi * (filament_dia / 2)**2
 
     with open(input_path, 'r') as fin, open(output_path, 'w') as fout:
+        for marker in marker_lines("NT:START", emit, shell_cmd):
+            fout.write(marker)
+
         for line in fin:
             raw_line = line.strip()
             
