@@ -1073,6 +1073,107 @@ Drift detection (recommend-recheck): only fires for keys whose
 `source == "config.ini"` (i.e., previously committed). Keys at
 `default` or `manual` are skipped.
 
+### 17.1.6 Schema migration chain — MANDATORY for 2.9.9
+
+Current `migrate_state_data` (post-2.9.1) only handles `1 → 2`
+because the `if schema == 1 and SCHEMA_VERSION == 2` branch hard-
+codes the destination version. After bumping `SCHEMA_VERSION = 3`
+without rewriting this helper, existing schema-2 state files will
+FAIL to load and the maintainer will lose their accumulated tune
+database. **Unacceptable.**
+
+Milestone 2.9.9 MUST rewrite `migrate_state_data` as an explicit
+chain of one-step migrations, executed in order until the data
+matches the current `SCHEMA_VERSION`:
+
+```python
+def _migrate_1_to_2(data: dict) -> dict:
+    # Schema 1 had no per-bucket counters. Bucket loader already
+    # zero-fills the new fields via .get(default) calls, so the
+    # only required mutation is the version bump.
+    data["_schema"] = 2
+    return data
+
+
+def _migrate_2_to_3(data: dict) -> dict:
+    # Schema 3 introduces _meta block with per-tunable watermark.
+    # Insert empty _meta on every machine-id key, leaving bucket
+    # data untouched.
+    for machine_id, machine_data in data.items():
+        if machine_id.startswith("_"):
+            continue
+        if not isinstance(machine_data, dict):
+            continue
+        meta = machine_data.setdefault("_meta", {})
+        meta.setdefault("last_commit_values", {
+            key: {"value": None, "applied_at": None, "source": "default"}
+            for key in PATCH_KEYS
+        })
+        meta.setdefault("last_commit_run_seq", 0)
+        meta.setdefault("last_commit_sample_total", 0)
+    data["_schema"] = 3
+    return data
+
+
+_MIGRATIONS = {
+    1: _migrate_1_to_2,
+    2: _migrate_2_to_3,
+}
+
+
+def migrate_state_data(data: dict) -> dict:
+    schema = data.get("_schema")
+    if not isinstance(schema, int):
+        raise ValueError(f"state file schema mismatch: got {schema!r}, expected int")
+    if schema > SCHEMA_VERSION:
+        raise ValueError(f"state file schema {schema} is newer than supported {SCHEMA_VERSION}")
+    while schema < SCHEMA_VERSION:
+        if schema not in _MIGRATIONS:
+            raise ValueError(f"missing migration step from schema {schema}")
+        data = _MIGRATIONS[schema](data)
+        schema = data["_schema"]
+    return data
+```
+
+Hard requirements for 2.9.9 implementation:
+- All existing schema-2 state files load without data loss. Bucket
+  records (x, P, n, bias, runs_seen, layers_seen, cumulative_mid_s,
+  etc.) preserved byte-for-byte after migration.
+- LOCKED buckets stay LOCKED across migration. No re-validation.
+- The `_meta` block initial values for `last_commit_values`:
+  `value: None`, `applied_at: None`, `source: "default"`. The
+  analyzer fills real values when the operator runs
+  `--commit-watermark`.
+- Future schema bumps register a new `_migrate_N_to_N+1` and add
+  to `_MIGRATIONS`. No more conditional branches keyed on
+  `SCHEMA_VERSION`.
+
+Required tests in `scripts/test_nosf_live_tuner.py`:
+- `test_schema2_to_3_migration_preserves_buckets` — write a
+  schema-2 file with at least 3 buckets including one LOCKED, one
+  TRACKING with high `n`, and one with non-zero `runs_seen` /
+  `layers_seen` / `cumulative_mid_s`. Load. Verify:
+  1. All bucket fields equal their pre-load values.
+  2. Each bucket's `state` and `locked` flags unchanged.
+  3. `_meta` block created with all `PATCH_KEYS` entries at
+     `source="default"`, `applied_at=None`.
+  4. After `_persist`, file is schema 3 and re-load is idempotent.
+- `test_schema_chain_1_to_3` — write a schema-1 file (legacy
+  format), load. Verify it migrates 1 → 2 → 3 in one load and
+  bucket data preserved through both hops.
+- `test_schema_too_new_refused` — write a file with
+  `_schema: 99`. Load must raise; no mutation; no implicit
+  downgrade.
+- `test_existing_production_state_loads` — load a snapshot of an
+  actual operator state file (committed under `tests/fixtures/`
+  if maintainer provides one) without errors. Skipped if fixture
+  missing.
+
+Operator safety net (not code; documentation in 2.9.13):
+- Before running 2.9.9 the first time, operator should
+  `cp ~/nosf-state/buckets-<id>.json ~/nosf-state/buckets-<id>.json.schema2.bak`.
+- 2.9.13 docs MUST mention this.
+
 ### 17.2 New milestones (from resolutions)
 
 ```
