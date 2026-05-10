@@ -70,8 +70,10 @@ BIAS_SAFE_MIN = 0.05
 BIAS_SAFE_MAX = 0.65
 MIN_LEARN_EST_SPS = 100.0
 MIN_SET_SPACING = 2.0
-N_MIN_SAMPLES = 200
-BUCKET_LOCK_S = 20.0
+N_MIN_SAMPLES_CUMULATIVE = 200
+N_MIN_RUNS = 2
+N_MIN_LAYERS = 3
+MIN_MID_TIME_S = 60.0
 Q_PROCESS = 25.0
 R_BASE = 100.0
 SCHEMA_VERSION = 2
@@ -84,6 +86,7 @@ M118_RE = re.compile(
     r"NOSF_TUNE:(?P<feature>[^:]+):V(?P<vfil>[^:]+):W(?P<w>[^:]+):H(?P<h>[^:\s]+)"
 )
 COMPACT_MARK_RE = re.compile(r"NT:(?P<feature>[^:]+):V(?P<vfil>[^:\s]+)")
+LAYER_MARK_RE = re.compile(r"(?:NT:LAYER:|NOSF_TUNE:LAYER:)(?P<layer>\d+)")
 
 
 @dataclass
@@ -190,6 +193,10 @@ class Tuner:
         self.finish_seen = False
         self.start_seen = False
         self.debug = False
+        self.run_seq = 0
+        self.current_run_id = ""
+        self._run_seen_labels = set()
+        self._seen_layer_keys = set()
         self.recent_sets = deque()
         self.last_rate_limit_warn_t = -999.0
         self.allow_bias_writes = False
@@ -323,8 +330,27 @@ class Tuner:
             self.seen_print_activity = False
             self.idle_since = 0.0
             self.start_seen = True
+            self.run_seq += 1
+            self.current_run_id = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.wall_fn()))
+            self._run_seen_labels.clear()
+            self._seen_layer_keys.clear()
             if self.debug:
                 print("[tuner] marker START — resetting print state", file=sys.stderr)
+            return
+        layer = LAYER_MARK_RE.search(raw)
+        if layer:
+            self.seen_print_activity = True
+            self.last_marker_t = self.now_fn()
+            self.idle_since = 0.0
+            if self.active_label:
+                key = (self.run_seq, self.active_label, layer.group("layer"))
+                if key not in self._seen_layer_keys:
+                    b = self.buckets.get(self.active_label)
+                    if b:
+                        b.layers_seen += 1
+                    self._seen_layer_keys.add(key)
+            if self.debug:
+                print(f"[tuner] marker LAYER {layer.group('layer')}", file=sys.stderr)
             return
         if raw.strip() == "FINISH" or "NOSF_TUNE:FINISH" in raw:
             self.seen_print_activity = True
@@ -426,6 +452,11 @@ class Tuner:
         wall_now = self.wall_fn()
         b = self.buckets.setdefault(label, Bucket(label=label, x=est, first_seen=wall_now))
         self.active_label = label
+        if self.current_run_id and label not in self._run_seen_labels:
+            b.runs_seen += 1
+            if not b.first_seen_run:
+                b.first_seen_run = self.current_run_id
+            self._run_seen_labels.add(label)
         b.last_seen = wall_now
         if b.first_seen == 0.0:
             b.first_seen = wall_now
@@ -463,18 +494,19 @@ class Tuner:
     def _bucket_wait_reason(self, b: Bucket, now: float) -> str:
         if b.state == "LOCKED" or b.locked:
             return "locked"
-        if b.n < N_MIN_SAMPLES:
-            return f"samples {b.n}/{N_MIN_SAMPLES}"
-        if b.P > 4.0 * P_STABLE_THR:
-            return f"variance P>{4.0 * P_STABLE_THR:.0f}"
+        if b.P >= P_STABLE_THR:
+            return f"variance P>={P_STABLE_THR:.0f}"
         if not self._bias_in_safe_range(b.bias):
             return "bias rail guard"
-        if abs(b.x - b.last_set_x) >= SET_DEADBAND_SPS and not self.allow_baseline_writes:
-            return "baseline observe-only"
-        if b.state == "STABLE":
-            remain = max(0.0, BUCKET_LOCK_S - (now - b.stable_since))
-            return f"lock in {remain:.0f}s"
-        return "tracking"
+        if b.n < N_MIN_SAMPLES_CUMULATIVE:
+            return f"samples {b.n}/{N_MIN_SAMPLES_CUMULATIVE}"
+        if b.runs_seen < N_MIN_RUNS:
+            return f"runs {b.runs_seen}/{N_MIN_RUNS}"
+        if b.layers_seen < N_MIN_LAYERS:
+            return f"layers {b.layers_seen}/{N_MIN_LAYERS}"
+        if b.cumulative_mid_s < MIN_MID_TIME_S:
+            return f"mid_time {b.cumulative_mid_s:.0f}/{MIN_MID_TIME_S:.0f}s"
+        return "stable"
 
     def _debug_bucket_progress(self, b: Bucket, now: float, est: float, bp: float, cf: float, apx: int) -> None:
         if not self.debug or self.progress_interval <= 0.0:
@@ -495,7 +527,7 @@ class Tuner:
     def _maybe_emit_set(self, b: Bucket, now: float) -> None:
         if now - self.last_set_t < MIN_SET_SPACING:
             return
-        if b.n < N_MIN_SAMPLES:
+        if b.n < N_MIN_SAMPLES_CUMULATIVE:
             return
         if b.P > 4.0 * P_STABLE_THR:
             return
@@ -541,25 +573,28 @@ class Tuner:
             self.last_set_t = now
 
     def _maybe_lock(self, b: Bucket, now: float) -> None:
-        x_stable = (not self.allow_baseline_writes) or abs(b.x - b.last_set_x) < SET_DEADBAND_SPS
         stable = (
             b.P < P_STABLE_THR
-            and b.n >= N_MIN_SAMPLES
-            and x_stable
             and self._bias_in_safe_range(b.bias)
         )
         if not stable:
             b.state = "TRACKING"
             b.stable_since = 0.0
             return
-        if b.state != "STABLE":
-            b.state = "STABLE"
-            b.stable_since = now
-            return
-        if now - b.stable_since >= BUCKET_LOCK_S:
+        ready = (
+            b.n >= N_MIN_SAMPLES_CUMULATIVE
+            and b.runs_seen >= N_MIN_RUNS
+            and b.layers_seen >= N_MIN_LAYERS
+            and b.cumulative_mid_s >= MIN_MID_TIME_S
+        )
+        if b.state == "STABLE" and ready:
             b.state = "LOCKED"
             b.locked = True
             self._persist()
+            return
+        b.state = "STABLE"
+        if b.stable_since == 0.0:
+            b.stable_since = now
 
     def _rollback_active(self) -> None:
         if not self.active_label:
@@ -669,7 +704,7 @@ def state_label(raw: dict) -> str:
     if raw.get("state"):
         return str(raw.get("state"))
     try:
-        if float(raw.get("P", 1e6)) < P_STABLE_THR and int(raw.get("n", 0)) >= N_MIN_SAMPLES:
+        if float(raw.get("P", 1e6)) < P_STABLE_THR and int(raw.get("n", 0)) >= N_MIN_SAMPLES_CUMULATIVE:
             return "STABLE"
     except (TypeError, ValueError):
         pass

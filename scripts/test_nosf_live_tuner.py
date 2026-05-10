@@ -309,6 +309,90 @@ def test_counter_increments():
         return "low-flow, rail, and rollback counters increment"
 
 
+def test_short_print_no_lock():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t = tuner_mod.Tuner(FakeSerial(), os.path.join(td, "state.json"), "test", now_fn=clock.now, wall_fn=clock.now)
+        b = tuner_mod.Bucket(
+            label="PERIMETER_v50",
+            x=1600.0,
+            P=20.0,
+            n=250,
+            bias=0.400,
+            runs_seen=1,
+            layers_seen=3,
+            cumulative_mid_s=60.0,
+            state="STABLE",
+        )
+        t._maybe_lock(b, clock.now())
+        assert b.state == "STABLE", b.state
+        assert not b.locked
+        assert t._bucket_wait_reason(b, clock.now()) == "runs 1/2"
+        return "single short calibration run cannot lock bucket"
+
+
+def test_three_run_lock():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t = tuner_mod.Tuner(FakeSerial(), os.path.join(td, "state.json"), "test", now_fn=clock.now, wall_fn=clock.now)
+        b = tuner_mod.Bucket(
+            label="PERIMETER_v50",
+            x=1600.0,
+            P=20.0,
+            n=250,
+            bias=0.400,
+            runs_seen=3,
+            layers_seen=3,
+            cumulative_mid_s=90.0,
+            state="STABLE",
+        )
+        t.buckets[b.label] = b
+        t._maybe_lock(b, clock.now())
+        assert b.state == "LOCKED", b.state
+        assert b.locked
+        return "three cumulative calibration runs can lock bucket"
+
+
+def test_layer_count_required():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t = tuner_mod.Tuner(FakeSerial(), os.path.join(td, "state.json"), "test", now_fn=clock.now, wall_fn=clock.now)
+        b = tuner_mod.Bucket(
+            label="PERIMETER_v50",
+            x=1600.0,
+            P=20.0,
+            n=250,
+            bias=0.400,
+            runs_seen=3,
+            layers_seen=2,
+            cumulative_mid_s=90.0,
+            state="STABLE",
+        )
+        t._maybe_lock(b, clock.now())
+        assert b.state == "STABLE", b.state
+        assert t._bucket_wait_reason(b, clock.now()) == "layers 2/3"
+        return "layer count gates LOCKED state"
+
+
+def test_start_and_layer_markers_increment_counters():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t = tuner_mod.Tuner(FakeSerial(), os.path.join(td, "state.json"), "test", now_fn=clock.now, wall_fn=clock.now)
+        t.on_m118("NT:START")
+        t.on_m118("echo: NOSF_TUNE:PERIMETER:V40:W0.45:H0.20")
+        clock.step(1.0)
+        t.on_status(status(est=1800))
+        b = t.buckets["PERIMETER_v50"]
+        assert b.runs_seen == 1, b.runs_seen
+        assert b.first_seen_run, b.first_seen_run
+        t.on_m118("NT:LAYER:1")
+        t.on_m118("NT:LAYER:1")
+        assert b.layers_seen == 1, b.layers_seen
+        t.on_m118("NT:LAYER:2")
+        assert b.layers_seen == 2, b.layers_seen
+        return "START and layer markers increment cumulative counters once"
+
+
 def test_low_flow_samples_are_ignored():
     with tempfile.TemporaryDirectory() as td:
         clock = Clock()
@@ -413,6 +497,10 @@ def main():
         ("commit-flash", test_commit_flash_invokes_sv),
         ("schema1", test_schema1_migration),
         ("counters", test_counter_increments),
+        ("short-print", test_short_print_no_lock),
+        ("three-run", test_three_run_lock),
+        ("layer-gate", test_layer_count_required),
+        ("markers", test_start_and_layer_markers_increment_counters),
         ("low-flow", test_low_flow_samples_are_ignored),
         ("bias-rail", test_bias_rail_guard_blocks_set_and_lock),
         ("debug-log", test_debug_bucket_progress_line),

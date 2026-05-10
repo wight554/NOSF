@@ -38,6 +38,11 @@ def marker_lines(tag, emit="m118", shell_cmd="nosf"):
             mark_tag = "FINISH"
         elif tag == "NT:START":
             mark_tag = "NT:START"
+        elif tag.startswith("NOSF_TUNE:LAYER:"):
+            parts = tag.split(":")
+            if len(parts) < 3:
+                return lines
+            mark_tag = f"NT:LAYER:{parts[2]}"
         else:
             m = re.match(r"NOSF_TUNE:(?P<feature>[^:]+):V(?P<vfil>[^:]+):", tag)
             if not m:
