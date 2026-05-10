@@ -385,6 +385,33 @@ def test_recommend_recheck_outputs_verdict():
         assert "RECOMMEND: no" in text, text
         return "recommend-recheck outputs negative verdict for empty state"
 
+def test_prune_stale_removes_old_buckets():
+    import time
+    with tempfile.TemporaryDirectory() as td:
+        state_path = os.path.join(td, "state.json")
+        now = time.time()
+        with open(state_path, "w") as fh:
+            json.dump({
+                "_schema": 3,
+                "test": {
+                    "fresh_v10": {"last_seen": now - 10},
+                    "stale_v20": {"last_seen": now - 70 * 86400},
+                    "_meta": {}
+                }
+            }, fh)
+        
+        out = StringIO()
+        with redirect_stdout(out), redirect_stderr(out):
+            tuner_mod.do_prune_stale(state_path, "test")
+            
+        with open(state_path) as fh:
+            data = json.load(fh)
+            
+        assert "stale_v20" not in data["test"], data
+        assert "fresh_v10" in data["test"], data
+        assert "_meta" in data["test"], data
+        return "prune-stale removes only buckets older than 60 days"
+
 def test_counter_increments():
     with tempfile.TemporaryDirectory() as td:
         clock = Clock()
@@ -752,6 +779,7 @@ def main():
         ("schema-too-new", test_schema_too_new_refused),
         ("schema-prod", test_existing_production_state_loads),
         ("recheck-verd", test_recommend_recheck_outputs_verdict),
+        ("prune-stale", test_prune_stale_removes_old_buckets),
         ("counters", test_counter_increments),
         ("short-print", test_short_print_no_lock),
         ("three-run", test_three_run_lock),

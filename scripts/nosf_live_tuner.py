@@ -80,6 +80,7 @@ MIN_PRINT_MID_S = 300.0
 RECHECK_NEW_LOCKED = 3
 RECHECK_SAMPLE_PCT = 25.0
 RECHECK_AGE_DAYS = 30
+STALE_AGE_DAYS = 60
 Q_PROCESS = 25.0
 R_BASE = 100.0
 SCHEMA_VERSION = 3
@@ -856,7 +857,7 @@ def bucket_wait_reason(b: Bucket, total_print_mid_s: float = 0.0) -> str:
     return reasons_A[0] if len(reasons_A) <= len(reasons_B) else reasons_B[0]
 
 
-def print_state_info(state_path: str, machine_id: str, csv_mode: bool = False) -> None:
+def print_state_info(state_path: str, machine_id: str, csv_mode: bool = False, include_stale: bool = False) -> None:
     if not os.path.exists(state_path):
         print(f"[tuner] no state file: {state_path}", file=sys.stderr)
         sys.exit(1)
@@ -876,25 +877,33 @@ def print_state_info(state_path: str, machine_id: str, csv_mode: bool = False) -
         sys.exit(1)
     buckets = data.get(machine_id, {})
     now = time.time()
+    cutoff = now - STALE_AGE_DAYS * 86400
     if csv_mode:
         print("feature_v_fil,x,P,n,bias,state,runs,layers,mid_s,last_seen_age_s,wait")
     else:
         print(
             f"{'feature_v_fil':<24} {'x':>7} {'P':>8} {'n':>6} {'bias':>7} "
-            f"{'state':>8} {'runs':>5} {'layers':>6} {'mid_s':>7} {'age_s':>7} wait"
+            f"{'state':>11} {'runs':>5} {'layers':>6} {'mid_s':>7} {'age_s':>7} wait"
         )
     locked = 0
     total_n = 0
     total_mid_s = 0.0
     for label, raw in sorted(buckets.items()):
+        if label.startswith("_"): continue
+        b = bucket_from_raw(label, raw)
+        age_s = max(0.0, now - b.last_seen) if b.last_seen else 0.0
+        if b.last_seen < cutoff and not include_stale:
+            continue
+        
         st = state_label(raw)
-        if st == "LOCKED":
+        if b.last_seen < cutoff:
+            st += " STALE"
+            
+        if "LOCKED" in st:
             locked += 1
         n = int(raw.get("n", 0))
         total_n += n
-        b = bucket_from_raw(label, raw)
         total_mid_s += b.cumulative_mid_s
-        age_s = max(0.0, now - b.last_seen) if b.last_seen else 0.0
         wait = bucket_wait_reason(b)
         if csv_mode:
             print(
@@ -904,7 +913,7 @@ def print_state_info(state_path: str, machine_id: str, csv_mode: bool = False) -
         else:
             print(
                 f"{label:<24} {b.x:>7.0f} {b.P:>8.1f} {n:>6d} "
-                f"{b.bias:>7.3f} {st:>8} {b.runs_seen:>5d} "
+                f"{b.bias:>7.3f} {st:>11} {b.runs_seen:>5d} "
                 f"{b.layers_seen:>6d} {b.cumulative_mid_s:>7.1f} "
                 f"{age_s:>7.0f} {wait}"
             )
@@ -1185,6 +1194,47 @@ def do_recommend_recheck(state_path: str, machine_id: str) -> None:
         print("[recommend-recheck] RECOMMEND: no")
 
 
+def do_prune_stale(state_path: str, machine_id: str) -> None:
+    if not os.path.exists(state_path):
+        print(f"[prune-stale] no state file: {state_path}")
+        return
+    try:
+        with open(state_path) as fh:
+            data = json.load(fh)
+        data = migrate_state_data(data)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"[prune-stale] error reading state: {exc}")
+        return
+    
+    machine_data = data.get(machine_id)
+    if not machine_data:
+        print("[prune-stale] no buckets for machine")
+        return
+        
+    now_ts = time.time()
+    cutoff = now_ts - STALE_AGE_DAYS * 86400
+    
+    to_remove = []
+    for k, v in machine_data.items():
+        if k.startswith("_"): continue
+        if v.get("last_seen", 0) < cutoff:
+            to_remove.append(k)
+            
+    if not to_remove:
+        print("[prune-stale] no stale buckets found")
+        return
+        
+    for k in to_remove:
+        del machine_data[k]
+        
+    tmp = state_path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(data, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    os.replace(tmp, state_path)
+    print(f"[prune-stale] removed {len(to_remove)} stale buckets")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="Closed-loop live tuner for NOSF sync buckets.",
@@ -1237,10 +1287,13 @@ def main() -> None:
         emit_patch(args.state, args.machine_id, args.emit_config_patch)
         return
     if args.state_info:
-        print_state_info(args.state, args.machine_id, csv_mode=args.csv)
+        print_state_info(args.state, args.machine_id, csv_mode=args.csv, include_stale=args.include_stale)
         return
     if args.recommend_recheck:
         do_recommend_recheck(args.state, args.machine_id)
+        return
+    if args.prune_stale:
+        do_prune_stale(args.state, args.machine_id)
         return
     if args.unlock:
         unlock_bucket(args.state, args.machine_id, args.unlock)
@@ -1259,7 +1312,6 @@ def main() -> None:
         print("nosf_live_tuner: --port is required for live tuning", file=sys.stderr)
         sys.exit(1)
     run_loop(args)
-
 
 if __name__ == "__main__":
     main()

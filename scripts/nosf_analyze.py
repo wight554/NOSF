@@ -157,12 +157,22 @@ def confidence(n, high, medium=None):
     return "DEFAULT"
 
 
-def compute_recommendations(rows, runs, state_buckets, current, mode):
+def compute_recommendations(rows, runs, state_buckets, current, mode, include_stale=False):
     mids = mid_rows(rows)
     safety = SAFETY_K[mode]
+    
+    import time
+    now_ts = time.time()
+    stale_cutoff = now_ts - 60 * 86400
+    
     by_bucket = defaultdict(list)
     for r in mids:
-        by_bucket[bucket_label(r.get("feature", ""), to_float(r.get("v_fil")))].append(r)
+        label = bucket_label(r.get("feature", ""), to_float(r.get("v_fil")))
+        if state_buckets and label in state_buckets:
+            last_seen = state_buckets[label].get("last_seen", now_ts)
+            if last_seen < stale_cutoff and not include_stale:
+                continue
+        by_bucket[label].append(r)
 
     dominant = max(by_bucket.values(), key=len) if by_bucket else []
     est_vals = [to_float(r.get("est_sps")) for r in dominant]
@@ -429,6 +439,7 @@ def main():
     ap.add_argument("--acceptance-gate", action="store_true", help="Exit non-zero unless Phase 2.9 acceptance checks pass")
     ap.add_argument("--commit-watermark", action="store_true", help="Write analysis values to _meta watermark in state JSON")
     ap.add_argument("--keys", help="Comma-separated list of keys to update in watermark (defaults to all)")
+    ap.add_argument("--include-stale", action="store_true", help="Include buckets not seen in >60 days")
     ap.add_argument("--feedforward", action="store_true", help=argparse.SUPPRESS)
     return run(ap.parse_args())
 
