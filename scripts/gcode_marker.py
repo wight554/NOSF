@@ -56,7 +56,7 @@ def marker_lines(tag, emit="m118", shell_cmd="nosf"):
             lines.append(f"RUN_SHELL_COMMAND CMD={shell_cmd} PARAMS=\"MARK:{mark_tag}\"\n")
     return lines
 
-def process_gcode(input_path, output_path, filament_dia=1.75, every_layer=False,
+def process_gcode(input_path, output_path, filament_dia=1.75, every_layer=True,
                   emit="m118", shell_cmd="nosf"):
     if not os.path.exists(input_path):
         print(f"Error: Input file {input_path} not found.")
@@ -150,13 +150,18 @@ def main():
     parser.add_argument("input", help="Input G-code")
     parser.add_argument("--output", help="Output path")
     parser.add_argument("--dia", type=float, default=1.75, help="Filament diameter")
-    parser.add_argument("--every-layer", action="store_true", help="Inject marker on every layer boundary")
+    parser.add_argument("--every-layer", action="store_true", help="Deprecated. Layer markers are now on by default.")
+    parser.add_argument("--no-layer-markers", action="store_false", dest="every_layer", help="Disable per-layer marker injection")
     parser.add_argument("--emit", choices=["m118", "mark", "file", "both"], default="m118",
                         help="Marker output: M118 echo, direct NOSF MARK command, local marker file, or M118+MARK")
     parser.add_argument("--shell-cmd", default="nosf",
                         help="Klipper gcode_shell_command name for --emit mark/both")
+    parser.set_defaults(every_layer=True)
     
     args = parser.parse_args()
+    if "--every-layer" in sys.argv:
+        print("Warning: --every-layer is deprecated. Layer markers are now injected by default.", file=sys.stderr)
+    
     in_place = args.output is None
     if in_place:
         tmp_fd, tmp_path = tempfile.mkstemp(suffix=".gcode", dir=os.path.dirname(os.path.abspath(args.input)))
