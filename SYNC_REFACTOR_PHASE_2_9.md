@@ -622,3 +622,317 @@ flashed units in the field.
   for tunable computation.
 - `scripts/nosf_analyze.py` — multi-run aggregator; produces final
   reviewed patch.
+
+---
+
+## 16. Phase 2.9 Addendum — Bootstrap + Long-Tail Continuous Tuning
+
+> **Status:** PROPOSED extension. Builds on milestones 2.9.0-2.9.6.
+> Adds support for the two-stage operator flow: short bootstrap from
+> repeated calibration prints, then continuous accumulation from
+> production prints that won't be repeated.
+
+### 16.1 Operator flow refinement
+
+```
+Stage A — Bootstrap (1-2 days)
+  - Pick 1-2 representative test models (small calibration cube,
+    speed/feature variety).
+  - Slice each through gcode_marker.py.
+  - Run each model 2-3 times with tuner --observe.
+  - First analyze + commit landed: minimum viable defaults.
+  - Flash. NOSF can now operate standalone with reasonable defaults.
+
+Stage B — Continuous accumulation (weeks/months)
+  - Keep gcode_marker.py as default slicer post-process.
+  - Tuner --observe-daemon runs in background between prints.
+  - Each production print contributes single-run samples to buckets.
+  - Some buckets are touched repeatedly; many are one-shot.
+  - Periodically (operator decides, or recommendation triggers),
+    re-run nosf_analyze and consider re-flashing.
+
+Stage C — Re-tune (occasional)
+  - When recommendation fires or operator wants refresh:
+    nosf_analyze --since-commit --acceptance-gate
+  - Diff suggested vs currently flashed defaults.
+  - If meaningful drift, merge, regenerate, build, flash.
+```
+
+### 16.2 Dual-path lock criteria
+
+Stage B has prints that visit a bucket exactly once. The 2.9.2 rule
+`runs_seen ≥ 2` blocks those. Replace with **OR of two paths**:
+
+A bucket transitions **STABLE → LOCKED** when EITHER hold:
+
+**Path A — Bootstrap (multi-run consensus)**
+- `n ≥ N_MIN_SAMPLES_CUMULATIVE` (200)
+- `runs_seen ≥ N_MIN_RUNS` (2)
+- `layers_seen ≥ N_MIN_LAYERS` (3)
+- `cumulative_mid_s ≥ MIN_MID_TIME_S` (60)
+
+**Path B — Single-print high-confidence**
+- `n ≥ N_SINGLE_PRINT_SAMPLES` (500)
+- `layers_seen ≥ N_SINGLE_PRINT_LAYERS` (5)
+- `cumulative_mid_s ≥ MIN_MID_TIME_S` (60)
+- (`runs_seen` may be 1)
+
+Path B accepts a bucket when one print gives strong evidence: a
+common feature/speed combo seen across many layers in a single tall
+print. The higher sample count compensates for missing cross-run
+consensus.
+
+Constants added:
+- `N_SINGLE_PRINT_SAMPLES = 500`
+- `N_SINGLE_PRINT_LAYERS = 5`
+
+`_bucket_wait_reason` reports the easier-to-satisfy path's blocker
+(whichever has fewer remaining gaps).
+
+### 16.3 Last-committed watermark
+
+Add per-machine watermark to state file. Tracks which values were
+last committed/flashed so analyzer can compute drift since commit.
+
+Schema 2 → 3 (bump). New top-level field per machine:
+
+```json
+{
+  "_schema": 3,
+  "<machine-id>": {
+    "_meta": {
+      "last_commit_at": "2026-05-10T18:30:00Z",
+      "last_commit_run_seq": 7,
+      "last_commit_sample_total": 18234,
+      "last_commit_values": {
+        "baseline_rate": 1582,
+        "sync_trailing_bias_frac": 0.342,
+        "mid_creep_timeout_ms": 3800,
+        "mid_creep_rate_sps_per_s": 5,
+        "mid_creep_cap_frac": 12,
+        "buf_variance_blend_frac": 0.500,
+        "buf_variance_blend_ref_mm": 0.500
+      }
+    },
+    "PERIMETER_v1650": { ... },
+    ...
+  }
+}
+```
+
+Written by `nosf_analyze.py --commit-watermark` after operator
+confirms a flash. No automatic write — operator-driven so the
+watermark always reflects what's actually flashed, not what was
+suggested.
+
+Migration schema 2 → 3: add empty `_meta` block. No data loss.
+
+### 16.4 Recommend-recheck heuristic
+
+Tuner gains a `--recommend-recheck` mode that consults watermark
+and prints YES/NO with reason:
+
+```
+$ python3 scripts/nosf_live_tuner.py --machine-id myprinter --recommend-recheck
+[recommend-recheck] last commit: 2026-05-10T18:30:00Z (12 days ago)
+[recommend-recheck] sample mass since commit: +4231 (23.2%)
+[recommend-recheck] new LOCKED buckets since commit: 5
+[recommend-recheck] flagged buckets (drift > 1σ from committed): 2
+[recommend-recheck] RECOMMEND: yes — re-run analyze
+```
+
+Recommendation fires when ANY hold:
+- New LOCKED buckets since last commit ≥ `RECHECK_NEW_LOCKED` (default 3)
+- Sample mass increased ≥ `RECHECK_SAMPLE_PCT` since commit (default 25%)
+- ≥ 1 LOCKED bucket has drifted ≥ 1σ from committed value (`drift_flag`)
+- Calendar age since commit ≥ `RECHECK_AGE_DAYS` (default 30)
+
+Pure read-only operation; no state mutation.
+
+### 16.5 Stale bucket pruning
+
+Buckets stale (no `last_seen` update for `STALE_AGE_DAYS`, default
+60) are auto-excluded from analyzer aggregation. Not deleted from
+state file (future re-prints may revive them); just flagged.
+
+`--state-info --include-stale` shows them with `STALE` decoration.
+
+`nosf_analyze.py` skips stale buckets when computing weighted means
+unless `--include-stale` passed.
+
+`--prune-stale` utility command on tuner physically removes stale
+buckets. Operator-driven only.
+
+### 16.6 Continuous-observe daemon mode
+
+For Stage B, tuner needs to survive across prints. Behavior:
+
+- `--observe-daemon` flag: tuner does NOT exit on `FINISH`. Instead:
+  - on `FINISH`: persist state, log "print N complete, K samples
+    added", reset per-print flags, wait for next `NT:START`.
+  - on `NT:START`: increment `run_seq`, clear `_run_seen_labels`,
+    log "print N+1 starting".
+- Recommendation check fires automatically at end of each print.
+  If `--recommend-recheck` triggers, prints reminder. Does not
+  emit patch automatically.
+- SIGTERM / SIGINT: persist + exit clean.
+
+Pairs naturally with systemd unit or `nohup`-style background run.
+
+### 16.7 Implementation milestones (addendum)
+
+```
+[ ] 2.9.8  dual-path lock criteria
+[ ] 2.9.9  watermark + schema 3 migration
+[ ] 2.9.10 recommend-recheck mode
+[ ] 2.9.11 stale bucket handling + prune utility
+[ ] 2.9.12 continuous-observe daemon mode
+[ ] 2.9.13 documentation update for two-stage workflow
+```
+
+#### 2.9.8 — Dual-path lock criteria
+
+**Files:** `scripts/nosf_live_tuner.py`, `scripts/test_nosf_live_tuner.py`
+
+- Add constants `N_SINGLE_PRINT_SAMPLES = 500`,
+  `N_SINGLE_PRINT_LAYERS = 5`.
+- `_maybe_lock`: lock if Path A OR Path B satisfied.
+- `_bucket_wait_reason`: report the closer-to-locking path's gap.
+- Tests:
+  - `test_single_print_path_locks` — n=500, layers=5, mid_s=60,
+    runs_seen=1; verify LOCKED.
+  - `test_neither_path_no_lock` — neither path satisfied; verify
+    not LOCKED.
+  - `test_either_path_no_double_count` — bucket meeting both paths
+    locks once, doesn't oscillate.
+
+#### 2.9.9 — Watermark + schema 3 migration
+
+**Files:** `scripts/nosf_live_tuner.py`, `scripts/nosf_analyze.py`,
+`scripts/test_nosf_live_tuner.py`
+
+- Bump `SCHEMA_VERSION = 3`.
+- Add `_meta` block per machine in JSON.
+- `migrate_state_data` handles 2 → 3: insert empty `_meta`.
+- Tuner: read-only access to `_meta` for diagnostics.
+- Analyzer: `--commit-watermark` flag writes `_meta` after operator
+  confirms patch was reviewed/applied. Operator runs:
+  ```
+  python3 scripts/nosf_analyze.py --in run*.csv \
+      --state ~/nosf-state/buckets-myprinter.json \
+      --commit-watermark
+  ```
+  This consumes the most recent `[nosf_review]` patch values and
+  freezes them as `_meta.last_commit_values`. **Never written
+  automatically.**
+- Tests:
+  - `test_schema2_to_3_migration` — pre-existing schema-2 file
+    loads, persists as schema 3 with empty `_meta`.
+  - `test_watermark_write_via_analyzer` — analyzer with
+    `--commit-watermark` updates `_meta` correctly.
+
+#### 2.9.10 — Recommend-recheck mode
+
+**Files:** `scripts/nosf_live_tuner.py`, `scripts/test_nosf_live_tuner.py`
+
+- Add `--recommend-recheck` argument.
+- Implement `recommend_recheck(state_path, machine_id) -> tuple[bool, list[str]]`.
+- Constants: `RECHECK_NEW_LOCKED = 3`, `RECHECK_SAMPLE_PCT = 25.0`,
+  `RECHECK_AGE_DAYS = 30`.
+- Drift flag: per-bucket, `abs(b.x - committed_value) > P_STABLE_THR^0.5`
+  (i.e., > 1 standard deviation from committed).
+- Tests:
+  - `test_recommend_no_watermark` — no `_meta`; always recommends
+    yes (cold state).
+  - `test_recommend_below_thresholds` — small additions; recommends
+    no.
+  - `test_recommend_above_sample_threshold` — 30% sample mass
+    increase; recommends yes.
+  - `test_recommend_above_age_threshold` — 31 days old; yes.
+
+#### 2.9.11 — Stale bucket handling + prune utility
+
+**Files:** `scripts/nosf_live_tuner.py`, `scripts/nosf_analyze.py`,
+`scripts/test_nosf_live_tuner.py`
+
+- Constant `STALE_AGE_DAYS = 60`.
+- Helper `is_stale(b: Bucket, now_wall: float) -> bool`.
+- `print_state_info`: stale buckets shown with `STALE` decoration
+  in `state` column.
+- `--state-info --include-stale` includes them; default hides.
+- `--prune-stale` command: removes buckets where `is_stale()` true.
+  Persists. Reports count.
+- Analyzer: weighted-mean computation excludes stale buckets unless
+  `--include-stale` passed.
+- Tests:
+  - `test_stale_excluded_from_state_info`
+  - `test_prune_stale_removes_correct_buckets`
+  - `test_analyzer_excludes_stale_by_default`
+
+#### 2.9.12 — Continuous-observe daemon mode
+
+**Files:** `scripts/nosf_live_tuner.py`, `scripts/test_nosf_live_tuner.py`
+
+- Add `--observe-daemon` flag. Default off.
+- When set: `FINISH` does not trigger exit. Instead:
+  - persist state
+  - log "[daemon] print %d complete: +%d samples, %d locked total"
+  - reset `seen_print_activity`, `finish_seen`, `idle_since`,
+    `_run_seen_labels`, `_seen_layer_keys`
+  - print recommend-recheck inline if it would fire
+- SIGTERM/SIGINT handler persists then exits 0.
+- `--commit-on-finish` and `--commit-flash` are mutually exclusive
+  with `--observe-daemon`. Argparse rejects.
+- Tests:
+  - `test_daemon_does_not_exit_on_finish` — simulate FINISH,
+    verify `daemon_should_continue == True`.
+  - `test_daemon_resets_per_print_state` — FINISH then START,
+    verify per-run flags reset.
+
+#### 2.9.13 — Documentation update
+
+**Files:** `MANUAL.md`, `KLIPPER.md`, `README.md`
+
+- New subsection in MANUAL.md "Continuous tuning workflow":
+  - Stage A bootstrap (3 calibration prints + first commit)
+  - Stage B continuous (gcode_marker.py default + observe-daemon)
+  - Stage C re-tune (recommend-recheck → analyze → review → flash)
+- Klipper config snippet for slicer post-process default.
+- README short flowchart showing both stages.
+- TASK.md: append addendum status.
+
+### 16.8 Acceptance criteria addendum
+
+- Single-print bucket with n=600, layers=6, mid_s=80 reaches LOCKED
+  via Path B in one print.
+- Watermark write/read round-trip stable.
+- `--recommend-recheck` exits 0 with verdict on stdout, no state
+  mutation.
+- `--observe-daemon` runs across 5 simulated print cycles without
+  exiting; persistence stable each cycle.
+- Stale bucket excluded from analyzer; visible with
+  `--include-stale`.
+- All existing 2.9.0-2.9.6 tests still pass after addendum work.
+
+### 16.9 Rollback path addendum
+
+- Schema 3 → 2 downgrade: not supported; delete state file or
+  manually strip `_meta`.
+- `--observe-daemon` reverts to one-shot mode by removing flag.
+- Watermark misuse: `nosf_analyze.py --clear-watermark` resets
+  `_meta` to empty without touching bucket data.
+- Stale prune is destructive; operator-only, not auto.
+
+### 16.10 Open questions (addendum)
+
+- **Q-2.9-E.** Should daemon mode auto-run analyzer when recommend
+  triggers, or just remind operator? Phase 2.9.12 chooses reminder
+  (operator runs analyzer manually). Auto-run risks unreviewed
+  config drift.
+- **Q-2.9-F.** Should single-print Path B require evidence the
+  print was non-trivial (e.g., total print duration > 30 min)?
+  Defer; tighten if false-positives observed.
+- **Q-2.9-G.** Should watermark be per-tunable (track which
+  parameters were applied vs left at defaults)? Defer until
+  partial-merge workflow proves common.
+
