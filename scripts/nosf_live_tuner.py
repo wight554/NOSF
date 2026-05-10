@@ -74,6 +74,9 @@ N_MIN_SAMPLES_CUMULATIVE = 200
 N_MIN_RUNS = 2
 N_MIN_LAYERS = 3
 MIN_MID_TIME_S = 60.0
+N_SINGLE_PRINT_SAMPLES = 500
+N_SINGLE_PRINT_LAYERS = 5
+MIN_PRINT_MID_S = 300.0
 Q_PROCESS = 25.0
 R_BASE = 100.0
 SCHEMA_VERSION = 2
@@ -229,6 +232,7 @@ class Tuner:
         self.run_seq = 0
         self.current_run_id = ""
         self.current_layer = ""
+        self.total_print_mid_s = 0.0
         self._run_seen_labels = set()
         self._seen_layer_keys = set()
         self.recent_sets = deque()
@@ -368,6 +372,7 @@ class Tuner:
             self.run_seq += 1
             self.current_run_id = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.wall_fn()))
             self.current_layer = ""
+            self.total_print_mid_s = 0.0
             self._run_seen_labels.clear()
             self._seen_layer_keys.clear()
             if self.debug:
@@ -528,6 +533,7 @@ class Tuner:
         self.last_status_t = now
         if dt_s > 0.0:
             b.cumulative_mid_s += dt_s
+            self.total_print_mid_s += dt_s
 
         if b.state == "LOCKED" or b.locked:
             if abs(est - b.x) * abs(est - b.x) > 4.0 * (b.P + R_BASE):
@@ -552,7 +558,7 @@ class Tuner:
         self._debug_bucket_progress(b, now, est, bp, cf, apx)
 
     def _bucket_wait_reason(self, b: Bucket, now: float) -> str:
-        return bucket_wait_reason(b)
+        return bucket_wait_reason(b, self.total_print_mid_s)
 
     def _debug_bucket_progress(self, b: Bucket, now: float, est: float, bp: float, cf: float, apx: int) -> None:
         if not self.debug or self.progress_interval <= 0.0:
@@ -619,6 +625,8 @@ class Tuner:
             self.last_set_t = now
 
     def _maybe_lock(self, b: Bucket, now: float) -> None:
+        if b.state == "LOCKED" or b.locked:
+            return
         stable = (
             b.P < P_STABLE_THR
             and self._bias_in_safe_range(b.bias)
@@ -627,13 +635,19 @@ class Tuner:
             b.state = "TRACKING"
             b.stable_since = 0.0
             return
-        ready = (
+        ready_A = (
             b.n >= N_MIN_SAMPLES_CUMULATIVE
             and b.runs_seen >= N_MIN_RUNS
             and b.layers_seen >= N_MIN_LAYERS
             and b.cumulative_mid_s >= MIN_MID_TIME_S
         )
-        if b.state == "STABLE" and ready:
+        ready_B = (
+            b.n >= N_SINGLE_PRINT_SAMPLES
+            and b.layers_seen >= N_SINGLE_PRINT_LAYERS
+            and b.cumulative_mid_s >= MIN_MID_TIME_S
+            and self.total_print_mid_s >= MIN_PRINT_MID_S
+        )
+        if b.state == "STABLE" and (ready_A or ready_B):
             b.state = "LOCKED"
             b.locked = True
             self._persist()
@@ -781,22 +795,30 @@ def bucket_from_raw(label: str, raw: dict) -> Bucket:
     )
 
 
-def bucket_wait_reason(b: Bucket) -> str:
+def bucket_wait_reason(b: Bucket, total_print_mid_s: float = 0.0) -> str:
     if b.state == "LOCKED" or b.locked:
         return "locked"
     if b.P >= P_STABLE_THR:
         return f"variance P>={P_STABLE_THR:.0f}"
     if not (BIAS_SAFE_MIN <= b.bias <= BIAS_SAFE_MAX):
         return "bias rail guard"
-    if b.n < N_MIN_SAMPLES_CUMULATIVE:
-        return f"samples {b.n}/{N_MIN_SAMPLES_CUMULATIVE}"
-    if b.runs_seen < N_MIN_RUNS:
-        return f"runs {b.runs_seen}/{N_MIN_RUNS}"
-    if b.layers_seen < N_MIN_LAYERS:
-        return f"layers {b.layers_seen}/{N_MIN_LAYERS}"
-    if b.cumulative_mid_s < MIN_MID_TIME_S:
-        return f"mid_time {b.cumulative_mid_s:.0f}/{MIN_MID_TIME_S:.0f}s"
-    return "stable"
+    
+    reasons_A = []
+    if b.n < N_MIN_SAMPLES_CUMULATIVE: reasons_A.append(f"samples {b.n}/{N_MIN_SAMPLES_CUMULATIVE}")
+    if b.runs_seen < N_MIN_RUNS: reasons_A.append(f"runs {b.runs_seen}/{N_MIN_RUNS}")
+    if b.layers_seen < N_MIN_LAYERS: reasons_A.append(f"layers {b.layers_seen}/{N_MIN_LAYERS}")
+    if b.cumulative_mid_s < MIN_MID_TIME_S: reasons_A.append(f"mid_time {b.cumulative_mid_s:.0f}/{MIN_MID_TIME_S:.0f}s")
+    
+    reasons_B = []
+    if b.n < N_SINGLE_PRINT_SAMPLES: reasons_B.append(f"samples {b.n}/{N_SINGLE_PRINT_SAMPLES}")
+    if b.layers_seen < N_SINGLE_PRINT_LAYERS: reasons_B.append(f"layers {b.layers_seen}/{N_SINGLE_PRINT_LAYERS}")
+    if b.cumulative_mid_s < MIN_MID_TIME_S: reasons_B.append(f"mid_time {b.cumulative_mid_s:.0f}/{MIN_MID_TIME_S:.0f}s")
+    if total_print_mid_s < MIN_PRINT_MID_S: reasons_B.append(f"total_mid {total_print_mid_s:.0f}/{MIN_PRINT_MID_S:.0f}s")
+    
+    if not reasons_A or not reasons_B:
+        return "stable"
+    
+    return reasons_A[0] if len(reasons_A) <= len(reasons_B) else reasons_B[0]
 
 
 def print_state_info(state_path: str, machine_id: str, csv_mode: bool = False) -> None:

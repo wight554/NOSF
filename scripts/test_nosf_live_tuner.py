@@ -556,6 +556,74 @@ def test_csv_out_appends_across_runs():
         return "CsvEmitter appends without duplicating header"
 
 
+def test_single_print_path_locks():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t = tuner_mod.Tuner(FakeSerial(), os.path.join(td, "state.json"), "test", now_fn=clock.now, wall_fn=clock.now)
+        b = tuner_mod.Bucket(
+            label="PERIMETER_v50",
+            x=1600.0,
+            P=20.0,
+            n=500,
+            bias=0.400,
+            runs_seen=1,
+            layers_seen=5,
+            cumulative_mid_s=60.0,
+            state="STABLE",
+        )
+        t.total_print_mid_s = 300.0
+        t._maybe_lock(b, clock.now())
+        assert b.state == "LOCKED", b.state
+        assert b.locked
+        return "Path B locks bucket in a single print"
+
+
+def test_neither_path_no_lock():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t = tuner_mod.Tuner(FakeSerial(), os.path.join(td, "state.json"), "test", now_fn=clock.now, wall_fn=clock.now)
+        b = tuner_mod.Bucket(
+            label="PERIMETER_v50",
+            x=1600.0,
+            P=20.0,
+            n=400,
+            bias=0.400,
+            runs_seen=1,
+            layers_seen=4,
+            cumulative_mid_s=60.0,
+            state="STABLE",
+        )
+        t.total_print_mid_s = 200.0
+        t._maybe_lock(b, clock.now())
+        assert b.state == "STABLE", b.state
+        assert not b.locked
+        return "bucket remains STABLE if neither path is satisfied"
+
+
+def test_either_path_no_double_count():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t = tuner_mod.Tuner(FakeSerial(), os.path.join(td, "state.json"), "test", now_fn=clock.now, wall_fn=clock.now)
+        b = tuner_mod.Bucket(
+            label="PERIMETER_v50",
+            x=1600.0,
+            P=20.0,
+            n=600,
+            bias=0.400,
+            runs_seen=3,
+            layers_seen=6,
+            cumulative_mid_s=120.0,
+            state="STABLE",
+        )
+        t.total_print_mid_s = 400.0
+        t._maybe_lock(b, clock.now())
+        assert b.state == "LOCKED", b.state
+        assert b.locked
+        t._maybe_lock(b, clock.now())
+        assert b.state == "LOCKED"
+        return "bucket locks safely when both paths satisfied"
+
+
 def main():
     tests = [
         ("warm-up", test_cold_start_no_set),
@@ -581,6 +649,9 @@ def main():
         ("mk-marker", test_status_mk_marker_fallback),
         ("csv-out-write", test_csv_out_writes_rows),
         ("csv-out-append", test_csv_out_appends_across_runs),
+        ("path-b-lock", test_single_print_path_locks),
+        ("no-path-lock", test_neither_path_no_lock),
+        ("dual-path-safe", test_either_path_no_double_count),
     ]
     print(f"{'case':<14} result")
     print(f"{'-' * 14} {'-' * 40}")
