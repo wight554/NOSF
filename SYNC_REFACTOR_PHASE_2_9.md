@@ -944,15 +944,42 @@ All §15 and §16.10 questions were resolved interactively with the
 maintainer. Table summarizes outcomes; sub-sections amend the spec
 where decisions diverge from §1-§16.
 
-| ID | Topic | Resolution |
+| ID | Topic | Resolution | Implementation status |
+|---|---|---|---|
+| Q-2.9-A | TTY contention logger vs tuner | **Tuner embeds logger.** Tuner becomes single TTY consumer. Optional CSV emission to disk. `nosf_logger.py` deprecated. | ❌ pending (milestone 2.9.14) |
+| Q-2.9-B | Learn `mid_creep_*` from data | **Compute, suggest only.** Analyzer derives values, prints in `[nosf_review]` with confidence. Operator decides whether to apply. | ✅ DONE (commit `b428e2c`, milestone 2.9.4) |
+| Q-2.9-C | Per-layer markers default | **On by default.** `gcode_marker.py` injects `NT:LAYER:N` automatically. `--no-layer-markers` opt-out flag added. | ❌ pending (milestone 2.9.15) |
+| Q-2.9-D | `--commit-flash` survival | **Remove entirely.** Flashing is operator-only via `gen_config.py + ninja + flash_nosf.sh`. Tuner never sends `SV:`. | ❌ pending (milestone 2.9.16) |
+| Q-2.9-E | Daemon recheck action | **Just remind.** Daemon prints stderr message; operator runs analyzer manually. | ❌ pending (milestone 2.9.12) |
+| Q-2.9-F | Path B print-duration gate | **Require print duration ≥ 5 min cumulative MID time across whole print.** Defends against trivial test prints. | ❌ pending (milestone 2.9.8) |
+| Q-2.9-G | Watermark scope | **Per-tunable record.** `_meta.last_commit_values` is a dict of `{key: {value, applied_at, source}}`. Tracks which keys were actually applied. | ❌ pending (milestone 2.9.9) |
+
+### 17.0 Phase 2.9 implementation snapshot
+
+State of repo after commit `6ea2c28`:
+
+| Milestone | Status | Commit |
 |---|---|---|
-| Q-2.9-A | TTY contention logger vs tuner | **Tuner embeds logger.** Tuner becomes single TTY consumer. Optional CSV emission to disk. `nosf_logger.py` deprecated. |
-| Q-2.9-B | Learn `mid_creep_*` from data | **Compute, suggest only.** Analyzer derives values, prints in `[nosf_review]` with confidence. Operator decides whether to apply. |
-| Q-2.9-C | Per-layer markers default | **On by default.** `gcode_marker.py` injects `NT:LAYER:N` automatically. `--no-layer-markers` opt-out flag added. |
-| Q-2.9-D | `--commit-flash` survival | **Remove entirely.** Flashing is operator-only via `gen_config.py + ninja + flash_nosf.sh`. Tuner never sends `SV:`. |
-| Q-2.9-E | Daemon recheck action | **Just remind.** Daemon prints stderr message; operator runs analyzer manually. |
-| Q-2.9-F | Path B print-duration gate | **Require print duration ≥ 5 min cumulative MID time across whole print.** Defends against trivial test prints. |
-| Q-2.9-G | Watermark scope | **Per-tunable record.** `_meta.last_commit_values` is a dict of `{key: {value, applied_at, source}}`. Tracks which keys were actually applied. |
+| 2.9.0 observe-only default | ✅ DONE | `f7ab2ba` |
+| 2.9.1 schema 2 bucket counters | ✅ DONE | `db35cec` |
+| 2.9.2 cumulative lock criteria | ✅ DONE | `ae6745e` |
+| 2.9.3 state-info diagnostics | ✅ DONE | `1d954cc` |
+| 2.9.4 analyzer + acceptance gate | ✅ DONE | `b428e2c` |
+| 2.9.5 review-only patch | ✅ DONE | `4e9db9f` |
+| 2.9.6 documentation | ✅ DONE | `e7c1163` |
+| 2.9.7 firmware cleanup (LIVE_TUNE_LOCK) | ⏸️ deferred | per maintainer; needs ≥5 real-print soaks |
+| 2.9.8 dual-path lock + Path B 5-min gate | ❌ TODO | implements §16.2 + §17.1.4 |
+| 2.9.9 watermark + schema 3 | ❌ TODO | per-tunable per §17.1.5 |
+| 2.9.10 recommend-recheck | ❌ TODO | reads watermark from 2.9.9 |
+| 2.9.11 stale bucket handling | ❌ TODO | §16.5 |
+| 2.9.12 observe-daemon mode | ❌ TODO | §16.6 + §17 Q-E reminder-only |
+| 2.9.13 documentation update | ❌ TODO | §16.7 + §17 doc deltas |
+| 2.9.14 embedded logger CSV | ❌ TODO | §17.1.2 |
+| 2.9.15 gcode_marker default layer markers | ❌ TODO | §17.1.3 |
+| 2.9.16 remove --commit-flash | ❌ TODO | §17.1.1 |
+
+Open work begins at milestone **2.9.16** per §17.3 landing order
+(surface-area cleanup before new feature work).
 
 ### 17.1 Spec amendments — supersedes prior sections
 
