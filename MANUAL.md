@@ -269,6 +269,9 @@ then disconnect the host so NOSF runs standalone.
        --marker-file /tmp/nosf-markers-myprinter.log \
        --commit-on-finish
    ```
+   The tuner truncates `--marker-file` on startup so stale markers from a
+   previous calibration run cannot hide `NT:START`. Use `--keep-marker-file`
+   only when intentionally attaching to a print already in progress.
 3. After at least three calibration runs, analyze the CSV corpus and tuner
    state:
    ```bash
@@ -305,6 +308,8 @@ Mode flags:
 - `--allow-baseline-writes`: debug-only live `SET:BASELINE_SPS` writes.
 - `--commit-flash`: debug-only; implies both write flags and sends `SV:` at
   commit time.
+- `--keep-marker-file`: debug/attach-only; preserve existing `--marker-file`
+  contents instead of truncating it on startup.
 
 Inspect state with:
 

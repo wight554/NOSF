@@ -227,3 +227,22 @@ Settings version 46u → 47u.
 
 ### Completed Steps
 - Implemented sample-based layer credit; validation passed; commit pending.
+- Done: committed and pushed `4ef19e7`.
+
+---
+
+## Marker File Startup Reset
+
+### Findings
+- Interactive run can miss `NT:START` if `/tmp/nosf-markers-<machine>.log` is reused and operator starts tuner after stale marker state exists.
+- Manual `rm -f` before every run is easy to forget and makes calibration startup fragile.
+- Blind reset is correct for normal calibration-from-start workflow, but attach-mid-print still needs an opt-out.
+
+### Plan
+- Update `scripts/nosf_live_tuner.py` to truncate `--marker-file` by default before tailing it.
+- Add `--keep-marker-file` for attach-mid-print/debug sessions where existing marker file content must not be cleared.
+- Update MANUAL/KLIPPER marker-file docs for the new startup reset behavior.
+- Validate with `python3 -m py_compile scripts/*.py` and `python3 scripts/test_nosf_live_tuner.py`.
+
+### Completed Steps
+- Implemented marker-file startup reset and attach opt-out; validation passed; commit pending.

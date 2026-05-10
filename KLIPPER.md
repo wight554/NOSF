@@ -284,6 +284,9 @@ python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
 the tuner tails that file while it remains the only process owning
 `/dev/ttyACM0`. In observe mode the tuner emits `/tmp/nosf-patch.ini` at print
 idle/finish but sends no `SET:` commands and no `SV:`.
+The tuner truncates `--marker-file` when it starts, so each calibration run
+starts from fresh marker state. Add `--keep-marker-file` only when attaching to
+a print that is already in progress.
 
 Recommended analyzer pass after three or more runs:
 

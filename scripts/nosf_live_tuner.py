@@ -947,9 +947,13 @@ def run_loop(args) -> None:
         if args.marker_file:
             parent = os.path.dirname(os.path.abspath(args.marker_file))
             os.makedirs(parent, exist_ok=True)
-            marker_file = open(args.marker_file, "a+")
+            if not args.keep_marker_file:
+                with open(args.marker_file, "w"):
+                    pass
+            marker_file = open(args.marker_file, "r")
             marker_file.seek(0, os.SEEK_END)
-            print(f"[tuner] tailing marker file: {args.marker_file}", file=sys.stderr)
+            action = "tailing existing marker file" if args.keep_marker_file else "reset and tailing marker file"
+            print(f"[tuner] {action}: {args.marker_file}", file=sys.stderr)
         ser = open_serial(args.port, args.baud)
         lines: queue.Queue = queue.Queue(maxsize=1024)
         threading.Thread(target=reader, args=(ser, lines), daemon=True).start()
@@ -1036,6 +1040,11 @@ def main() -> None:
     ap.add_argument("--commit-flash", action="store_true", help="Debug/research: allow live writes and send SV: at commit time")
     ap.add_argument("--klipper-log", help="Tail klippy.log for NOSF_TUNE marker echoes while tuning")
     ap.add_argument("--marker-file", help="Tail local marker file written by scripts/nosf_marker.py")
+    ap.add_argument(
+        "--keep-marker-file",
+        action="store_true",
+        help="Do not truncate --marker-file on startup; useful only when attaching mid-print",
+    )
     ap.add_argument(
         "--progress-interval",
         type=float,
