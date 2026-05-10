@@ -936,3 +936,205 @@ Pairs naturally with systemd unit or `nohup`-style background run.
   parameters were applied vs left at defaults)? Defer until
   partial-merge workflow proves common.
 
+---
+
+## 17. Resolved Open Questions (operator decisions)
+
+All §15 and §16.10 questions were resolved interactively with the
+maintainer. Table summarizes outcomes; sub-sections amend the spec
+where decisions diverge from §1-§16.
+
+| ID | Topic | Resolution |
+|---|---|---|
+| Q-2.9-A | TTY contention logger vs tuner | **Tuner embeds logger.** Tuner becomes single TTY consumer. Optional CSV emission to disk. `nosf_logger.py` deprecated. |
+| Q-2.9-B | Learn `mid_creep_*` from data | **Compute, suggest only.** Analyzer derives values, prints in `[nosf_review]` with confidence. Operator decides whether to apply. |
+| Q-2.9-C | Per-layer markers default | **On by default.** `gcode_marker.py` injects `NT:LAYER:N` automatically. `--no-layer-markers` opt-out flag added. |
+| Q-2.9-D | `--commit-flash` survival | **Remove entirely.** Flashing is operator-only via `gen_config.py + ninja + flash_nosf.sh`. Tuner never sends `SV:`. |
+| Q-2.9-E | Daemon recheck action | **Just remind.** Daemon prints stderr message; operator runs analyzer manually. |
+| Q-2.9-F | Path B print-duration gate | **Require print duration ≥ 5 min cumulative MID time across whole print.** Defends against trivial test prints. |
+| Q-2.9-G | Watermark scope | **Per-tunable record.** `_meta.last_commit_values` is a dict of `{key: {value, applied_at, source}}`. Tracks which keys were actually applied. |
+
+### 17.1 Spec amendments — supersedes prior sections
+
+#### 17.1.1 Tuner mode matrix (supersedes §6)
+
+`--commit-flash` removed. Patch emission no longer touches the
+serial port for `SV:`.
+
+| Mode | Reads markers | Reads status | Bucket KF | JSON persist | CSV out (if `--csv-out`) | `SET:LIVE_TUNE_LOCK:1` | `SET:TRAIL_BIAS_FRAC` | `SET:BASELINE_SPS` | `SV:` |
+|---|---|---|---|---|---|---|---|---|---|
+| `--observe` (default) | yes | yes | yes | yes | yes | no | no | no | no |
+| `--allow-bias-writes` | yes | yes | yes | yes | yes | yes | yes (rate-limited) | no | no |
+| `--allow-baseline-writes` | yes | yes | yes | yes | yes | yes | no | yes (rate-limited) | no |
+
+**No row for `SV:` writes.** Operator-only flashing path.
+
+#### 17.1.2 Embedded logger (Q-2.9-A resolution)
+
+`nosf_live_tuner.py` becomes the sole TTY owner. New flag:
+- `--csv-out PATH` — append per-status-row CSV alongside JSON state.
+  Format compatible with `nosf_analyze.py` input. Ignored when
+  empty / not passed.
+- CSV row schema: `wall_ts, run_seq, layer, feature, v_fil, BL, BP, BPV, EST, RT, AD, APX, CF, TC, BUF, MK_seq`.
+- File opened append-mode; rotates only on operator intervention.
+- `--csv-out` defaults OFF; operator opts in for analyzer corpus.
+
+`scripts/nosf_logger.py` marked deprecated in 2.9.13 docs. Kept
+as-is for backward compatibility one phase; consider removal in
+Phase 2.10.
+
+#### 17.1.3 `gcode_marker.py` per-layer default (Q-2.9-C resolution)
+
+Default behavior changed:
+- `--every-layer` becomes the default. New `--no-layer-markers` flag
+  to suppress for production prints that don't want extra G-code.
+- Existing `--every-layer` flag becomes a no-op (still accepted for
+  backward compatibility); print warning that it's now default.
+- Module docstring + README documentation updated.
+
+#### 17.1.4 Path B print-duration gate (Q-2.9-F resolution)
+
+Path B (single-print high-confidence) gains an additional
+constraint. Bucket transitions LOCKED via Path B only when ALL of:
+- `n ≥ N_SINGLE_PRINT_SAMPLES` (500)
+- `layers_seen ≥ N_SINGLE_PRINT_LAYERS` (5)
+- `cumulative_mid_s ≥ MIN_MID_TIME_S` (60) (per bucket)
+- **`total_print_mid_s ≥ MIN_PRINT_MID_S` (300)** — total MID time
+  across the entire print, not just this bucket. Prevents lock-up
+  from short single-feature spam tests.
+
+`total_print_mid_s` is a tuner-level counter, reset on `NT:START`.
+Persisted in `_meta` for the current run only; cleared at next
+START.
+
+#### 17.1.5 Watermark per-tunable (Q-2.9-G resolution, supersedes §16.3)
+
+Schema 2 → 3 migration changes structure of `_meta`:
+
+```json
+{
+  "_schema": 3,
+  "<machine-id>": {
+    "_meta": {
+      "last_commit_values": {
+        "baseline_rate":             {"value": 1582,  "applied_at": "2026-05-10T18:30:00Z", "source": "config.ini"},
+        "sync_trailing_bias_frac":   {"value": 0.342, "applied_at": "2026-05-10T18:30:00Z", "source": "config.ini"},
+        "mid_creep_timeout_ms":      {"value": 4000,  "applied_at": null,                    "source": "default"},
+        "mid_creep_rate_sps_per_s":  {"value": 5,     "applied_at": null,                    "source": "default"},
+        "mid_creep_cap_frac":        {"value": 10,    "applied_at": null,                    "source": "default"},
+        "buf_variance_blend_frac":   {"value": 0.5,   "applied_at": null,                    "source": "default"},
+        "buf_variance_blend_ref_mm": {"value": 1.0,   "applied_at": null,                    "source": "default"}
+      },
+      "last_commit_run_seq": 7,
+      "last_commit_sample_total": 18234
+    },
+    "<bucket_label>": { ... }
+  }
+}
+```
+
+`source` field values:
+- `"config.ini"` — operator merged from analyzer patch.
+- `"default"` — value left at firmware default, never tuned.
+- `"manual"` — operator hand-set value, not from analyzer.
+
+`nosf_analyze.py --commit-watermark` accepts a `--keys` argument
+(comma-separated list of keys actually merged). Only those keys
+get `applied_at` updated. Others stay at previous state.
+
+Drift detection (recommend-recheck): only fires for keys whose
+`source == "config.ini"` (i.e., previously committed). Keys at
+`default` or `manual` are skipped.
+
+### 17.2 New milestones (from resolutions)
+
+```
+[ ] 2.9.14 embedded logger CSV emission (--csv-out)
+[ ] 2.9.15 gcode_marker.py default --every-layer (Q-2.9-C)
+[ ] 2.9.16 remove --commit-flash + SV: code path (Q-2.9-D)
+```
+
+#### 2.9.14 — Embedded logger CSV emission
+
+**Files:** `scripts/nosf_live_tuner.py`, `scripts/test_nosf_live_tuner.py`
+
+Changes:
+- Add `--csv-out PATH` argument.
+- New helper `CsvEmitter(path)`: opens append, writes header on
+  empty file, writes one row per `on_status` call.
+- Hook into existing `on_status` after parse but before bucket
+  update (so even gated rows are captured for analyzer).
+- Row schema per §17.1.2.
+- Persist on SIGTERM/SIGINT.
+
+Tests:
+- `test_csv_out_writes_rows` — verify N status calls produce N+1
+  lines (header + rows).
+- `test_csv_out_appends_across_runs` — second tuner instance with
+  same path appends, header not duplicated.
+
+#### 2.9.15 — gcode_marker.py default --every-layer
+
+**Files:** `scripts/gcode_marker.py`, `scripts/test_*` if any,
+`MANUAL.md`, `KLIPPER.md`.
+
+Changes:
+- Default `every_layer=True` in `process_gcode`.
+- Argparse: replace `--every-layer` with `--no-layer-markers`
+  (store_false). Keep `--every-layer` as deprecated alias that
+  prints a warning.
+- Update docstring + README.
+
+Tests: existing test_nosf_live_tuner.py marker handling unchanged.
+No new tests required; docstring + manual smoke test sufficient.
+
+#### 2.9.16 — Remove --commit-flash
+
+**Files:** `scripts/nosf_live_tuner.py`, `scripts/test_nosf_live_tuner.py`
+
+Changes:
+- Remove `--commit-flash` argument.
+- Remove `SET:LIVE_TUNE_LOCK:0` / `time.sleep(0.1)` / `SV:` calls
+  from commit path. `finish_commit()` now writes patch only.
+- Remove `--commit-flash` from argparse mutex group with
+  `--observe-daemon`.
+- Update docstring (§17.1.1 mode matrix).
+- Remove `test_commit_flash_invokes_sv` (or rewrite as
+  `test_no_sv_in_finish_commit`).
+
+Tests: replace `test_commit_flash_invokes_sv` →
+`test_finish_commit_emits_patch_no_sv` that verifies patch file
+written and `SV:` is NOT in `fake.writes`.
+
+### 17.3 Updated milestone order
+
+Recommended landing order:
+1. 2.9.16 first (remove --commit-flash) — simplifies surface area
+   before adding new flags.
+2. 2.9.15 (gcode_marker default layers) — required for Path B
+   layer counter accuracy.
+3. 2.9.14 (CSV out) — provides analyzer corpus for upcoming work.
+4. 2.9.8 (dual-path lock) — incorporates 17.1.4 print-duration gate.
+5. 2.9.9 (watermark) — uses 17.1.5 per-tunable structure.
+6. 2.9.10 (recommend-recheck) — uses watermark from 2.9.9.
+7. 2.9.11 (stale prune).
+8. 2.9.12 (observe-daemon).
+9. 2.9.13 (docs) — covers all preceding.
+
+### 17.4 Updated acceptance criteria
+
+In addition to §13 and §16.8:
+- `--csv-out` produces CSV consumable by `nosf_analyze.py`
+  without changes to analyzer input parsing.
+- `nosf_logger.py` deprecation message shown on invocation;
+  workflow examples in MANUAL.md and KLIPPER.md use only
+  `nosf_live_tuner.py --csv-out`.
+- `gcode_marker.py` without flags produces output containing
+  per-layer `NT:LAYER:N` markers (verify via grep).
+- Path B does not lock buckets in a 2-minute synthetic test
+  print; locks them in a 6-minute print with same per-bucket
+  evidence.
+- Watermark `--commit-watermark --keys baseline_rate` updates
+  only `baseline_rate.applied_at`; other keys retain their
+  prior `source`.
+
