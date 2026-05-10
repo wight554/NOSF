@@ -74,7 +74,7 @@ N_MIN_SAMPLES = 200
 BUCKET_LOCK_S = 20.0
 Q_PROCESS = 25.0
 R_BASE = 100.0
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_STATE_DIR = os.path.expanduser("~/nosf-state")
 
 STATUS_FIELD_RE = re.compile(r"(?P<key>[A-Z0-9]+):(?P<val>-?\d+(?:\.\d+)?|[A-Z_]+|[^,]*)")
@@ -103,6 +103,13 @@ class Bucket:
     locked: bool = False
     last_debug_t: float = 0.0
     last_debug_state: str = ""
+    runs_seen: int = 0
+    layers_seen: int = 0
+    cumulative_mid_s: float = 0.0
+    low_flow_skip_count: int = 0
+    rail_skip_count: int = 0
+    rollback_count: int = 0
+    first_seen_run: str = ""
 
 
 def default_state_path(machine_id: str) -> str:
@@ -135,6 +142,18 @@ def kf_predict_update(bucket: Bucket, z: float, cf: float, apx: int, dt_s: float
     bucket.x += K * (z - bucket.x)
     bucket.P *= 1.0 - K
     bucket.n += 1
+
+
+def migrate_state_data(data: dict) -> dict:
+    schema = data.get("_schema")
+    if schema == SCHEMA_VERSION:
+        return data
+    if schema == 1 and SCHEMA_VERSION == 2:
+        data["_schema"] = SCHEMA_VERSION
+        return data
+    if isinstance(schema, int) and schema > SCHEMA_VERSION:
+        raise ValueError(f"state file schema {schema} is newer than supported {SCHEMA_VERSION}")
+    raise ValueError(f"state file schema mismatch: got {schema!r}, expected {SCHEMA_VERSION}")
 
 
 class Tuner:
@@ -191,9 +210,11 @@ class Tuner:
         except (OSError, json.JSONDecodeError) as exc:
             print(f"[tuner] warning: ignoring unreadable state file: {exc}", file=sys.stderr)
             return
-        if data.get("_schema") != SCHEMA_VERSION:
-            print("[tuner] warning: state file schema mismatch; ignoring", file=sys.stderr)
-            return
+        try:
+            data = migrate_state_data(data)
+        except ValueError as exc:
+            print(f"[tuner] {exc}", file=sys.stderr)
+            sys.exit(1)
         for label, raw in data.get(self.machine_id, {}).items():
             b = Bucket(
                 label=label,
@@ -208,6 +229,13 @@ class Tuner:
                 first_seen=float(raw.get("first_seen", 0.0)),
                 last_seen=float(raw.get("last_seen", 0.0)),
                 locked=bool(raw.get("locked", False)),
+                runs_seen=int(raw.get("runs_seen", 0)),
+                layers_seen=int(raw.get("layers_seen", 0)),
+                cumulative_mid_s=float(raw.get("cumulative_mid_s", 0.0)),
+                low_flow_skip_count=int(raw.get("low_flow_skip_count", 0)),
+                rail_skip_count=int(raw.get("rail_skip_count", 0)),
+                rollback_count=int(raw.get("rollback_count", 0)),
+                first_seen_run=str(raw.get("first_seen_run", "")),
             )
             self.buckets[label] = b
 
@@ -227,11 +255,19 @@ class Tuner:
                 "n": b.n,
                 "bias": b.bias,
                 "bp_ewma": b.bp_ewma,
+                "state": b.state,
                 "locked": b.state == "LOCKED" or b.locked,
                 "last_set_x": b.last_set_x,
                 "last_set_bias": b.last_set_bias,
                 "first_seen": b.first_seen,
                 "last_seen": b.last_seen,
+                "runs_seen": b.runs_seen,
+                "layers_seen": b.layers_seen,
+                "cumulative_mid_s": b.cumulative_mid_s,
+                "low_flow_skip_count": b.low_flow_skip_count,
+                "rail_skip_count": b.rail_skip_count,
+                "rollback_count": b.rollback_count,
+                "first_seen_run": b.first_seen_run,
             }
             for label, b in sorted(self.buckets.items())
         }
@@ -376,6 +412,9 @@ class Tuner:
 
         label = bucket_label(self.last_feature, self.last_v_fil)
         if est < MIN_LEARN_EST_SPS:
+            existing = self.buckets.get(label)
+            if existing:
+                existing.low_flow_skip_count += 1
             if self.debug and now - self.last_low_flow_warn_t >= max(1.0, self.progress_interval):
                 print(
                     f"[tuner] skip low-flow {label} est={est:.1f} < {MIN_LEARN_EST_SPS:.0f}",
@@ -396,6 +435,8 @@ class Tuner:
             return
         dt_s = now - self.last_status_t
         self.last_status_t = now
+        if dt_s > 0.0:
+            b.cumulative_mid_s += dt_s
 
         if b.state == "LOCKED" or b.locked:
             if abs(est - b.x) * abs(est - b.x) > 4.0 * (b.P + R_BASE):
@@ -484,6 +525,7 @@ class Tuner:
                     self.last_bias_skip_warn_t = now
                 return
             if not self._bias_in_safe_range(b.bias):
+                b.rail_skip_count += 1
                 if self.debug and now - self.last_bias_rail_warn_t >= max(1.0, self.progress_interval):
                     print(
                         f"[tuner] bias write skipped for {b.label}; rail guard bias={b.bias:.3f}",
@@ -526,6 +568,7 @@ class Tuner:
         if not b or b.locked or b.state == "LOCKED":
             return
         b.P = max(b.P, 1e4)
+        b.rollback_count += 1
         if self.allow_baseline_writes and b.last_set_x:
             self._send(f"SET:BASELINE_SPS:{int(round(b.last_set_x))}")
 
@@ -643,7 +686,9 @@ def print_state_info(state_path: str, machine_id: str) -> None:
     except (OSError, json.JSONDecodeError) as exc:
         print(f"[tuner] state file unreadable: {exc}", file=sys.stderr)
         sys.exit(1)
-    if data.get("_schema") != SCHEMA_VERSION:
+    try:
+        data = migrate_state_data(data)
+    except ValueError:
         print(
             f"[tuner] state file schema mismatch: got {data.get('_schema')!r}, expected {SCHEMA_VERSION}",
             file=sys.stderr,
@@ -673,8 +718,10 @@ def emit_patch(state_path: str, machine_id: str, out_path: str) -> None:
         sys.exit(1)
     with open(state_path) as fh:
         data = json.load(fh)
-    if data.get("_schema") != SCHEMA_VERSION:
-        print("[tuner] state file schema mismatch", file=sys.stderr)
+    try:
+        data = migrate_state_data(data)
+    except ValueError as exc:
+        print(f"[tuner] {exc}", file=sys.stderr)
         sys.exit(1)
     locked = {
         k: v for k, v in data.get(machine_id, {}).items()

@@ -230,6 +230,85 @@ def test_commit_flash_invokes_sv():
         return "commit-flash sends SV and emits patch"
 
 
+def test_schema1_migration():
+    with tempfile.TemporaryDirectory() as td:
+        state_path = os.path.join(td, "state.json")
+        with open(state_path, "w") as fh:
+            json.dump(
+                {
+                    "_schema": 1,
+                    "test": {
+                        "PERIMETER_v40": {
+                            "x": 1820.0,
+                            "P": 78.2,
+                            "n": 4321,
+                            "bias": 0.420,
+                            "bp_ewma": -3.1,
+                            "locked": True,
+                            "last_set_x": 1820.0,
+                            "last_set_bias": 0.420,
+                        }
+                    },
+                },
+                fh,
+            )
+        clock = Clock()
+        t = tuner_mod.Tuner(FakeSerial(), state_path, "test", now_fn=clock.now, wall_fn=clock.now)
+        b = t.buckets["PERIMETER_v40"]
+        assert b.x == 1820.0, b
+        assert b.n == 4321, b
+        assert b.low_flow_skip_count == 0, b.low_flow_skip_count
+        assert b.rail_skip_count == 0, b.rail_skip_count
+        assert b.rollback_count == 0, b.rollback_count
+        assert b.runs_seen == 0, b.runs_seen
+        assert b.layers_seen == 0, b.layers_seen
+        assert b.cumulative_mid_s == 0.0, b.cumulative_mid_s
+        t._persist()
+        with open(state_path) as fh:
+            migrated = json.load(fh)
+        assert migrated["_schema"] == tuner_mod.SCHEMA_VERSION, migrated
+        raw = migrated["test"]["PERIMETER_v40"]
+        assert raw["low_flow_skip_count"] == 0, raw
+        assert raw["rail_skip_count"] == 0, raw
+        assert raw["rollback_count"] == 0, raw
+        return "schema 1 state migrates to schema 2 with zeroed counters"
+
+
+def test_counter_increments():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t, fake = make_tuner(os.path.join(td, "state.json"), clock)
+        clock.step(1.0)
+        t.on_status(status(est=1800))
+        label = "PERIMETER_v50"
+        b = t.buckets[label]
+
+        clock.step(1.0)
+        t.on_status(status(est=0.5))
+        assert b.low_flow_skip_count == 1, b.low_flow_skip_count
+
+        t.allow_bias_writes = True
+        b.P = 50.0
+        b.n = 250
+        b.bias = 0.700
+        b.last_set_x = b.x
+        b.last_set_bias = 0.400
+        clock.step(3.0)
+        t._maybe_emit_set(b, clock.now())
+        assert b.rail_skip_count == 1, b.rail_skip_count
+        assert not [w for w in fake.writes if w.startswith("SET:TRAIL_BIAS_FRAC:")], fake.writes
+
+        t.active_label = label
+        t.allow_baseline_writes = True
+        b.locked = False
+        b.state = "TRACKING"
+        b.last_set_x = 1775.0
+        t._rollback_active()
+        assert b.rollback_count == 1, b.rollback_count
+        assert "SET:BASELINE_SPS:1775" in fake.writes, fake.writes
+        return "low-flow, rail, and rollback counters increment"
+
+
 def test_low_flow_samples_are_ignored():
     with tempfile.TemporaryDirectory() as td:
         clock = Clock()
@@ -332,6 +411,8 @@ def main():
         ("observe-default", test_observe_default_no_writes),
         ("bias-on", test_allow_bias_writes_writes),
         ("commit-flash", test_commit_flash_invokes_sv),
+        ("schema1", test_schema1_migration),
+        ("counters", test_counter_increments),
         ("low-flow", test_low_flow_samples_are_ignored),
         ("bias-rail", test_bias_rail_guard_blocks_set_and_lock),
         ("debug-log", test_debug_bucket_progress_line),
