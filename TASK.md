@@ -311,5 +311,6 @@ Settings version 46u → 47u.
 - **2.10.6 — Deprecation flip:** after hardware soak criteria are satisfied or maintainer explicitly allows, flip `gcode_marker.py` default `--emit` to `sidecar`, warn on shell-marker emit modes, warn when `scripts/nosf_marker.py` is invoked, and move shell-marker docs under Legacy. Smoke-test `--emit file` fallback on a sample G-code.
 
 ### Completed Steps
-- Phase 2.10 preflight read done; implementation plan appended. Commit pending.
-- 2.10.1 done: added `--emit sidecar`, sidecar JSON generation, Orca fixture, and stdlib `test_gcode_marker.py`; validation passed (`python3 -m py_compile scripts/gcode_marker.py`, `python3 -m py_compile scripts/test_gcode_marker.py`, `python3 scripts/test_gcode_marker.py`, `python3 -m py_compile scripts/*.py`, `python3 scripts/test_nosf_live_tuner.py`). Commit pending.
+- Phase 2.10 preflight read done; implementation plan appended. Committed and pushed `9e9afca`.
+- 2.10.1 done: added `--emit sidecar`, sidecar JSON generation, Orca fixture, and stdlib `test_gcode_marker.py`; validation passed (`python3 -m py_compile scripts/gcode_marker.py`, `python3 -m py_compile scripts/test_gcode_marker.py`, `python3 scripts/test_gcode_marker.py`, `python3 -m py_compile scripts/*.py`, `python3 scripts/test_nosf_live_tuner.py`). Committed and pushed `4b59571`.
+- 2.10.2 done: added stdlib Klipper UDS client with ETX framing, partial-chunk reassembly, subscribe request shape, and socketpair tests. Commit pending.
