@@ -312,3 +312,4 @@ Settings version 46u → 47u.
 
 ### Completed Steps
 - Phase 2.10 preflight read done; implementation plan appended. Commit pending.
+- 2.10.1 done: added `--emit sidecar`, sidecar JSON generation, Orca fixture, and stdlib `test_gcode_marker.py`; validation passed (`python3 -m py_compile scripts/gcode_marker.py`, `python3 -m py_compile scripts/test_gcode_marker.py`, `python3 scripts/test_gcode_marker.py`, `python3 -m py_compile scripts/*.py`, `python3 scripts/test_nosf_live_tuner.py`). Commit pending.
