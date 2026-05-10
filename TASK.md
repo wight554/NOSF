@@ -246,3 +246,29 @@ Settings version 46u → 47u.
 
 ### Completed Steps
 - Implemented marker-file startup reset and attach opt-out; validation passed; commit pending.
+
+---
+
+## Phase 2.9 Continuation — milestones 2.9.16 → 2.9.13
+
+### Findings
+- Current milestones 2.9.0-2.9.6 are DONE.
+- `scripts/nosf_live_tuner.py` currently has `--commit-flash` argument and emits `SV:`.
+- `scripts/gcode_marker.py` uses `--every-layer` as opt-in.
+- Analyzer lacks 2.9.14 embedded logger `--csv-out` format consumption (already compatible).
+- Schema migration in `nosf_live_tuner.py` is hard-coded to 1->2. Needs a generic chained implementation.
+- Dual-path lock, recommend-recheck, stale bucket handling, and observe daemon need implementation.
+
+### Plan
+- **2.9.16:** Remove `--commit-flash` and `SV:` code path from `nosf_live_tuner.py` and its tests.
+- **2.9.15:** Change `gcode_marker.py` default layer markers to ON. Add `--no-layer-markers` and deprecate `--every-layer`.
+- **2.9.14:** Add `--csv-out` to `nosf_live_tuner.py` for embedded logger CSV emission. Update tests.
+- **2.9.8:** Implement dual-path lock in `nosf_live_tuner.py` and print-duration gate (`MIN_PRINT_MID_S`). Add tests.
+- **2.9.9:** Implement schema 2->3 migration with `_meta` watermark, rewriting `migrate_state_data` per §17.1.6. Update analyzer with `--commit-watermark`. Add tests.
+- **2.9.10:** Implement `--recommend-recheck` in `nosf_live_tuner.py`. Add tests.
+- **2.9.11:** Implement stale bucket pruning (`--prune-stale`) and exclusion. Add tests.
+- **2.9.12:** Add `--observe-daemon` mode to `nosf_live_tuner.py`. Add tests.
+- **2.9.13:** Update documentation (`MANUAL.md`, `KLIPPER.md`, `README.md`) and deprecate `nosf_logger.py`.
+
+### Completed Steps
+- Phase 2.9 Continuation pre-work: read specs and updated TASK.md.
