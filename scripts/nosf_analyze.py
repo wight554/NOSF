@@ -385,6 +385,33 @@ def run(args):
         print(f"[*] Wrote rejected review patch to {args.out}", file=sys.stderr)
         return 1
     print(f"[*] Wrote review patch to {args.out}")
+
+    if args.commit_watermark:
+        if not args.state:
+            print("Error: --commit-watermark requires --state", file=sys.stderr)
+            return 1
+        import time
+        with open(args.state, "r") as fh:
+            data = json.load(fh)
+        machine_meta = data.setdefault(args.machine_id, {}).setdefault("_meta", {})
+        last_commit = machine_meta.setdefault("last_commit_values", {})
+        now_ts = int(time.time())
+        keys_to_update = [k.strip() for k in args.keys.split(",")] if args.keys else list(DEFAULTS.keys())
+        for key in keys_to_update:
+            if key in DEFAULTS:
+                rec = recommendations[key][0]
+                last_commit[key] = {
+                    "value": rec,
+                    "applied_at": now_ts,
+                    "source": "analyzer"
+                }
+        tmp = args.state + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(data, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+        os.replace(tmp, args.state)
+        print(f"[*] Updated watermark in {args.state} for keys: {', '.join(keys_to_update)}", file=sys.stderr)
+
     return 0
 
 
@@ -394,8 +421,11 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--mode", choices=["safe", "aggressive"], default="safe")
     ap.add_argument("--state", help="Optional nosf_live_tuner.py bucket state JSON")
+    ap.add_argument("--machine-id", default="default", help="Machine ID for state file (default: default)")
     ap.add_argument("--config", default="config.ini", help="Current config.ini for current-value display")
     ap.add_argument("--acceptance-gate", action="store_true", help="Exit non-zero unless Phase 2.9 acceptance checks pass")
+    ap.add_argument("--commit-watermark", action="store_true", help="Write analysis values to _meta watermark in state JSON")
+    ap.add_argument("--keys", help="Comma-separated list of keys to update in watermark (defaults to all)")
     ap.add_argument("--feedforward", action="store_true", help=argparse.SUPPRESS)
     return run(ap.parse_args())
 

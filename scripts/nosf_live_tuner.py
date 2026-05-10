@@ -79,7 +79,7 @@ N_SINGLE_PRINT_LAYERS = 5
 MIN_PRINT_MID_S = 300.0
 Q_PROCESS = 25.0
 R_BASE = 100.0
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 DEFAULT_STATE_DIR = os.path.expanduser("~/nosf-state")
 PATCH_KEYS = [
     "baseline_rate",
@@ -183,16 +183,41 @@ class CsvEmitter:
         self.fh.close()
 
 
+def _migrate_1_to_2(data: dict) -> dict:
+    data["_schema"] = 2
+    return data
+
+def _migrate_2_to_3(data: dict) -> dict:
+    for machine_id, machine_data in data.items():
+        if machine_id.startswith("_") or not isinstance(machine_data, dict):
+            continue
+        meta = machine_data.setdefault("_meta", {})
+        meta.setdefault("last_commit_values", {
+            key: {"value": None, "applied_at": None, "source": "default"}
+            for key in PATCH_KEYS
+        })
+        meta.setdefault("last_commit_run_seq", 0)
+        meta.setdefault("last_commit_sample_total", 0)
+    data["_schema"] = 3
+    return data
+
+_MIGRATIONS = {
+    1: _migrate_1_to_2,
+    2: _migrate_2_to_3,
+}
+
 def migrate_state_data(data: dict) -> dict:
     schema = data.get("_schema")
-    if schema == SCHEMA_VERSION:
-        return data
-    if schema == 1 and SCHEMA_VERSION == 2:
-        data["_schema"] = SCHEMA_VERSION
-        return data
-    if isinstance(schema, int) and schema > SCHEMA_VERSION:
+    if not isinstance(schema, int):
+        raise ValueError(f"state file schema mismatch: got {schema!r}, expected int")
+    if schema > SCHEMA_VERSION:
         raise ValueError(f"state file schema {schema} is newer than supported {SCHEMA_VERSION}")
-    raise ValueError(f"state file schema mismatch: got {schema!r}, expected {SCHEMA_VERSION}")
+    while schema < SCHEMA_VERSION:
+        if schema not in _MIGRATIONS:
+            raise ValueError(f"missing migration step from schema {schema}")
+        data = _MIGRATIONS[schema](data)
+        schema = data["_schema"]
+    return data
 
 
 class Tuner:
@@ -291,10 +316,13 @@ class Tuner:
         try:
             with open(self.state_path) as fh:
                 data = json.load(fh)
-        except (OSError, json.JSONDecodeError):
-            data = {}
+            data = migrate_state_data(data)
+        except (OSError, json.JSONDecodeError, ValueError):
+            data = {"_schema": SCHEMA_VERSION}
+            
+        machine_meta = data.get(self.machine_id, {}).get("_meta")
         data["_schema"] = SCHEMA_VERSION
-        data[self.machine_id] = {
+        machine_data = {
             label: {
                 "x": b.x,
                 "P": b.P,
@@ -317,6 +345,10 @@ class Tuner:
             }
             for label, b in sorted(self.buckets.items())
         }
+        if machine_meta is not None:
+            machine_data["_meta"] = machine_meta
+        data[self.machine_id] = machine_data
+        
         tmp = self.state_path + ".tmp"
         with open(tmp, "w") as fh:
             json.dump(data, fh, indent=2, sort_keys=True)

@@ -115,7 +115,7 @@ def test_acceptance_gate_fail_low_coverage():
         config = os.path.join(td, "config.ini")
         write_config(config)
         out = os.path.join(td, "patch.ini")
-        args = SimpleNamespace(inputs=csvs, out=out, mode="safe", state=state, config=config, acceptance_gate=True)
+        args = SimpleNamespace(inputs=csvs, out=out, mode="safe", state=state, config=config, acceptance_gate=True, commit_watermark=False, keys=None, machine_id="test")
         err = StringIO()
         with redirect_stderr(err):
             rc = analyze.run(args)
@@ -145,7 +145,7 @@ def test_acceptance_gate_pass_three_runs():
         config = os.path.join(td, "config.ini")
         write_config(config)
         out = os.path.join(td, "patch.ini")
-        args = SimpleNamespace(inputs=csvs, out=out, mode="safe", state=state, config=config, acceptance_gate=True)
+        args = SimpleNamespace(inputs=csvs, out=out, mode="safe", state=state, config=config, acceptance_gate=True, commit_watermark=False, keys=None, machine_id="test")
         rc = analyze.run(args)
         assert rc == 0, rc
         with open(out) as fh:

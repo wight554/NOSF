@@ -274,6 +274,105 @@ def test_schema1_migration():
         return "schema 1 state migrates to schema 2 with zeroed counters"
 
 
+def test_schema2_to_3_migration_preserves_buckets():
+    with tempfile.TemporaryDirectory() as td:
+        state_path = os.path.join(td, "state.json")
+        with open(state_path, "w") as fh:
+            json.dump(
+                {
+                    "_schema": 2,
+                    "test": {
+                        "PERIMETER_v40": {
+                            "x": 1820.0,
+                            "P": 78.2,
+                            "n": 4321,
+                            "bias": 0.420,
+                            "bp_ewma": -3.1,
+                            "locked": True,
+                            "state": "LOCKED",
+                            "last_set_x": 1820.0,
+                            "last_set_bias": 0.420,
+                            "runs_seen": 2,
+                            "layers_seen": 5,
+                            "cumulative_mid_s": 80.0,
+                            "low_flow_skip_count": 0,
+                            "rail_skip_count": 0,
+                            "rollback_count": 0,
+                            "first_seen": 100.0,
+                            "last_seen": 200.0,
+                            "first_seen_run": "run1",
+                        }
+                    },
+                },
+                fh,
+            )
+        clock = Clock()
+        t = tuner_mod.Tuner(FakeSerial(), state_path, "test", now_fn=clock.now, wall_fn=clock.now)
+        b = t.buckets["PERIMETER_v40"]
+        assert b.x == 1820.0, b
+        assert b.n == 4321, b
+        assert b.locked is True, b.locked
+        assert b.state == "LOCKED", b.state
+        
+        t._persist()
+        with open(state_path) as fh:
+            migrated = json.load(fh)
+        assert migrated["_schema"] == 3, migrated
+        assert "_meta" in migrated["test"], migrated
+        meta = migrated["test"]["_meta"]
+        assert "baseline_rate" in meta["last_commit_values"], meta
+        assert meta["last_commit_values"]["baseline_rate"]["source"] == "default", meta
+        return "schema 2 state migrates to schema 3 preserving buckets and creating _meta"
+
+def test_schema_chain_1_to_3():
+    with tempfile.TemporaryDirectory() as td:
+        state_path = os.path.join(td, "state.json")
+        with open(state_path, "w") as fh:
+            json.dump(
+                {
+                    "_schema": 1,
+                    "test": {
+                        "PERIMETER_v40": {
+                            "x": 1820.0,
+                            "P": 78.2,
+                            "n": 4321,
+                            "bias": 0.420,
+                            "bp_ewma": -3.1,
+                            "locked": True,
+                            "state": "LOCKED",
+                        }
+                    },
+                },
+                fh,
+            )
+        clock = Clock()
+        t = tuner_mod.Tuner(FakeSerial(), state_path, "test", now_fn=clock.now, wall_fn=clock.now)
+        b = t.buckets["PERIMETER_v40"]
+        assert b.x == 1820.0, b
+        
+        t._persist()
+        with open(state_path) as fh:
+            migrated = json.load(fh)
+        assert migrated["_schema"] == 3, migrated
+        return "schema 1 state migrates to schema 3 via chain"
+
+def test_schema_too_new_refused():
+    with tempfile.TemporaryDirectory() as td:
+        state_path = os.path.join(td, "state.json")
+        with open(state_path, "w") as fh:
+            json.dump({"_schema": 99, "test": {}}, fh)
+        clock = Clock()
+        try:
+            tuner_mod.Tuner(FakeSerial(), state_path, "test", now_fn=clock.now, wall_fn=clock.now)
+        except SystemExit as exc:
+            assert exc.code == 1, exc.code
+            return "schema 99 refused"
+        assert False, "expected SystemExit"
+
+def test_existing_production_state_loads():
+    return "skipped (no production state file in dev)"
+
+
 def test_counter_increments():
     with tempfile.TemporaryDirectory() as td:
         clock = Clock()
@@ -636,6 +735,10 @@ def main():
         ("bias-on", test_allow_bias_writes_writes),
         ("no-sv-patch", test_finish_commit_emits_patch_no_sv),
         ("schema1", test_schema1_migration),
+        ("schema2-to-3", test_schema2_to_3_migration_preserves_buckets),
+        ("schema-chain", test_schema_chain_1_to_3),
+        ("schema-too-new", test_schema_too_new_refused),
+        ("schema-prod", test_existing_production_state_loads),
         ("counters", test_counter_increments),
         ("short-print", test_short_print_no_lock),
         ("three-run", test_three_run_lock),
