@@ -1261,6 +1261,7 @@ def main() -> None:
     ap.add_argument("--unlock", metavar="FEATURE", help="Unlock matching bucket label or feature prefix and exit")
     ap.add_argument("--state-info", action="store_true", help="Print state summary table and exit")
     ap.add_argument("--csv", action="store_true", help="With --state-info, emit machine-readable CSV rows")
+    ap.add_argument("--include-stale", action="store_true", help="Include buckets not seen in >60 days in --state-info")
     ap.add_argument("--csv-out", metavar="PATH", help="Append per-status-row CSV alongside JSON state")
     ap.add_argument("--recommend-recheck", action="store_true", help="Evaluate watermark drift and suggest if analyzer should be run")
     ap.add_argument("--prune-stale", action="store_true", help="Remove buckets not seen in >60 days from state file")
