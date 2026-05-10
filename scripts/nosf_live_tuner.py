@@ -492,21 +492,7 @@ class Tuner:
         self._debug_bucket_progress(b, now, est, bp, cf, apx)
 
     def _bucket_wait_reason(self, b: Bucket, now: float) -> str:
-        if b.state == "LOCKED" or b.locked:
-            return "locked"
-        if b.P >= P_STABLE_THR:
-            return f"variance P>={P_STABLE_THR:.0f}"
-        if not self._bias_in_safe_range(b.bias):
-            return "bias rail guard"
-        if b.n < N_MIN_SAMPLES_CUMULATIVE:
-            return f"samples {b.n}/{N_MIN_SAMPLES_CUMULATIVE}"
-        if b.runs_seen < N_MIN_RUNS:
-            return f"runs {b.runs_seen}/{N_MIN_RUNS}"
-        if b.layers_seen < N_MIN_LAYERS:
-            return f"layers {b.layers_seen}/{N_MIN_LAYERS}"
-        if b.cumulative_mid_s < MIN_MID_TIME_S:
-            return f"mid_time {b.cumulative_mid_s:.0f}/{MIN_MID_TIME_S:.0f}s"
-        return "stable"
+        return bucket_wait_reason(b)
 
     def _debug_bucket_progress(self, b: Bucket, now: float, est: float, bp: float, cf: float, apx: int) -> None:
         if not self.debug or self.progress_interval <= 0.0:
@@ -711,7 +697,49 @@ def state_label(raw: dict) -> str:
     return "TRACKING"
 
 
-def print_state_info(state_path: str, machine_id: str) -> None:
+def bucket_from_raw(label: str, raw: dict) -> Bucket:
+    return Bucket(
+        label=label,
+        x=float(raw.get("x", 1600.0)),
+        P=float(raw.get("P", 1e6)),
+        n=int(raw.get("n", 0)),
+        bias=float(raw.get("bias", 0.4)),
+        bp_ewma=float(raw.get("bp_ewma", 0.0)),
+        state="LOCKED" if raw.get("locked") else raw.get("state", "TRACKING"),
+        last_set_x=float(raw.get("last_set_x", raw.get("x", 0.0))),
+        last_set_bias=float(raw.get("last_set_bias", raw.get("bias", 0.4))),
+        first_seen=float(raw.get("first_seen", 0.0)),
+        last_seen=float(raw.get("last_seen", 0.0)),
+        locked=bool(raw.get("locked", False)),
+        runs_seen=int(raw.get("runs_seen", 0)),
+        layers_seen=int(raw.get("layers_seen", 0)),
+        cumulative_mid_s=float(raw.get("cumulative_mid_s", 0.0)),
+        low_flow_skip_count=int(raw.get("low_flow_skip_count", 0)),
+        rail_skip_count=int(raw.get("rail_skip_count", 0)),
+        rollback_count=int(raw.get("rollback_count", 0)),
+        first_seen_run=str(raw.get("first_seen_run", "")),
+    )
+
+
+def bucket_wait_reason(b: Bucket) -> str:
+    if b.state == "LOCKED" or b.locked:
+        return "locked"
+    if b.P >= P_STABLE_THR:
+        return f"variance P>={P_STABLE_THR:.0f}"
+    if not (BIAS_SAFE_MIN <= b.bias <= BIAS_SAFE_MAX):
+        return "bias rail guard"
+    if b.n < N_MIN_SAMPLES_CUMULATIVE:
+        return f"samples {b.n}/{N_MIN_SAMPLES_CUMULATIVE}"
+    if b.runs_seen < N_MIN_RUNS:
+        return f"runs {b.runs_seen}/{N_MIN_RUNS}"
+    if b.layers_seen < N_MIN_LAYERS:
+        return f"layers {b.layers_seen}/{N_MIN_LAYERS}"
+    if b.cumulative_mid_s < MIN_MID_TIME_S:
+        return f"mid_time {b.cumulative_mid_s:.0f}/{MIN_MID_TIME_S:.0f}s"
+    return "stable"
+
+
+def print_state_info(state_path: str, machine_id: str, csv_mode: bool = False) -> None:
     if not os.path.exists(state_path):
         print(f"[tuner] no state file: {state_path}", file=sys.stderr)
         sys.exit(1)
@@ -730,21 +758,41 @@ def print_state_info(state_path: str, machine_id: str) -> None:
         )
         sys.exit(1)
     buckets = data.get(machine_id, {})
-    print(f"{'feature_v_fil':<18} {'x':>7} {'P':>8} {'n':>6} {'bias':>7} {'state':>8}")
+    now = time.time()
+    if csv_mode:
+        print("feature_v_fil,x,P,n,bias,state,runs,layers,mid_s,last_seen_age_s,wait")
+    else:
+        print(
+            f"{'feature_v_fil':<24} {'x':>7} {'P':>8} {'n':>6} {'bias':>7} "
+            f"{'state':>8} {'runs':>5} {'layers':>6} {'mid_s':>7} {'age_s':>7} wait"
+        )
     locked = 0
     total_n = 0
+    total_mid_s = 0.0
     for label, raw in sorted(buckets.items()):
         st = state_label(raw)
         if st == "LOCKED":
             locked += 1
         n = int(raw.get("n", 0))
         total_n += n
-        print(
-            f"{label:<18} {float(raw.get('x', 0.0)):>7.0f} "
-            f"{float(raw.get('P', 0.0)):>8.1f} {n:>6d} "
-            f"{float(raw.get('bias', 0.0)):>7.3f} {st:>8}"
-        )
-    print(f"TOTAL: {len(buckets)} buckets, {locked} locked, {total_n} samples")
+        b = bucket_from_raw(label, raw)
+        total_mid_s += b.cumulative_mid_s
+        age_s = max(0.0, now - b.last_seen) if b.last_seen else 0.0
+        wait = bucket_wait_reason(b)
+        if csv_mode:
+            print(
+                f"{label},{b.x:.0f},{b.P:.1f},{b.n},{b.bias:.3f},{st},"
+                f"{b.runs_seen},{b.layers_seen},{b.cumulative_mid_s:.1f},{age_s:.1f},{wait}"
+            )
+        else:
+            print(
+                f"{label:<24} {b.x:>7.0f} {b.P:>8.1f} {n:>6d} "
+                f"{b.bias:>7.3f} {st:>8} {b.runs_seen:>5d} "
+                f"{b.layers_seen:>6d} {b.cumulative_mid_s:>7.1f} "
+                f"{age_s:>7.0f} {wait}"
+            )
+    if not csv_mode:
+        print(f"TOTAL: {len(buckets)} buckets, {locked} locked, {total_n} samples, {total_mid_s:.1f}s MID")
 
 
 def emit_patch(state_path: str, machine_id: str, out_path: str) -> None:
@@ -941,6 +989,7 @@ def main() -> None:
     ap.add_argument("--emit-config-patch", metavar="PATH", help="Emit config.ini patch from locked state and exit")
     ap.add_argument("--unlock", metavar="FEATURE", help="Unlock matching bucket label or feature prefix and exit")
     ap.add_argument("--state-info", action="store_true", help="Print state summary table and exit")
+    ap.add_argument("--csv", action="store_true", help="With --state-info, emit machine-readable CSV rows")
     ap.add_argument("--reset-runtime", action="store_true", help="Send LIVE_TUNE_LOCK:0 and LD:, then exit")
     ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, emit /tmp/nosf-patch.ini and exit; SV: only with --commit-flash")
     ap.add_argument("--commit-on-finish", action="store_true", help="Exit immediately on FINISH marker (no idle wait); implies commit if locked buckets exist")
@@ -975,7 +1024,7 @@ def main() -> None:
         emit_patch(args.state, args.machine_id, args.emit_config_patch)
         return
     if args.state_info:
-        print_state_info(args.state, args.machine_id)
+        print_state_info(args.state, args.machine_id, csv_mode=args.csv)
         return
     if args.unlock:
         unlock_bucket(args.state, args.machine_id, args.unlock)
