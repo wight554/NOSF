@@ -282,3 +282,33 @@ Settings version 46u → 47u.
 - 2.9.12 done: implemented observe-daemon mode; committed and pushed eb30a04.
 - 2.9.13 done: updated documentation and deprecated nosf_logger.py; committed and pushed b387fab.
 - bugfix: restored missing --include-stale flag; committed and pushed d6b089a.
+
+---
+
+## Phase 2.10 — Klipper Motion Tracking
+
+### Findings
+- Read `AGENTS.md`: session banner posted; commit/push required after each milestone; script changes require Python validation; shell git must be used for add/commit/push for this task; do not commit `.agents/`, `.claude/`, or `skills-lock.json`.
+- Read `TASK.md`: Phase 2.9 base milestones and continuation are DONE through 2.9.13 plus the `--include-stale` bugfix; Phase 2.10.0 plan exists in `SYNC_REFACTOR_PHASE_2_10.md` and was committed as `4fc11c9`.
+- Read `SYNC_REFACTOR_PHASE_2_10.md` sections 0-16: Phase 2.10 is host-only, replaces `RUN_SHELL_COMMAND` markers with a sidecar plus direct Klipper UDS `objects/subscribe`, and must feed byte-identical strings through existing `tuner.on_m118`.
+- Read `SYNC_REFACTOR_PHASE_2_9.md` sections 15-17: preserve observe-only default, schema 1->2->3 chained migration, Path A/Path B lock criteria including `total_print_mid_s`, per-tunable watermark `_meta`, read-only `--recommend-recheck`, operator-only `--prune-stale`, and daemon reminder-only behavior.
+- Read `scripts/gcode_marker.py`: current default is `--emit m118`, layer markers are already on by default with `--no-layer-markers`; `--emit file` still creates `RUN_SHELL_COMMAND CMD=nosf_marker`; in-place postprocess uses temp file + `os.replace`.
+- Read `scripts/nosf_live_tuner.py`: state schema is 3, `on_m118` is the only marker ingress, `run_loop` currently pumps serial, optional Klipper log, and optional marker file; marker file is truncated by default unless `--keep-marker-file`; default observe mode sends no `SET:` or `SV:`.
+- Read `scripts/test_nosf_live_tuner.py`: pytest-free stdlib tests cover observe-only, schema migration, Path B locks, layer credit, CSV output, daemon behavior, stale pruning, and no-SV patch emission. These must keep passing after every relevant milestone.
+- Read `scripts/nosf_analyze.py`: analyzer is channel-agnostic, consumes CSV/state, writes review-only patches, and currently loads state schemas 1/2 only in `load_state`; Phase 2.10 should not modify analyzer unless a doc/test issue forces it.
+- Read `scripts/nosf_marker.py`: marker-file bridge appends timestamped tags; kept for fallback until 2.10.6, then warned deprecated.
+- Read `scripts/nosf_logger.py`: already prints deprecation warning; Phase 2.10 must not touch it because logger deprecation landed separately in Phase 2.9.
+- Read `MANUAL.md`, `KLIPPER.md`, `README.md`, and `CONTEXT.md`: docs still present shell-marker calibration as the primary path; 2.10.5 must flip primary docs to sidecar + UDS while keeping shell-marker fallback/legacy notes.
+- Existing dirty local files are unrelated: `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`. Do not stage them.
+- Tests to keep green: `python3 scripts/test_nosf_live_tuner.py` across tuner-facing work; sidecar work adds `scripts/test_gcode_marker.py`; UDS/matcher work adds `scripts/test_klipper_motion_tracker.py`; parity work adds `scripts/test_phase_2_10_parity.py`.
+
+### Plan
+- **2.10.1 — Sidecar generator:** update `scripts/gcode_marker.py` with `build_sidecar(input_path, sidecar_path, dia)`, `--emit sidecar`, `--sidecar PATH`, source SHA-256, M82/M83 E-mode tracking, Orca/standard layer detection, feature/width/height/feedrate/v_fil_bin segmentation, skip metadata for `EXCLUDE_OBJECT_START/END`, and no `RUN_SHELL_COMMAND` output in sidecar mode. Add `scripts/test_gcode_marker.py` and `tests/fixtures/orca_sample.gcode`. Validate with the 2.10.1 gate.
+- **2.10.2 — KlipperApiClient:** add `scripts/klipper_motion_tracker.py` with stdlib `socket.AF_UNIX` JSON-RPC client, ETX framing, partial-chunk reassembly, nonblocking `poll(timeout_s)`, `objects/list`, and exact `objects/subscribe` request shape. Add socketpair tests in `scripts/test_klipper_motion_tracker.py`. Validate with the 2.10.2 gate.
+- **2.10.3 — SegmentMatcher:** extend `scripts/klipper_motion_tracker.py` with sidecar loading, SHA validation, byte-position binary search, Z/retract/stale guards, START/LAYER/FINISH/feature event synthesis, and speed/extrude factor correction. Extend tracker tests and add `scripts/test_phase_2_10_parity.py` using the Orca fixture. Validate with the 2.10.3 gate.
+- **2.10.4 — Tuner integration:** before committing, document Pi experiments Q-2.10-A through Q-2.10-E in this TASK section. Then wire `--klipper-uds`, `--klipper-mode {auto,on,off}`, and `--sidecar` into `scripts/nosf_live_tuner.py`; pump Klipper deltas through `SegmentMatcher.update`; suppress marker-file pump with an explicit flag when sidecar is attached; keep marker fallback for `auto` failures and enforce nonzero exit for `on` failures. Validate with the 2.10.4 gate.
+- **2.10.5 — Docs:** update `MANUAL.md`, `KLIPPER.md`, `README.md`, and `CONTEXT.md` so sidecar + UDS is the primary calibration flow, shell markers are fallback/debug, UDS path discovery is documented, and Phase 2.10 appears in history. Run all preceding tests.
+- **2.10.6 — Deprecation flip:** after hardware soak criteria are satisfied or maintainer explicitly allows, flip `gcode_marker.py` default `--emit` to `sidecar`, warn on shell-marker emit modes, warn when `scripts/nosf_marker.py` is invoked, and move shell-marker docs under Legacy. Smoke-test `--emit file` fallback on a sample G-code.
+
+### Completed Steps
+- Phase 2.10 preflight read done; implementation plan appended. Commit pending.
