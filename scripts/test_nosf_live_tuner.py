@@ -205,7 +205,7 @@ def test_allow_bias_writes_writes():
         return "explicit bias-write mode still emits guarded bias SETs"
 
 
-def test_commit_flash_invokes_sv():
+def test_finish_commit_emits_patch_no_sv():
     with tempfile.TemporaryDirectory() as td:
         clock = Clock()
         state_path = os.path.join(td, "state.json")
@@ -222,12 +222,12 @@ def test_commit_flash_invokes_sv():
             locked=True,
             last_seen=clock.now(),
         )
-        args = SimpleNamespace(commit_flash=True, state=state_path, machine_id="test")
-        tuner_mod.finish_commit(t, args, patch_path, sleep_fn=lambda _dt: None)
-        assert "SET:LIVE_TUNE_LOCK:0" in fake.writes, fake.writes
-        assert "SV:" in fake.writes, fake.writes
+        args = SimpleNamespace(state=state_path, machine_id="test")
+        tuner_mod.finish_commit(t, args, patch_path)
+        assert "SET:LIVE_TUNE_LOCK:0" not in fake.writes, fake.writes
+        assert "SV:" not in fake.writes, fake.writes
         assert os.path.exists(patch_path), patch_path
-        return "commit-flash sends SV and emits patch"
+        return "finish_commit emits patch without SV"
 
 
 def test_schema1_migration():
@@ -522,7 +522,7 @@ def main():
         ("baseline-off", test_baseline_writes_disabled_by_default),
         ("observe-default", test_observe_default_no_writes),
         ("bias-on", test_allow_bias_writes_writes),
-        ("commit-flash", test_commit_flash_invokes_sv),
+        ("no-sv-patch", test_finish_commit_emits_patch_no_sv),
         ("schema1", test_schema1_migration),
         ("counters", test_counter_increments),
         ("short-print", test_short_print_no_lock),

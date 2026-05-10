@@ -885,15 +885,11 @@ def emit_patch(state_path: str, machine_id: str, out_path: str) -> None:
     print(f"[tuner] wrote patch: {out_path}", file=sys.stderr)
 
 
-def finish_commit(tuner: Tuner, args, out_path: str = "/tmp/nosf-patch.ini", sleep_fn=time.sleep) -> None:
+def finish_commit(tuner: Tuner, args, out_path: str = "/tmp/nosf-patch.ini") -> None:
     tuner._persist()
     if tuner.locked_bucket_count() == 0:
         print("[tuner] FINISH seen, but no LOCKED buckets yet; persisted tracking state without SV", file=sys.stderr)
         raise SystemExit(1)
-    if args.commit_flash:
-        tuner._send("SET:LIVE_TUNE_LOCK:0", count_rate=False)
-        sleep_fn(0.1)
-        tuner._send("SV:", count_rate=False)
     emit_patch(args.state, args.machine_id, out_path)
     print(f"[tuner] commit patch: {out_path}", file=sys.stderr)
 
@@ -1035,9 +1031,8 @@ def main() -> None:
     ap.add_argument("--state-info", action="store_true", help="Print state summary table and exit")
     ap.add_argument("--csv", action="store_true", help="With --state-info, emit machine-readable CSV rows")
     ap.add_argument("--reset-runtime", action="store_true", help="Send LIVE_TUNE_LOCK:0 and LD:, then exit")
-    ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, emit /tmp/nosf-patch.ini and exit; SV: only with --commit-flash")
+    ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, emit /tmp/nosf-patch.ini and exit")
     ap.add_argument("--commit-on-finish", action="store_true", help="Exit immediately on FINISH marker (no idle wait); implies commit if locked buckets exist")
-    ap.add_argument("--commit-flash", action="store_true", help="Debug/research: allow live writes and send SV: at commit time")
     ap.add_argument("--klipper-log", help="Tail klippy.log for NOSF_TUNE marker echoes while tuning")
     ap.add_argument("--marker-file", help="Tail local marker file written by scripts/nosf_marker.py")
     ap.add_argument(
@@ -1065,9 +1060,6 @@ def main() -> None:
     args = ap.parse_args()
     if args.state is None:
         args.state = default_state_path(args.machine_id)
-    if args.commit_flash:
-        args.allow_bias_writes = True
-        args.allow_baseline_writes = True
 
     if args.emit_config_patch:
         emit_patch(args.state, args.machine_id, args.emit_config_patch)
