@@ -185,4 +185,5 @@ Settings version 46u → 47u.
 - 2.9.0 done: observe-only default, `--allow-bias-writes`, `--commit-flash`, and tuner tests added; py_compile and tuner self-test passed; committed and pushed `f7ab2ba`.
 - 2.9.1 done: schema 2 bucket counters, schema 1 migration, and counter tests added; py_compile and tuner self-test passed; committed and pushed `db35cec`.
 - 2.9.2 done: cumulative lock criteria, run/layer counters, layer marker support, and lock-gate tests added; py_compile and tuner self-test passed; committed and pushed `ae6745e`.
-- 2.9.3 done: `--state-info` now reports runs/layers/MID time/age/wait and supports `--csv`; py_compile and tuner self-test passed. Commit SHA reported after push.
+- 2.9.3 done: `--state-info` now reports runs/layers/MID time/age/wait and supports `--csv`; py_compile and tuner self-test passed; committed and pushed `1d954cc`.
+- 2.9.4 done: analyzer uses 25-bin parity, computes all seven review tunables, supports state JSON and acceptance gate, and has stdlib analyzer tests; py_compile/analyzer self-test passed. Commit SHA reported after push.
