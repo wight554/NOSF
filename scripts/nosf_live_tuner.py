@@ -65,7 +65,7 @@ BIAS_SAFE_MAX = 0.65
 MIN_LEARN_EST_SPS = 100.0
 MIN_SET_SPACING = 2.0
 N_MIN_SAMPLES = 200
-BUCKET_LOCK_S = 60.0
+BUCKET_LOCK_S = 20.0
 Q_PROCESS = 25.0
 R_BASE = 100.0
 SCHEMA_VERSION = 1
@@ -422,8 +422,6 @@ class Tuner:
             return "bias rail guard"
         if abs(b.x - b.last_set_x) >= SET_DEADBAND_SPS and not self.allow_baseline_writes:
             return "baseline observe-only"
-        if abs(b.bias - b.last_set_bias) >= BIAS_DEADBAND:
-            return "bias write pending"
         if b.state == "STABLE":
             remain = max(0.0, BUCKET_LOCK_S - (now - b.stable_since))
             return f"lock in {remain:.0f}s"
@@ -491,7 +489,6 @@ class Tuner:
             and b.n >= N_MIN_SAMPLES
             and x_stable
             and self._bias_in_safe_range(b.bias)
-            and abs(b.bias - b.last_set_bias) < BIAS_DEADBAND
         )
         if not stable:
             b.state = "TRACKING"
