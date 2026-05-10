@@ -3,12 +3,18 @@
 
 import json
 import os
+import shutil
 import socket
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+import gcode_marker
 import klipper_motion_tracker as tracker
+
+REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+ORCA_FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "orca_sample.gcode")
 
 
 def make_client_pair():
@@ -110,6 +116,109 @@ def test_garbage_disconnect():
         client.close()
 
 
+def build_fixture_sidecar():
+    td = tempfile.TemporaryDirectory()
+    gcode_path = os.path.join(td.name, "orca_sample.gcode")
+    sidecar_path = os.path.join(td.name, "orca_sample.nosf.json")
+    shutil.copyfile(ORCA_FIXTURE, gcode_path)
+    data = gcode_marker.build_sidecar(gcode_path, sidecar_path, 1.75)
+    return td, gcode_path, sidecar_path, data
+
+
+def state_for(seg, gcode_path, eventtime=1.0, print_state="printing", v_extrude=1.0):
+    fp = int((seg["byte_start"] + seg["byte_end"]) // 2)
+    return {
+        "filename": gcode_path,
+        "print_state": print_state,
+        "file_position": fp,
+        "z_mm": seg["z_mm"],
+        "v_extrude": v_extrude,
+        "speed_factor": 1.0,
+        "extrude_factor": 1.0,
+        "eventtime": eventtime,
+    }
+
+
+def test_layer_transition_emits_event():
+    td, gcode_path, _sidecar_path, data = build_fixture_sidecar()
+    try:
+        matcher = tracker.SegmentMatcher(os.path.join(td.name, "orca_sample.nosf.json"))
+        events = matcher.update(state_for(data["segments"][0], gcode_path))
+        assert events[0] == "NT:START", events
+        assert "NT:LAYER:0" in events, events
+        assert any(e.startswith("NOSF_TUNE:Outer_wall:") for e in events), events
+        return "printing + first segment emits START, LAYER, feature"
+    finally:
+        td.cleanup()
+
+
+def test_feature_change_emits_nosf_tune():
+    td, gcode_path, sidecar_path, data = build_fixture_sidecar()
+    try:
+        matcher = tracker.SegmentMatcher(sidecar_path)
+        first = data["segments"][0]
+        next_feature = next(seg for seg in data["segments"] if seg["feature"] != first["feature"] and not seg.get("skip"))
+        matcher.update(state_for(first, gcode_path, eventtime=1.0))
+        events = matcher.update(state_for(next_feature, gcode_path, eventtime=2.0))
+        assert any(e.startswith(f"NOSF_TUNE:{next_feature['feature']}:") for e in events), events
+        return "feature transition emits NOSF_TUNE marker"
+    finally:
+        td.cleanup()
+
+
+def test_v_fil_bin_unchanged_no_event():
+    td, gcode_path, sidecar_path, data = build_fixture_sidecar()
+    try:
+        matcher = tracker.SegmentMatcher(sidecar_path)
+        seg = data["segments"][0]
+        matcher.update(state_for(seg, gcode_path, eventtime=1.0))
+        events = matcher.update(state_for(seg, gcode_path, eventtime=1.5))
+        assert events == [], events
+        return "same segment produces no duplicate feature event"
+    finally:
+        td.cleanup()
+
+
+def test_retract_no_event():
+    td, gcode_path, sidecar_path, data = build_fixture_sidecar()
+    try:
+        matcher = tracker.SegmentMatcher(sidecar_path)
+        matcher.update({"filename": gcode_path, "print_state": "printing", "eventtime": 0.1})
+        events = matcher.update(state_for(data["segments"][0], gcode_path, eventtime=1.0, v_extrude=-0.1))
+        assert events == [], events
+        return "negative extruder velocity suppresses segment events"
+    finally:
+        td.cleanup()
+
+
+def test_pause_resume_segment_state_survives():
+    td, gcode_path, sidecar_path, data = build_fixture_sidecar()
+    try:
+        matcher = tracker.SegmentMatcher(sidecar_path)
+        first = data["segments"][0]
+        second = next(seg for seg in data["segments"] if seg["feature"] != first["feature"] and not seg.get("skip"))
+        matcher.update(state_for(first, gcode_path, eventtime=1.0))
+        assert matcher.update({"filename": gcode_path, "print_state": "paused", "eventtime": 2.0}) == []
+        events = matcher.update(state_for(second, gcode_path, eventtime=3.0))
+        assert any(e.startswith(f"NOSF_TUNE:{second['feature']}:") for e in events), events
+        return "pause emits no marker and resume keeps matcher state"
+    finally:
+        td.cleanup()
+
+
+def test_filename_change_loads_new_sidecar():
+    td, gcode_path, sidecar_path, data = build_fixture_sidecar()
+    try:
+        matcher = tracker.SegmentMatcher()
+        events = matcher.update(state_for(data["segments"][0], gcode_path, eventtime=1.0))
+        assert matcher.attached
+        assert matcher.sidecar_path == sidecar_path, matcher.sidecar_path
+        assert "NT:START" in events, events
+        return "filename derives and attaches colocated sidecar"
+    finally:
+        td.cleanup()
+
+
 def main():
     tests = [
         ("framing", test_framing_roundtrip),
@@ -117,6 +226,12 @@ def main():
         ("two-msg", test_two_messages_one_chunk),
         ("subscribe", test_subscribe_request_shape),
         ("disconnect", test_garbage_disconnect),
+        ("layer-event", test_layer_transition_emits_event),
+        ("feature", test_feature_change_emits_nosf_tune),
+        ("dedupe", test_v_fil_bin_unchanged_no_event),
+        ("retract", test_retract_no_event),
+        ("pause", test_pause_resume_segment_state_survives),
+        ("filename", test_filename_change_loads_new_sidecar),
     ]
     print(f"{'case':<14} result")
     print(f"{'-' * 14} {'-' * 40}")
