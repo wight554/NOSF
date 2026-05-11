@@ -115,10 +115,11 @@ def read_csv_runs(paths):
                 "est_sps": row.get("EST") or row.get("est_sps"),
                 "v_fil": row.get("v_fil") or row.get("v_fil"),
                 "bp_mm": row.get("BP") or row.get("bp_mm"),
+                "bpv_frac": row.get("BPV") or row.get("bpv"),
                 "rt_mm": row.get("RT") or row.get("rt_mm"),
                 "zone": row.get("BUF") or row.get("zone"),
                 "feature": row.get("feature") or row.get("feature", ""),
-                "sigma_mm": row.get("BL") or row.get("sigma_mm"),
+                "sigma_mm": row.get("sigma_mm"),
                 "mc": row.get("mc") or row.get("mc", "0"),
             }
             if norm["ts_ms"] and "." in norm["ts_ms"] and "wall_ts" in row:
@@ -194,6 +195,14 @@ def mid_rows(rows):
         and to_float(r.get("est_sps")) > 0.0
         and to_float(r.get("v_fil")) > 0.0
     ]
+
+
+def buffer_position_sigma_mm(rows):
+    bp = [to_float(r.get("bp_mm"), None) for r in rows if r.get("bp_mm") not in ("", None)]
+    bp = [v for v in bp if v is not None]
+    if len(bp) < 50:
+        return None
+    return stats.stdev(bp)
 
 
 def run_duration_s(run):
@@ -355,8 +364,8 @@ def compute_recommendations(rows, runs, state_buckets, current, mode, include_st
                 last_ts = ts
         if segment_start is not None and last_ts is not None:
             dwell_ms.append(max(0.0, last_ts - segment_start))
-    mid_timeout = percentile(dwell_ms, 95) if len(dwell_ms) >= 50 else current["mid_creep_timeout_ms"]
-    mid_timeout_conf = confidence(len(dwell_ms), 50, 20) if dwell_ms else "DEFAULT"
+    mid_timeout = current["mid_creep_timeout_ms"]
+    mid_timeout_conf = "DEFAULT"
 
     creep_slopes = []
     creep_caps = []
@@ -385,21 +394,34 @@ def compute_recommendations(rows, runs, state_buckets, current, mode, include_st
     creep_cap = percentile(creep_caps, 90) if len(creep_caps) >= 20 else current["mid_creep_cap_frac"]
     creep_cap_conf = confidence(len(creep_caps), 20, 10) if creep_caps else "DEFAULT"
 
-    sigma_vals = [to_float(r.get("sigma_mm")) for r in mids if r.get("sigma_mm") not in ("", None)]
+    sigma_vals = []
+    for bucket_rows in by_bucket.values():
+        sigma = buffer_position_sigma_mm(bucket_rows)
+        if sigma is not None:
+            sigma_vals.append(sigma)
     sigma_p95 = percentile(sigma_vals, 95)
-    var_blend = 0.5 if sigma_p95 <= current["buf_variance_blend_ref_mm"] else 0.3
-    var_conf = confidence(len(sigma_vals), 500)
-    var_ref = max(0.5, round(sigma_p95 / 0.5) * 0.5) if sigma_vals else current["buf_variance_blend_ref_mm"]
-    ref_conf = confidence(len(sigma_vals), 500)
+    if len(sigma_vals) >= 5:
+        clamped_sigma = clamp(sigma_p95, 0.1, 5.0)
+        var_blend = 0.5 if clamped_sigma <= current["buf_variance_blend_ref_mm"] else 0.3
+        var_conf = confidence_from_buckets(trimmed_qualifying or set(by_bucket), locked_only)
+        var_ref = clamp(round(clamped_sigma / 0.5) * 0.5, 0.1, 5.0)
+        ref_conf = var_conf
+        sigma_detail = f"bp sigma p95 {sigma_p95:.2f}"
+    else:
+        var_blend = current["buf_variance_blend_frac"]
+        var_conf = "DEFAULT"
+        var_ref = current["buf_variance_blend_ref_mm"]
+        ref_conf = "DEFAULT"
+        sigma_detail = f"insufficient bp sigma buckets {len(sigma_vals)}/5"
 
     return {
         "baseline_rate": (baseline, baseline_conf, baseline_detail),
         "sync_trailing_bias_frac": (bias, bias_conf, bias_detail),
-        "mid_creep_timeout_ms": (mid_timeout, mid_timeout_conf, f"{len(dwell_ms)} dwells"),
+        "mid_creep_timeout_ms": (mid_timeout, mid_timeout_conf, f"deferred; {len(dwell_ms)} dwells"),
         "mid_creep_rate_sps_per_s": (creep_rate, creep_rate_conf, f"{len(creep_slopes)} creep slopes"),
         "mid_creep_cap_frac": (creep_cap, creep_cap_conf, f"{len(creep_caps)} creep ratios"),
-        "buf_variance_blend_frac": (var_blend, var_conf, f"sigma p95 {sigma_p95:.2f}"),
-        "buf_variance_blend_ref_mm": (var_ref, ref_conf, f"sigma p95 {sigma_p95:.2f}"),
+        "buf_variance_blend_frac": (var_blend, var_conf, sigma_detail),
+        "buf_variance_blend_ref_mm": (var_ref, ref_conf, sigma_detail),
     }
 
 

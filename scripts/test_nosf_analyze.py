@@ -35,6 +35,17 @@ def write_csv(path, rows):
             writer.writerow(base)
 
 
+def write_tuner_csv(path, rows):
+    fields = ["wall_ts", "BUF", "BP", "BPV", "BL", "EST", "RT", "feature", "v_fil"]
+    with open(path, "w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fields)
+        writer.writeheader()
+        for row_data in rows:
+            base = {field: "" for field in fields}
+            base.update(row_data)
+            writer.writerow(base)
+
+
 def write_config(path, ref=1.0):
     with open(path, "w") as fh:
         fh.write("baseline_rate: 1600\n")
@@ -374,6 +385,74 @@ def test_field_oscillation_repro():
     return "field oscillation repro converges within 50 sps across synthetic runs"
 
 
+def test_buf_variance_blend_ref_mm_from_bp_not_bl():
+    with tempfile.TemporaryDirectory() as td:
+        csv_path = os.path.join(td, "run.csv")
+        labels = [f"Locked{i}" for i in range(5)]
+        rows = []
+        for idx, feature in enumerate(labels):
+            for j in range(60):
+                bp = [-0.5, 0.0, 0.5][j % 3] + idx * 0.01
+                rows.append({
+                    "wall_ts": str((idx * 1000 + j) / 10.0),
+                    "BUF": "MID",
+                    "BP": f"{bp:.3f}",
+                    "BPV": "0.1",
+                    "BL": "707.5",
+                    "EST": "1000",
+                    "RT": "0.0",
+                    "feature": feature,
+                    "v_fil": "1000",
+                })
+        write_tuner_csv(csv_path, rows)
+        _runs, normalized = analyze.read_csv_runs([csv_path])
+        state = {
+            f"{feature}_v1000": {
+                "state": "LOCKED", "locked": True, "x": 1000, "n": 60,
+                "resid_var_ewma": 100, "cumulative_mid_s": 20,
+            }
+            for feature in labels
+        }
+        recs = analyze.compute_recommendations(normalized, [{"path": csv_path, "rows": normalized}], state, analyze.DEFAULTS.copy(), "safe")
+        var_ref = recs["buf_variance_blend_ref_mm"][0]
+        assert 0.1 <= var_ref <= 5.0, var_ref
+        assert abs(var_ref - 0.5) < 0.001, var_ref
+        assert var_ref != 707.5, var_ref
+        return "variance blend reference derives from BP scatter, not BL baseline"
+
+
+def test_mid_creep_timeout_default_when_insufficient_data():
+    rows = []
+    for i in range(100):
+        zone = "MID" if i % 4 else "LOW"
+        rows.append({
+            "ts_ms": str(i * 100),
+            "zone": zone,
+            "bp_mm": "-3.0",
+            "sigma_mm": "0.2",
+            "est_sps": "1000",
+            "rt_mm": "-3.0",
+            "cf": "0.95",
+            "adv_dwell_ms": "0",
+            "tb": "40",
+            "mc": "0",
+            "vb": "50",
+            "bpv_mm": "-3.0",
+            "feature": "Outer_wall",
+            "v_fil": "1000",
+        })
+    runs = [{"path": "run.csv", "rows": rows}]
+    state = {"Outer_wall_v1000": {"state": "LOCKED", "locked": True, "x": 1000, "n": 100, "resid_var_ewma": 100}}
+    current = analyze.DEFAULTS.copy()
+    current["mid_creep_timeout_ms"] = 4321
+    recs = analyze.compute_recommendations(rows, runs, state, current, "safe")
+    value, conf, detail = recs["mid_creep_timeout_ms"]
+    assert value == 4321, value
+    assert conf == "DEFAULT", conf
+    assert "deferred" in detail, detail
+    return "mid_creep_timeout_ms stays current/default until a valid signal exists"
+
+
 def main():
     tests = [
         ("baseline", test_baseline_from_dominant_cluster),
@@ -390,6 +469,8 @@ def main():
         ("no-dominant", test_dominant_single_bucket_does_not_dictate_baseline),
         ("bias-qual", test_bias_only_from_qualifying_buckets),
         ("field-osc", test_field_oscillation_repro),
+        ("bp-sigma", test_buf_variance_blend_ref_mm_from_bp_not_bl),
+        ("mid-timeout", test_mid_creep_timeout_default_when_insufficient_data),
     ]
     print(f"{'case':<12} result")
     print(f"{'-' * 12} {'-' * 40}")
