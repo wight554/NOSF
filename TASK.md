@@ -438,3 +438,4 @@ Settings version 46u → 47u.
 ### Completed Steps
 - Phase 2.13 preflight read done; implementation begins at 2.13.1.
 - 2.13.1 done: added synthetic three-run acceptance-gate parity fixture and soft expected-fail analyzer test; validation passed (full Phase 2.13 gate). Committed and pushed `f002eb5`.
+- 2.13.2 done: factored `recommend_for_subset()`, made `compute_recommendations()` a wrapper, changed acceptance-gate consistency to use per-run recommendations, and flipped the parity fixture to a hard assertion. Validation passed (full Phase 2.13 gate). Committed and pushed `f906e87`.

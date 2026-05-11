@@ -512,11 +512,35 @@ def test_phase_2_13_field_repro_gate_should_pass():
 
     runs, rows = analyze.read_csv_runs(PHASE_2_13_RUN_FIXTURES)
     gate = analyze.acceptance_gate(rows, runs, state, analyze.DEFAULTS.copy())
-    assert gate["max_baseline_delta"] >= 600.0, gate
-    assert not gate["pass"], gate
-    print("EXPECTED FAIL: phase 2.13 acceptance-gate parity")
-    # Hard-asserted in milestone 2.13.2 after the gate uses recommendations.
-    return "phase 2.13 fixture exposes raw gate/recommendation mismatch"
+    assert gate["max_baseline_delta"] <= 50.0, gate
+    assert gate["pass"], gate
+    return "phase 2.13 fixture passes when gate uses recommendations"
+
+
+def test_consistency_uses_recommendation_path():
+    state = analyze.load_state(PHASE_2_13_STATE_FIXTURE)
+    runs, _rows = analyze.read_csv_runs(PHASE_2_13_RUN_FIXTURES)
+    raw_baseline_delta, _raw_bias_delta = analyze.raw_consistency_by_run(runs)
+    baseline_delta, bias_delta = analyze.consistency_by_run(runs, state, analyze.DEFAULTS.copy(), "safe")
+    assert raw_baseline_delta >= 600.0, raw_baseline_delta
+    assert baseline_delta <= 50.0, baseline_delta
+    assert bias_delta <= 0.05, bias_delta
+    return "consistency check ignores raw per-bucket scatter and uses recommendations"
+
+
+def test_consistency_matches_standalone_recommendations():
+    state = analyze.load_state(PHASE_2_13_STATE_FIXTURE)
+    runs, _rows = analyze.read_csv_runs(PHASE_2_13_RUN_FIXTURES)
+    standalone_baselines = []
+    standalone_biases = []
+    for run in runs:
+        recs = analyze.compute_recommendations(run["rows"], [run], state, analyze.DEFAULTS.copy(), "safe")
+        standalone_baselines.append(recs["baseline_rate"][0])
+        standalone_biases.append(recs["sync_trailing_bias_frac"][0])
+    baseline_delta, bias_delta = analyze.consistency_by_run(runs, state, analyze.DEFAULTS.copy(), "safe")
+    assert baseline_delta == max(standalone_baselines) - min(standalone_baselines), baseline_delta
+    assert bias_delta == max(standalone_biases) - min(standalone_biases), bias_delta
+    return "consistency deltas match standalone per-run recommendations"
 
 
 def main():
@@ -539,6 +563,8 @@ def main():
         ("mid-timeout", test_mid_creep_timeout_default_when_insufficient_data),
         ("contributors", test_contributors_block_emitted),
         ("gate-parity", test_phase_2_13_field_repro_gate_should_pass),
+        ("gate-shared", test_consistency_uses_recommendation_path),
+        ("gate-standalone", test_consistency_matches_standalone_recommendations),
     ]
     print(f"{'case':<12} result")
     print(f"{'-' * 12} {'-' * 40}")

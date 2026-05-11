@@ -300,7 +300,9 @@ def contributor_entries(state_buckets, force=False, include_stale=False):
     return sorted(raw_entries, key=lambda e: e["weight"], reverse=True)
 
 
-def compute_recommendations(rows, runs, state_buckets, current, mode, include_stale=False, force=False):
+def recommend_for_subset(runs_subset, rows_subset, state_buckets, current, mode, force, include_stale):
+    runs = runs_subset
+    rows = rows_subset
     mids = mid_rows(rows)
     
     import time
@@ -449,7 +451,11 @@ def compute_recommendations(rows, runs, state_buckets, current, mode, include_st
     }
 
 
-def consistency_by_run(runs):
+def compute_recommendations(rows, runs, state_buckets, current, mode, include_stale=False, force=False):
+    return recommend_for_subset(runs, rows, state_buckets, current, mode, force, include_stale)
+
+
+def raw_consistency_by_run(runs):
     baseline_vals = defaultdict(list)
     bias_vals = defaultdict(list)
     for run in runs:
@@ -468,7 +474,31 @@ def consistency_by_run(runs):
     return max_baseline_delta, max_bias_delta
 
 
-def acceptance_gate(rows, runs, state_buckets, current):
+def consistency_by_run(runs, state_buckets, current, mode="safe", force=False, include_stale=False):
+    baseline_vals = []
+    bias_vals = []
+    for run in runs:
+        recs = recommend_for_subset(
+            [run],
+            run["rows"],
+            state_buckets,
+            current,
+            mode,
+            force,
+            include_stale,
+        )
+        baseline, baseline_conf, _baseline_detail = recs["baseline_rate"]
+        bias, bias_conf, _bias_detail = recs["sync_trailing_bias_frac"]
+        if baseline_conf != "DEFAULT":
+            baseline_vals.append(baseline)
+        if bias_conf != "DEFAULT":
+            bias_vals.append(bias)
+    max_baseline_delta = max(baseline_vals) - min(baseline_vals) if len(baseline_vals) >= 2 else 0.0
+    max_bias_delta = max(bias_vals) - min(bias_vals) if len(bias_vals) >= 2 else 0.0
+    return max_baseline_delta, max_bias_delta
+
+
+def acceptance_gate(rows, runs, state_buckets, current, mode="safe", force=False, include_stale=False):
     reasons = []
     mids = mid_rows(rows)
     locked = locked_bucket_labels(state_buckets)
@@ -480,7 +510,14 @@ def acceptance_gate(rows, runs, state_buckets, current):
     if coverage < 0.80:
         reasons.append(f"coverage {coverage * 100:.1f}% < 80.0%")
 
-    base_delta, bias_delta = consistency_by_run(runs)
+    base_delta, bias_delta = consistency_by_run(
+        runs,
+        state_buckets,
+        current,
+        mode=mode,
+        force=force,
+        include_stale=include_stale,
+    )
     if base_delta > 50.0:
         reasons.append(f"baseline consistency delta {base_delta:.0f} sps > 50")
     if bias_delta > 0.05:
@@ -628,7 +665,15 @@ def run(args):
             else:
                 banner = "# WARNING: zero LOCKED buckets; suggestions are pre-lock estimates"
             recommendations = force_low_confidence(recommendations)
-    gate = acceptance_gate(rows, runs, state_buckets, current) if args.acceptance_gate else None
+    gate = acceptance_gate(
+        rows,
+        runs,
+        state_buckets,
+        current,
+        mode=args.mode,
+        force=force,
+        include_stale=getattr(args, "include_stale", False),
+    ) if args.acceptance_gate else None
     entries = contributor_entries(state_buckets, force=force, include_stale=getattr(args, "include_stale", False))
     contributors = {
         key: entries
