@@ -1,33 +1,55 @@
 # Acceptance Gate Parity Specification
 
 ## Purpose
-Gate parity and mature-run consistency.
+Gate parity and mature-run consistency behavioral contracts and requirements.
 
 ## Requirements
 
 ### Requirement: Shared Recommendation Path
-Gate MUST compare per-run recommendations from the same state-aware path as the patch.
-- **Scenario: Stable Recommendation**: Raw bucket medians vary, but shared path is consistent -> PASS.
+The gate SHALL compare per-run recommendations from the same state-aware path as the patch.
+
+#### Scenario: Stable Recommendation
+- **WHEN** raw bucket medians vary across runs
+- **AND** shared recommendation path remains consistent
+- **THEN** acceptance gate passes consistency check
 
 ### Requirement: Backward-Compatibility
-`compute_recommendations` MUST retain dictionary shape and semantics.
-- **Scenario: Test Import**: Existing callers receive the same keys, tuples, and labels.
+`compute_recommendations` SHALL retain dictionary shape and semantics for existing callers.
 
-### Requirement: Classification
-Classify runs (comparable or skipped) before checking consistency deltas.
-- **Scenario: Low Rows**: Run below thresholds -> SKIP consistency check. Report reason in patch.
+#### Scenario: Test Import
+- **WHEN** existing tests import and call `compute_recommendations`
+- **THEN** returned keys, tuples, and labels remain compatible with Phase 2.12
+
+### Requirement: Run Classification
+The system SHALL classify runs (comparable or skipped) before checking consistency deltas.
+
+#### Scenario: Low Rows
+- **WHEN** run has fewer rows than threshold
+- **THEN** run is skipped from consistency reduction
+- **AND** skip reason is reported in patch diagnostics
 
 ### Requirement: Diagnostic Visibility
-Patch MUST include per-run estimates regardless of gate outcome.
-- **Scenario: Coverage Failure**: Gate fails -> still include estimates, skip reasons, and placeholders.
+The generated patch MUST include per-run estimates regardless of gate outcome.
+
+#### Scenario: Coverage Failure
+- **WHEN** gate rejects patch due to insufficient coverage
+- **THEN** patch still includes per-run estimates and skip reasons
 
 ### Requirement: Contributor Mass Hard Gate
-FAIL only on contributor mass. WARN on raw row coverage.
-- **Scenario: Low Raw Row Coverage**: Mass >= pass floor -> PASS with raw-coverage warning.
+The acceptance gate SHALL FAIL only on contributor mass, and WARN on raw row coverage.
+
+#### Scenario: Low Raw Row Coverage
+- **WHEN** contributor mass >= pass floor
+- **AND** raw row coverage < warning threshold
+- **THEN** gate records warning but does not FAIL
 
 ### Requirement: Placeholder Telemetry
-Mark telemetry counters as pending until real log parsing exists.
-- **Scenario: Zero Counters**: Patch explicitly states "not currently parsed". No false "no-event" proof.
+The analyzer MUST mark telemetry counters as pending until real log parsing exists.
+
+#### Scenario: Zero Counters
+- **WHEN** acceptance diagnostics include telemetry counters
+- **THEN** patch states that telemetry is not currently parsed
+- **AND** zero counters are NOT presented as proof of no events
 
 ## Historical Rationale and Constants
 

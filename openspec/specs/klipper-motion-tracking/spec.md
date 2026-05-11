@@ -1,27 +1,48 @@
 # Klipper Motion Tracking Specification
 
 ## Purpose
-Klipper sidecar and UDS motion tracking contract.
+Klipper sidecar and UDS motion tracking behavioral contracts and requirements.
 
 ## Requirements
 
 ### Requirement: Sidecar Metadata Markers
-Synthesize markers from slicer sidecar JSON, not G-code strings.
-- **Scenario: Sidecar Path**: Synthesize feature and velocity events from sidecar metadata.
+The system SHALL synthesize markers from slicer sidecar JSON rather than G-code strings.
+
+#### Scenario: Sidecar Path
+- **WHEN** tuner starts with valid sidecar path
+- **THEN** feature and velocity markers synthesized from metadata
+- **AND** markers drive the existing tuner bucket surface
 
 ### Requirement: UDS Ingress Parity
-UDS flow feeds the existing `on_m118` ingress contract.
-- **Scenario: Segment Transition**: Identify transition -> synthesize marker string -> feed `on_m118`. Dispatch logic stable.
+The Klipper UDS flow SHALL feed the existing `on_m118` ingress contract.
+
+#### Scenario: Segment Transition
+- **WHEN** motion tracking identifies segment crossing
+- **THEN** synthesized marker string enters `on_m118`
+- **AND** existing dispatch semantics remain unchanged
 
 ### Requirement: Stable Matcher Surface
-`SegmentMatcher` MUST remain compatible with tuner and tests.
-- **Scenario: Segment Crossing**: Cross boundary -> emit marker ONCE. Tuner is agnostic to source.
+The `SegmentMatcher` SHALL remain compatible with existing tuner and test suites.
 
-### Requirement: Host-Only
-Motion tracking MUST NOT require firmware changes.
+#### Scenario: Segment Crossing
+- **WHEN** Klipper position advances past boundary
+- **THEN** matcher emits expected marker event exactly ONCE
+- **AND** tuner remains agnostic to marker source
+
+### Requirement: Host-Only Integration
+Motion tracking SHALL NOT require firmware changes to operate.
+
+#### Scenario: Sidecar Tracker Active
+- **WHEN** host follows Klipper motion over UDS
+- **THEN** firmware protocol and runtime behavior remain unchanged
 
 ### Requirement: Fallback Paths
-Retain manual G-code marker support when UDS or sidecar is unavailable.
+The workflow MUST retain manual G-code marker support when UDS or sidecar is unavailable.
+
+#### Scenario: UDS Connection Unavailable
+- **WHEN** Klipper UDS flow cannot be established
+- **THEN** existing G-code marker ingestion remains usable
+- **AND** tuner logic receives same logical marker state
 
 ## Historical Rationale and Constraints
 

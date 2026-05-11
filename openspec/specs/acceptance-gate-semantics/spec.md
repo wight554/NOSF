@@ -1,32 +1,53 @@
 # Acceptance Gate Semantics Specification
 
 ## Purpose
-Phase 2.14 gate semantics and reliability decision logic.
+Phase 2.14 gate semantics and reliability decision logic behavioral requirements.
 
 ## Requirements
 
 ### Requirement: Separate Rejection from Advisory
-FAIL ONLY on reliability issues. Stale config and incomplete soak signals are reported as WARNINGS.
-- **Scenario: Stable Recommendation / Stale Config**: Consistency PASS -> WARN about stale config. Emit patch.
+The gate SHALL FAIL ONLY on reliability issues; stale config and incomplete soak are warnings.
+
+#### Scenario: Stable Recommendation / Stale Config
+- **WHEN** consistency check passes
+- **AND** current config is stale
+- **THEN** gate warns but does not FAIL
 
 ### Requirement: Floored Denominator
-Avoid penalizing the operator for many immature buckets in mass calculation.
-- **Scenario: Many Low-Evidence Buckets**: Use the mature evidence denominator floor.
+The system SHALL avoid penalizing the operator for many immature buckets in mass calculation.
+
+#### Scenario: Many Low-Evidence Buckets
+- **WHEN** mass calculation is performed
+- **THEN** mature evidence denominator floor is applied
 
 ### Requirement: Mass Gray Band
-WARNING between PASS and FAIL thresholds.
-- **Scenario: Gray Mass**: Above hard floor but below target -> PASS with mass warning.
+The gate SHALL issue a WARNING when mass is between PASS and FAIL thresholds.
+
+#### Scenario: Gray Mass
+- **WHEN** mass is above failure floor but below target
+- **THEN** gate passes with mass warning
 
 ### Requirement: Sigma Ceiling
-BP sigma > current reference but < ceiling -> WARN about stale reference. Emit patch.
-- **Scenario: High BP Sigma**: Above current reference but below 5.0 mm -> WARN. Recommend correction.
+The analyzer SHALL warn and recommend correction when BP sigma is between reference and 5.0 mm.
+
+#### Scenario: High BP Sigma
+- **WHEN** BP sigma is between reference and 5.0 mm
+- **THEN** gate warns and recommends correction
 
 ### Requirement: Soak Maturity
-Report run-count and duration without hiding stable recommendations.
-- **Scenario: 2 Consistent Runs**: Per-run consistency stable -> PASS with soak-immature warning. Recommendations remain visible.
+The system MUST report run-count and duration without hiding stable recommendations.
+
+#### Scenario: 2 Consistent Runs
+- **WHEN** per-run consistency is stable
+- **THEN** gate passes with soak-immature warning
+- **AND** recommendations remain visible
 
 ### Requirement: Glob Input
-Support shell-expanded CSV groups using the `--in` flag (e.g., `--in *.csv`).
+The analyzer SHALL support shell-expanded CSV groups using the `--in` flag.
+
+#### Scenario: Multiple CSVs via Wildcard
+- **WHEN** `--in *.csv` is used
+- **THEN** analyzer processes all matching files
 
 ## Standard Constants and Thresholds
 

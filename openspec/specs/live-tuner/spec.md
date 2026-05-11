@@ -1,30 +1,49 @@
 # Live Tuner Specification
 
 ## Purpose
-Tuner contract for Phase 2.8 and Phase 2.11 (chatter resistance).
+Tuner contract for Phase 2.8 and Phase 2.11 (chatter resistance) behavioral requirements.
 
 ## Requirements
 
 ### Requirement: Per-Feature Velocity Buckets
-Tuner aggregates telemetry into feature + velocity buckets (rate + bias).
-- **Scenario: Marker Active**: Tune samples arrive while marker is active -> update rounded velocity bucket.
-- **AND** update rate, uncertainty, bias, sample count, layers, runs, and motion time.
+The tuner SHALL aggregate telemetry into feature + velocity buckets (rate + bias).
+
+#### Scenario: Marker Active
+- **WHEN** tune samples arrive while marker active
+- **THEN** rounded velocity bucket is updated
+- **AND** rate, uncertainty, bias, N, layers, and motion time are updated
 
 ### Requirement: Machine-Scoped Persistence
-Persist bucket state in machine-scoped JSON.
-- **Scenario: Tuner Restart**: Load machine state -> extend evidence (no starting from zero).
+The system SHALL persist bucket state in a machine-scoped JSON file.
+
+#### Scenario: Tuner Restart
+- **WHEN** previous state file exists for machine
+- **THEN** tuner loads existing evidence
+- **AND** new samples extend evidence without zero-start
 
 ### Requirement: Observe-Only Default
-NO firmware writes without explicit permission flags.
-- **Scenario: No Write Flags**: Record and report buckets. NO `SET` writes, NO `SV` (save).
+The tuner SHALL NOT perform firmware writes without explicit permission flags.
+
+#### Scenario: No Write Flags
+- **WHEN** tuner runs without allow-write flags
+- **THEN** tuner records and reports buckets
+- **AND** NO `SET` or `SV` commands sent to firmware
 
 ### Requirement: Review-Only Workflow
-Prefer analyzer review patches over blind tuning.
-- **Scenario: Calibration Data Ready**: Analyzer emits patch for review -> operator reviews and flashes.
+The calibration workflow SHALL prefer analyzer review patches over blind tuning.
+
+#### Scenario: Calibration Data Ready
+- **WHEN** calibration data is available
+- **THEN** analyzer emits review patch
+- **AND** operator reviews and flashes settings
 
 ### Requirement: Diagnostics
-Tuner MUST explain bucket states (TRACKING, STABLE, LOCKED).
-- **Scenario: state-info**: Output bucket state, evidence counts, and wait reason (e.g. noise).
+The tuner MUST explain bucket states (TRACKING, STABLE, LOCKED) in state output.
+
+#### Scenario: state-info
+- **WHEN** `--state-info` invoked
+- **THEN** output includes state, counts, and wait reason
+- **AND** reason identifies noise-gated buckets
 
 ## Historical Rationale and Constants
 

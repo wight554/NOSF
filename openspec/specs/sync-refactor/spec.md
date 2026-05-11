@@ -1,57 +1,134 @@
 # Sync Refactor Specification
 
 ## Purpose
-Durable contract for NOSF sync, tuning, tracking, and analyzer.
+Durable contract for NOSF sync, tuning, tracking, and analyzer behavioral requirements and historical rationale.
 
 ## Requirements
 
 ### Requirement: Standalone Sync
-NOSF runs sync, toolchange, and RELOAD without host after calibration flash.
-- **Scenario: Host Detached**: Calibration reviewed + flashed -> run from firmware/runtime ONLY. NO host tuner required.
-- **Scenario: Live Debug**: `nosf_live_tuner.py` without writes -> observe only. NO `SET`/`SV` commands.
+NOSF SHALL run sync, toolchange, and RELOAD without host after calibration flash.
+
+#### Scenario: Host Detached
+- **WHEN** calibration reviewed + flashed
+- **THEN** NOSF runs from firmware/runtime ONLY
+- **AND** host tuner not required during print
+
+#### Scenario: Live Debug
+- **WHEN** `nosf_live_tuner.py` runs without writes
+- **THEN** tuner observes and persists state
+- **AND** NO `SET`/`SV` commands sent to firmware
 
 ### Requirement: Observe-Only Calibration
-Collect markers, buckets, and patches without mutation unless explicit opt-in.
-- **Scenario: Default Tuner**: Markers arrive -> update state/CSV. NO firmware writes.
-- **Scenario: Review Patch**: `nosf_analyze.py` -> emit patch. Operator MUST copy to `config.ini`.
+The system SHALL collect markers, buckets, and patches without mutation unless explicit opt-in.
+
+#### Scenario: Default Tuner
+- **WHEN** markers arrive at tuner
+- **THEN** state and CSV update
+- **AND** NO firmware writes occur
+
+#### Scenario: Review Patch
+- **WHEN** `nosf_analyze.py` emits a patch
+- **THEN** patch is for review only
+- **AND** operator MUST copy accepted values to `config.ini`
 
 ### Requirement: Sidecar + UDS Tracking
-Prefer sidecar JSON + Klipper UDS over shell markers.
-- **Scenario: Sidecar Active**: Sidecar + UDS -> synthesize `NOSF_TUNE` events. `on_m118` contract stable.
-- **Scenario: Fallback**: UDS/sidecar fail -> use legacy marker-file or shell flow.
+The system SHALL prefer sidecar JSON + Klipper UDS over shell markers when available.
+
+#### Scenario: Sidecar Active
+- **WHEN** sidecar + UDS provided
+- **THEN** tuner synthesizes `NOSF_TUNE` events
+- **AND** `on_m118` contract remains stable
+
+#### Scenario: Fallback
+- **WHEN** UDS or sidecar fail
+- **THEN** tuner falls back to legacy marker-file or shell flow
+- **AND** bucket learning semantics remain consistent
 
 ### Requirement: Durable/Migratable State
-Tuner MUST persist buckets and migrate schema without data loss.
-- **Scenario: Schema 3 -> 4**: Load S3 -> migrate S4. Keep estimates, locks, and `_meta`.
-- **Scenario: Future Refusal**: Schema > current -> refuse (no auto-mutation).
+The tuner MUST persist buckets and migrate schema without data loss across versions.
+
+#### Scenario: Schema 3 -> 4
+- **WHEN** tuner loads schema 3 database
+- **THEN** state migrates to schema 4
+- **AND** estimates, locks, and `_meta` remain intact
+
+#### Scenario: Future Refusal
+- **WHEN** state file has schema version newer than tuner
+- **THEN** tuner refuses to load
+- **AND** NO auto-mutation occurs
 
 ### Requirement: Chatter Resistance
-LOCKED on evidence/noise pass. UNLOCK on strong mismatch.
-- **Scenario: Low Evidence**: Insufficient samples/runs -> stay TRACKING/STABLE.
-- **Scenario: Moderate Outlier**: Single outlier -> stay LOCKED.
-- **Scenario: Catastrophic/Streak/Drift**: Threshold hit -> UNLOCK to TRACKING.
+Buckets SHALL become LOCKED on evidence/noise pass and UNLOCK only on strong mismatch.
+
+#### Scenario: Low Evidence
+- **WHEN** bucket has insufficient samples or runs
+- **THEN** bucket stays TRACKING or STABLE
+
+#### Scenario: Moderate Outlier
+- **WHEN** LOCKED bucket sees single moderate residual outlier
+- **THEN** bucket remains LOCKED
+- **AND** sample credited to locked dwell
+
+#### Scenario: Catastrophic/Streak/Drift
+- **WHEN** catastrophic, streak, or drift threshold hit
+- **THEN** bucket unlocks to TRACKING
 
 ### Requirement: Relative Noise Gate
-Use `sigma/x` ratio, not absolute variance.
-- **Scenario: High Flow**: `sigma/x` <= threshold -> LOCK.
-- **Scenario: Low Flow**: `sigma/x` > threshold -> STABLE (reason: noise).
+The tuner SHALL use `sigma/x` ratio, not absolute variance, for lock decisions.
+
+#### Scenario: High Flow
+- **WHEN** bucket `sigma/x` <= threshold
+- **THEN** noise gate allows lock
+
+#### Scenario: Low Flow
+- **WHEN** bucket `sigma/x` > threshold after warmup
+- **THEN** bucket remains STABLE
+- **AND** `state-info` reports noise wait reason
 
 ### Requirement: State-Aware Recommendations
-Weight by precision/count, not raw CSV clusters.
-- **Scenario: LOCKED Exists**: Use LOCKED qualifying set ONLY.
-- **Scenario: Safe Mode (Zero Locked)**: Safe mode + no locked buckets -> refuse patch. Exit 1.
-- **Scenario: Precision Weighting**: Qualifying buckets -> weight by `n/sigma²`. Trim tails.
+The analyzer SHALL weight by precision/count, not raw CSV clusters, during recommendation.
+
+#### Scenario: LOCKED Exists
+- **WHEN** LOCKED buckets exist in state
+- **THEN** analyzer uses ONLY LOCKED set for recommendations
+
+#### Scenario: Safe Mode (Zero Locked)
+- **WHEN** `--mode safe` runs with zero locked buckets
+- **THEN** analyzer refuses to emit learned values
+- **AND** process exits non-zero
+
+#### Scenario: Precision Weighting
+- **WHEN** multiple qualifying buckets exist
+- **THEN** analyzer weights by `n/sigma²`
+- **AND** 5/95 tails are trimmed
 
 ### Requirement: Comparable Run Consistency
-Gate consistency uses recommendation path, filtered to mature runs.
-- **Scenario: Recommendation Stable**: Per-bucket medians vary, but path consistent -> PASS.
-- **Scenario: Immature Run**: Few rows/low confidence -> SKIP consistency. Report in patch.
+The gate SHALL use recommendation path consistency, filtered to mature runs.
 
-### Requirement: FAIL vs WARN
-FAIL only on unreliable recommendations or pathological scatter. Stale config/immature soak = WARN.
-- **Scenario: Stale Variance Reference**: BP sigma p95 > current reference but < ceiling -> WARN. Emit patch.
-- **Scenario: Gray Mass**: Mass > floor but < target -> PASS with mass warning.
-- **Scenario: Pathological Scatter**: BP sigma p95 > ceiling -> FAIL (hardware failure).
+#### Scenario: Recommendation Stable
+- **WHEN** raw medians vary across runs but recommendation path stable
+- **THEN** acceptance gate passes consistency check
+
+#### Scenario: Immature Run
+- **WHEN** run has few rows or low confidence
+- **THEN** run is skipped from consistency reduction
+- **AND** reason reported in patch diagnostics
+
+### Requirement: FAIL vs WARN Separation
+The gate SHALL FAIL only on unreliable recommendations or pathological scatter.
+
+#### Scenario: Stale Variance Reference
+- **WHEN** BP sigma p95 > current reference but < ceiling
+- **THEN** gate warns about stale reference
+- **AND** emits corrective recommendation
+
+#### Scenario: Gray Mass
+- **WHEN** mass above floor but below target
+- **THEN** gate passes with mass warning
+
+#### Scenario: Pathological Scatter
+- **WHEN** BP sigma p95 > ceiling
+- **THEN** gate fails and reports hardware failure
 
 ## Historical Design Decisions (Traceability)
 - **D1 (PSF)**: Generic adapter until hardware land.
