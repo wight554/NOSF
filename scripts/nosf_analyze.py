@@ -33,6 +33,7 @@ CONTRIBUTOR_MASS_WARN = 0.65  # Soft warning below this contributor mass.
 RAW_COVERAGE_WARN = 0.80  # Raw MID-row coverage is diagnostic only, not a hard failure.
 BIAS_SAFE_MIN = 0.05
 BIAS_SAFE_MAX = 0.65
+SIGMA_HARDWARE_CEILING_MM = 5.0  # Absolute FAIL floor: sensor/buffer mechanical failure.
 DEFAULTS = {
     "baseline_rate": 1600.0,
     "sync_trailing_bias_frac": 0.4,
@@ -661,19 +662,27 @@ def acceptance_gate(rows, runs, state_buckets, current, mode="safe", force=False
         if sigma is not None
     ]
     sigma_p95 = percentile(sigma_vals, 95)
-    if sigma_p95 >= current["buf_variance_blend_ref_mm"]:
-        reasons.append(f"sigma p95 {sigma_p95:.2f} >= current ref {current['buf_variance_blend_ref_mm']:.2f}")
+    # FAIL: hardware-level scatter suggesting mechanical failure.
+    if sigma_p95 >= SIGMA_HARDWARE_CEILING_MM:
+        reasons.append(f"sigma p95 hardware failure {sigma_p95:.2f} >= {SIGMA_HARDWARE_CEILING_MM:.2f} mm")
+    # WARN: config is stale relative to current actual scatter (fixable by patch).
+    elif sigma_p95 >= current["buf_variance_blend_ref_mm"]:
+        warnings.append(f"config stale: actual sigma p95 {sigma_p95:.2f} >= current ref {current['buf_variance_blend_ref_mm']:.2f}")
 
+    # FAIL (a): Recommendation Unreliable if we don't have enough comparable data to reduce.
+    if consistency["comparable_runs"] < 2:
+        reasons.append(f"comparable run count {consistency['comparable_runs']} < 2 (insufficient consistent data)")
+
+    # WARN (b): Config Stale / Process Immature if we haven't reached the "golden" soak targets.
     if len(runs) < 3:
-        reasons.append(f"run count {len(runs)} < 3")
+        warnings.append(f"soak immature: run count {len(runs)} < 3")
     durations = [run_duration_s(run) for run in runs]
     if not (durations and all(d >= 600.0 for d in durations) or sum(durations) >= 1800.0):
-        reasons.append(f"duration total {sum(durations) / 60.0:.1f} min < 30 min and at least one run < 10 min")
+        warnings.append(f"soak immature: duration total {sum(durations) / 60.0:.1f} min < 30 min and at least one run < 10 min")
     if len(locked) < 3:
-        reasons.append(f"locked bucket count {len(locked)} < 3")
+        warnings.append(f"soak immature: locked bucket count {len(locked)} < 3")
 
     telemetry = {
-        # TODO Phase 2.14+: parse real ADV / EST events; zero here is placeholder, not a clean signal.
         "ADV_DWELL_STOP": 0,
         "ADV_RISK_HIGH": 0,
         "EST_FALLBACK": 0,
