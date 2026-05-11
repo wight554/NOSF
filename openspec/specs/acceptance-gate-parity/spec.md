@@ -76,3 +76,22 @@ pending placeholder values rather than clean operational signals.
 - **WHEN** acceptance diagnostics include telemetry counters
 - **THEN** the patch states that telemetry is not currently parsed from logs
 - **AND** zero counters are not presented as proof that no events occurred
+
+## Historical Design Rationale and Constants
+
+### Consistent Recommendation Path Rationale
+Prior to Phase 2.13, the acceptance gate compared raw per-bucket per-run medians, which were brittle to noise. By refactoring the logic to use a shared `recommend_for_subset` path, the gate now compares the same high-level recommendations that will actually be emitted in the patch, providing a true measure of stability.
+
+### Run Classification Thresholds
+- **`MIN_COMPARABLE_BUCKETS = 3`**: A run must have at least 3 qualifying buckets to be considered comparable for consistency reduction.
+- **`MIN_RUN_BUCKET_ROWS = 50`**: A bucket within a run must have at least 50 rows to contribute to that run's recommendation.
+
+### Coverage Thresholds (Phase 2.13 Baseline)
+- **`CONTRIBUTOR_MASS_PASS = 0.50`**: Minimum mass floor for a hard pass.
+- **`CONTRIBUTOR_MASS_WARN = 0.65`**: Preferred mass coverage target.
+- **`RAW_COVERAGE_WARN = 0.80`**: Warning threshold for raw MID row coverage.
+
+### Risk Mitigation
+- **Conservative Classification**: If `MIN_COMPARABLE_BUCKETS = 3` is too aggressive for an operator's data, it can be lowered to 2, but not below.
+- **Wrapper Pattern**: `compute_recommendations` was preserved as a thin wrapper around `recommend_for_subset` to ensure that existing Phase 2.12 and 2.11 regression tests remain valid without modification.
+- **Telemetry Placeholder**: Reporting zero telemetry without a disclaimer was identified as a risk for false confidence; the placeholder comment block is a mandatory requirement.

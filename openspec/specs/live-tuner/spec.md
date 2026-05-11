@@ -2,9 +2,7 @@
 
 ## Purpose
 
-Capture the OpenSpec-native contract for Phase 2.8 live tuning. This spec is the
-readable behavioral contract for the live tuner area; old planning prose is
-available through git history when needed.
+Capture the OpenSpec-native contract for Phase 2.8 live tuning and Phase 2.11 chatter resistance. This spec is the readable behavioral contract for the live tuner area; old planning prose is available through git history when needed.
 
 ## Requirements
 
@@ -65,3 +63,21 @@ bucket is TRACKING, STABLE, or LOCKED.
 - **WHEN** `nosf_live_tuner.py --state-info` is invoked
 - **THEN** the output lists bucket state, evidence counts, and a wait reason
 - **AND** the reason is specific enough to guide the next calibration step
+
+## Historical Design Rationale and Constants
+
+### Live-Tune Lock Rationale
+The `LIVE_TUNE_LOCK` protocol (SET:LIVE_TUNE_LOCK:1) was introduced to prevent race conditions between the host tuner and the firmware's internal state. When locked, the firmware accepts live tuning writes; when unlocked, it reverts to persisted defaults.
+
+### Chatter Resistance (Phase 2.11)
+To prevent "chatter" (rapid locking/unlocking due to noise), the following thresholds were established:
+- **Noise Ratio Gate (`sigma/x`)**: Buckets must have relative residual noise below the configured threshold (default 0.25) to lock.
+- **Three-Channel Unlock**:
+    - **Catastrophic**: Single residual exceeds 10.0 * sigma.
+    - **Streak**: 5 consecutive residuals exceed 3.0 * sigma.
+    - **Drift**: EWMA of residuals drifts by more than 4.0 * sigma.
+- **Lock Dwell**: A bucket must remain stable for at least 100 samples after warmup before locking.
+
+### Rollback Mechanics
+- **`--reset-runtime`**: Sends `SET:LIVE_TUNE_LOCK:0` and `LOAD` to the firmware, clearing in-memory tuner state and re-applying persisted defaults.
+- **Schema 4 Migration**: The migration from schema 3 to 4 is one-way. It adds scalar residual statistics to buckets to support the three-channel unlock logic without requiring full sample history.

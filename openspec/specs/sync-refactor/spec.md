@@ -134,3 +134,13 @@ The following decisions were established during the original Sync Refactor (Phas
 - **D7 (Status Back-compat)**: USB status strings are additive-at-tail; existing field order and names are FROZEN.
 - **D2.5-A (Integral Center)**: Drift recovery uses a low-gain integral term (default gain 0.0) with a 0.6 mm clamp.
 - **D2.5-B (Confidence Model)**: Estimator confidence uses physics-based sigma growth rather than wall-clock decay.
+
+## Frozen Interfaces and Regression Constraints
+
+To preserve stability across the host-tooling suite, the following interfaces and behaviors are considered FROZEN:
+
+- **on_m118 Ingress**: The contract for parsing M118/NT markers is stable; changes must be additive only.
+- **Motion Tracking**: `scripts/klipper_motion_tracker.py` and `scripts/gcode_marker.py` logic is frozen to ensure historical run correlation remains valid.
+- **Learning Loop**: The core EWMA/Kalman bucket update logic in `scripts/nosf_live_tuner.py` is frozen; changes to recommendation logic belong in the analyzer (`nosf_analyze.py`).
+- **Data Preservation**: Existing operator databases (JSON) and calibration runs (CSV) must remain usable; state migrations must be non-destructive and preserve learned evidence.
+- **UDS Contract**: The Klipper UDS subscription fields used by the motion matcher are frozen to prevent breaking the sidecar-synthesized event stream.

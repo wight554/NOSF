@@ -2,9 +2,7 @@
 
 ## Purpose
 
-Capture the OpenSpec-native contract for Phase 2.12 analyzer rigor and the
-relative tuner noise gate. Old planning prose is available through git history
-when needed.
+Capture the OpenSpec-native contract for Phase 2.12 analyzer rigor. This spec defines the requirements for precision-weighted recommendations, safe mode enforcement, and contributor visibility.
 
 ## Requirements
 
@@ -81,3 +79,18 @@ operator can inspect the evidence behind recommendations.
 - **THEN** `[nosf_contributors]` lists contributor count, total samples, and the
   highest-weight buckets with `n`, `x`, `sigma/x`, normalized weight, and
   marginal status when applicable
+
+## Historical Design Rationale and Constants
+
+### Precision Weighting vs. Dominant Pick
+Historically, the analyzer picked the single "dominant" bucket for recommendations, which caused oscillation between runs. Phase 2.12 introduced precision weighting (Weight = N / Var) and 5/95 tail trimming across qualifying buckets to stabilize the centroid.
+
+### BP-derived Sigma Rationale
+Deriving `buf_variance_blend_ref_mm` from the `BP` (Buffer Position) standard deviation in CSV telemetry ensures the reference reflects the real physical hardware scatter, rather than an aliased estimation from the `BL` (Baseline) field.
+
+### Constants and Constraints
+- **Qualifying Set**: Recommendations in `--mode safe` use ONLY LOCKED buckets.
+- **Sigma Clamp**: `buf_variance_blend_ref_mm` is clamped to `[0.1, 5.0]` mm to prevent non-physical recommendations.
+- **Weight Cap**: To prevent a single ultra-stable bucket from dominating, weights are capped at `5 * median(weights)` of the qualifying set.
+- **Bootstrap Path**: Safe mode is for re-tunes; operators are directed to use `--mode aggressive` for the very first calibration print where zero buckets are locked.
+- **Legacy Stubs**: `SAFETY_K` is kept as a deprecated stub for compatibility during the transition from fixed-safety-factor to precision-weighted logic.
