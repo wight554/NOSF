@@ -109,7 +109,7 @@ python3 scripts/nosf_cmd.py "SV:"
 
 - `scripts/nosf_cmd.py`: Serial helper — send commands and dump live config
 - `scripts/nosf_logger.py`: Deprecated. Use `nosf_live_tuner.py --csv-out` instead.
-- `scripts/nosf_analyze.py`: Offline calibration analyzer with LOCKED-bucket floor, contributor diagnostics, seven-tunable review patch, and acceptance gate
+- `scripts/nosf_analyze.py`: Offline calibration analyzer with LOCKED-bucket floor, contributor diagnostics, seven-tunable review patch, and recommendation-parity acceptance gate
 - `scripts/nosf_live_tuner.py`: Observe-only calibration bucket learner; emits reviewable patches, with live writes reserved for explicit debug flags
   and residual-aware lock hysteresis so noisy buckets stay isolated instead of chattering
 - `scripts/gcode_marker.py`: G-code metadata injector and sidecar generator for Klipper API motion tracking

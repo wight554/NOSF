@@ -311,10 +311,16 @@ cp ~/nosf-state/buckets-<id>.json ~/nosf-state/buckets-<id>.json.schema2.bak
    python3 scripts/nosf_analyze.py --commit-watermark --state ~/nosf-state/buckets-myprinter.json
    ```
 
-The acceptance gate requires broad locked-bucket coverage, consistent baseline
-and bias estimates across runs, clean estimator telemetry, at least three
-locked buckets, and enough print duration. On failure, the analyzer still writes
-a patch with `Acceptance gate: FAIL` and prints explicit reasons to stderr.
+The acceptance gate compares the same state-aware recommendation path used for
+normal patch output, once per mature run. Runs with too few contributor buckets
+or too few rows in any contributing bucket are listed as skipped instead of
+poisoning the consistency check. The gate still requires enough print duration,
+at least three locked buckets, consistent per-run baseline/bias estimates, and
+enough contributor mass in qualifying buckets. Raw MID-row coverage is reported
+as a warning only; it no longer fails the gate by itself. Telemetry counters in
+the patch are placeholders until log/event parsing is wired in a later phase.
+On failure, the analyzer still writes a patch with `Acceptance gate: FAIL` and
+prints explicit reasons to stderr.
 Patches may include `[nosf_contributors]`, listing the top weighted buckets for
 each learned tunable. `sigma/x` is the bucket residual-noise ratio and `w` is
 the normalized precision weight used by the analyzer.

@@ -329,6 +329,17 @@ the patch to see which buckets carried each tunable: high `w` means high
 precision weight, and `[marginal]` means the bucket is noisier than the normal
 ratio gate.
 
+### Why the Acceptance Gate Skipped a Run
+
+The acceptance gate now compares per-run analyzer recommendations, not raw
+per-bucket medians. A run is skipped from the consistency check when it has too
+few contributing buckets or fewer than 50 MID rows in every contributing bucket;
+the patch lists the exact reason under `Skipped runs`. A skipped run is not a
+failure by itself, but two comparable runs are needed before baseline/bias
+consistency can be judged. The coverage line reports contributor mass as the
+hard gate and raw MID coverage as a warning so short, diverse prints are not
+rejected just because many unlocked feature bins appeared.
+
 ### Legacy Shell-Marker Fallback
 
 Shell-marker mode is deprecated, but still available for debugging older

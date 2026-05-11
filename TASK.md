@@ -440,4 +440,20 @@ Settings version 46u → 47u.
 - 2.13.1 done: added synthetic three-run acceptance-gate parity fixture and soft expected-fail analyzer test; validation passed (full Phase 2.13 gate). Committed and pushed `7951502`.
 - 2.13.2 done: factored `recommend_for_subset()`, made `compute_recommendations()` a wrapper, changed acceptance-gate consistency to use per-run recommendations, and flipped the parity fixture to a hard assertion. Validation passed (full Phase 2.13 gate). Committed and pushed `e24aef8`.
 - 2.13.3 done: added comparable/immature run classification, skipped immature runs from consistency reduction, emitted per-run estimate diagnostics in patches, and covered skipped/true-disagreement cases. Validation passed (full Phase 2.13 gate). Committed and pushed `19589c0`.
-- 2.13.4 done: added contributor-mass coverage gate, downgraded raw MID coverage to patch warning, switched acceptance sigma to qualifying BP scatter, and documented telemetry counters as placeholders. Validation passed (full Phase 2.13 gate). Commit SHA to be recorded after push.
+- 2.13.4 done: added contributor-mass coverage gate, downgraded raw MID coverage to patch warning, switched acceptance sigma to qualifying BP scatter, and documented telemetry counters as placeholders. Validation passed (full Phase 2.13 gate). Committed and pushed `2d97263`.
+- 2.13.5 docs done: documented acceptance-gate parity, skipped-run reasons, contributor-mass coverage, raw-coverage warnings, and telemetry-placeholder limits in MANUAL/KLIPPER/README/CONTEXT. Validation passed (full Phase 2.13 gate). Commit SHA to be recorded after push.
+
+### Phase 2.13 Pi Validation
+- Status: **pending maintainer Pi rerun**. The operator's `/home/pi/nosf-runs/phase212-run2.csv`, `phase212-run3.csv`, `phase212-run4.csv`, and `/home/pi/nosf-state/buckets-myprinter.json` are not present in this macOS workspace, so the real `/tmp/nosf-gate.ini` cannot be generated here without fabricating data.
+- Required command on the Pi:
+  ```bash
+  python3 scripts/nosf_analyze.py \
+      --in ~/nosf-runs/phase212-run2.csv ~/nosf-runs/phase212-run3.csv ~/nosf-runs/phase212-run4.csv \
+      --state ~/nosf-state/buckets-myprinter.json \
+      --machine-id myprinter \
+      --acceptance-gate \
+      --mode safe \
+      --out /tmp/nosf-gate.ini
+  ```
+- Capture from `/tmp/nosf-gate.ini`: the `Acceptance gate` line, `Coverage: contributor mass ..., raw MID coverage ...`, `Consistency: max baseline delta ..., max bias delta ...`, and the full `Per-run estimates used in consistency check` block.
+- Expected on the operator evidence from Phase 2.12: consistency should pass with baseline delta near 33 sps and bias delta near 0.003. Raw MID coverage may warn around 74-75%, but should not fail. If contributor mass is below 50%, record it as a LOCKED-bucket coverage issue requiring more calibration data, not a Phase 2.13 gate-parity failure.
