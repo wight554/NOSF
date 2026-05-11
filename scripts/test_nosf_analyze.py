@@ -739,10 +739,12 @@ def test_2_14_diluted_mass_fails_initially():
     runs = phase_2_13_three_comparable_runs()
     rows = [r for run in runs for r in run["rows"]]
     gate = analyze.acceptance_gate(rows, runs, state, analyze.DEFAULTS.copy())
-    # Currently this SHOULD fail because we haven't implemented the floor yet.
-    assert not gate["pass"], "Expected mass dilution to FAIL initially"
-    assert gate["contributor_mass"] < 0.5, gate["contributor_mass"]
-    return "diluted mass fails as expected (initially)"
+    # After implementation, sparse buckets (n=14) are ignored in denominator.
+    # total_n = 8000 (LOCKED) + 6000 (STABLE) = 14000.
+    # Mass = 8000 / 14000 = 57.1%
+    assert gate["pass"], f"Expected mass dilution to PASS after floor; reasons: {gate['reasons']}"
+    assert 0.57 <= gate["contributor_mass"] <= 0.58, gate["contributor_mass"]
+    return "diluted mass passes after floor implementation"
 
 
 def test_2_14_high_sigma_fails_initially():

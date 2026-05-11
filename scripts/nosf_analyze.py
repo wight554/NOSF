@@ -27,6 +27,7 @@ V_NOISE_FLOOR = 100.0
 MIN_LEARN_EST_SPS = 100.0
 MIN_COMPARABLE_BUCKETS = 3  # Per-run gate estimates need at least this many contributors.
 MIN_RUN_BUCKET_ROWS = 50  # At least one contributing bucket must have this many rows in the run.
+DENOMINATOR_MIN_BUCKET_N = 50  # Denominator in contributor_mass ignores buckets with n below this.
 CONTRIBUTOR_MASS_PASS = 0.50  # Hard gate: qualifying buckets must hold at least this sample mass.
 CONTRIBUTOR_MASS_WARN = 0.65  # Soft warning below this contributor mass.
 RAW_COVERAGE_WARN = 0.80  # Raw MID-row coverage is diagnostic only, not a hard failure.
@@ -321,6 +322,8 @@ def contributor_mass(state_buckets, labels):
         if label.startswith("_") or not isinstance(raw, dict):
             continue
         n = int(raw.get("n", 0))
+        if n < DENOMINATOR_MIN_BUCKET_N:
+            continue
         total_n += n
         if label in labels:
             contributor_n += n
