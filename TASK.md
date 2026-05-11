@@ -545,3 +545,20 @@ Audit acceptance-gate logic to differentiate between FAIL (logic invalidity/hard
 
 ### Completed Steps
 - Moved sync-refactor phase notes into `openspec/design/sync-refactor/` and added OpenSpec indexes. Added proposed `changes/`, `design/adr/`, and `design/validation/` tracking scaffolds. Validation passed (`git diff --check`). Commit pending.
+
+## OpenSpec Spec Alignment
+
+### Findings
+- Moving historical notes as-is preserves audit history, but it does not provide an OpenSpec-native current contract.
+- `openspec list --specs` reported no specs, confirming agents had design archives but no normalized spec entry point.
+- `AGENTS.md` mentioned AI setup but did not tell agents that NOSF now uses OpenSpec for durable design/spec tracking.
+
+### Plan
+- Add `openspec/specs/sync-refactor/spec.md` using OpenSpec requirement/scenario format for the current sync/calibration/tuner/analyzer contract.
+- Add `openspec/design/sync-refactor/tasks.md` as a completed task ledger mapped from the old phases.
+- Add `openspec/design/sync-refactor/spec-traceability.md` to map normalized requirements back to old phase notes.
+- Update `AGENTS.md`, `AI.md`, and OpenSpec index docs so agents know to use OpenSpec first for durable behavior contracts.
+- Validate with `openspec list --specs`, `openspec spec validate sync-refactor`, and markdown diff checks.
+
+### Completed Steps
+- Added `openspec/specs/sync-refactor/spec.md` with 9 validated requirements, plus `tasks.md` and `spec-traceability.md` under `openspec/design/sync-refactor/`. Updated `AGENTS.md`, `AI.md`, and OpenSpec indexes to state that NOSF uses OpenSpec. Validation passed (`openspec list --specs`, `openspec validate --specs sync-refactor`, `git diff --check`). Commit pending.

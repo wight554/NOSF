@@ -5,6 +5,7 @@ The file isn't in this directory — the AGENTS.md was from the NOSF project ref
 For AI agents (Claude, Gemini, Codex, Opus, Copilot, etc.). Read first, then `TASK.md` (gitignored) before touching anything.
 
 **For AI environment setup (skills, MCPs), see [AI.md](./AI.md).**
+**This project uses OpenSpec for durable design tracking.** Read `openspec/README.md` and relevant specs under `openspec/specs/` when work touches existing design contracts or starts a new feature/change.
 
 ## Session Start Protocol
 
@@ -35,6 +36,25 @@ Two modes via `RELOAD_MODE`:
 
 ---
 
+## OpenSpec Workflow
+
+NOSF keeps durable design history and current behavioral contracts in
+`openspec/`.
+
+- Current specs live under `openspec/specs/`.
+- Long-form design history lives under `openspec/design/`.
+- New substantial work should start in `openspec/changes/<change-id>/` with
+  `proposal.md`, `design.md`, and `tasks.md` before implementation.
+- `TASK.md` remains the current-session scratchpad and completion log; promote
+  durable decisions from `TASK.md` into OpenSpec before they become long-lived
+  project knowledge.
+
+For sync, calibration, tuner, and analyzer work, read
+`openspec/specs/sync-refactor/spec.md` first, then use
+`openspec/design/sync-refactor/` only for historical rationale.
+
+---
+
 ## Key Files
 
 | File | What it contains |
@@ -55,6 +75,8 @@ Two modes via `RELOAD_MODE`:
 | `HARDWARE.md` | Board pinout, sensor wiring |
 | `BUILD_FLASH.md` | Build and flash instructions |
 | `scripts/nosf_cmd.py` | Single-command serial helper for Klipper shell integration |
+| `openspec/specs/` | Current OpenSpec behavioral contracts |
+| `openspec/design/` | Durable design notes, phase history, ADRs, validation summaries |
 
 ---
 
@@ -150,6 +172,10 @@ Context windows finite. Research then code without writing down = risk losing ev
    - Wire the runtime value through the persistence helpers in settings_store.c
    - Risk: keep config.ini, MANUAL.md, and generated tune.h in sync
    ```
+
+   If the task changes durable behavior or project workflow, also create or
+   update the relevant OpenSpec artifact (`openspec/specs`, `openspec/changes`,
+   or `openspec/design`) before implementation.
 
 3. **Implement** — work through plan file by file. After each file done, mark complete in `TASK.md` and commit + push immediately.
 

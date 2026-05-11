@@ -3,6 +3,10 @@
 This folder contains the implementation notes and phase plans that previously
 lived at the repository root as `SYNC_REFACTOR*.md`.
 
+For current expected behavior, start with
+`../../specs/sync-refactor/spec.md`. The files in this folder are historical
+source notes and should not be treated as the shortest path to current truth.
+
 ## Phase Map
 
 | File | Scope | Status |
@@ -28,6 +32,12 @@ lived at the repository root as `SYNC_REFACTOR*.md`.
 - Gate failures mean recommendation unreliability; stale current config is a
   warning when the emitted patch can correct it.
 
+## OpenSpec Alignment
+
+- Current contract: `openspec/specs/sync-refactor/spec.md`
+- Completed task ledger: `tasks.md`
+- Requirement-to-history map: `spec-traceability.md`
+
 ## Follow-Up Ideas
 
 - Move future Pi validation captures into `openspec/design/validation/` as short
@@ -36,4 +46,3 @@ lived at the repository root as `SYNC_REFACTOR*.md`.
   registry, acceptance-gate FAIL/WARN split, and global-first AI config.
 - Convert future Phase 2.x work into `openspec/changes/<id>/proposal.md`,
   `design.md`, and `tasks.md` before implementation.
-

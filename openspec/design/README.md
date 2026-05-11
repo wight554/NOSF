@@ -4,6 +4,9 @@ Design documents here are durable engineering context. They are more stable
 than `TASK.md` and more implementation-oriented than user docs such as
 `MANUAL.md` or `KLIPPER.md`.
 
+Current behavioral contracts belong in `openspec/specs/`; design files here
+explain why the contracts exist and how they evolved.
+
 ## Areas
 
 | Area | Contents |
