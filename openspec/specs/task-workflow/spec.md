@@ -81,3 +81,17 @@ explicitly decided to commit a project-owned AI artifact.
   `.github/skills`, and lockfiles listed by project policy are not included
 - **AND** project-owned OpenSpec documentation remains committed in
   `openspec/`
+
+## Historical Phase Ledger (Sync Refactor)
+
+The following milestones define the durable history of the Sync Refactor project (Phases 0-2.14). Detailed implementation prose is available in git history via commit messages and deleted phase notes.
+
+- **Phase 0-1**: Sync Foundation and Adapter Logic.
+- **Phase 2.0-2.7**: PSF/Analog Adapter, Estimator Integration, and Dwell Guards.
+- **Phase 2.8**: Live Tuner Foundation (Bucket state, EWMA estimation).
+- **Phase 2.9**: Calibration Workflow (Observe-only, state migration, patch emission).
+- **Phase 2.10**: Klipper Motion Tracking (Sidecar/UDS tracking, marker correlation).
+- **Phase 2.11**: Bucket Locking (Chatter resistance, catastrophic/streak/drift unlock).
+- **Phase 2.12**: Analyzer Rigor (Safe mode, precision-weighted recommendations, BP-sigma).
+- **Phase 2.13**: Acceptance Gate Parity (Consistency reduction, comparable runs).
+- **Phase 2.14**: Gate Semantics (FAIL/WARN separation, denominator floor, hardware ceiling).

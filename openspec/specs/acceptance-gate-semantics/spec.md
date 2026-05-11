@@ -81,3 +81,16 @@ paths produced by shell glob expansion.
   paths
 - **THEN** the analyzer reads all provided files in order
 - **AND** source/run diagnostics identify the files used
+
+## Standard Constants and Thresholds
+
+The following analyzer constants are preserved here as part of the durable behavioral contract:
+
+- **Contributor Mass Denominator Floor (`DENOMINATOR_MIN_BUCKET_N`)**: 50. Buckets with fewer than 50 samples do not count towards the evidence denominator.
+- **Hardware Sigma Ceiling (`SIGMA_HARDWARE_CEILING_MM`)**: 5.0 mm. BP sigma p95 above this threshold is treated as a mechanical/hardware failure.
+- **Soak Duration Warning (`DURATION_WARN_MIN_S`)**: 1800 s (30 minutes). Total calibration duration below this produces a soak-immature warning.
+- **Comparable Runs Minimum**: 2. Consistency reduction requires at least 2 comparable runs to pass.
+- **Contributor Mass Gray Band**:
+    - **FAIL**: < 40%
+    - **WARN**: 40% to 65%
+    - **PASS**: > 65%

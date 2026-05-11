@@ -120,3 +120,17 @@ The analyzer acceptance gate SHALL fail only when recommendations are unreliable
 #### Scenario: Hardware scatter is pathological
 - **WHEN** observed BP sigma p95 exceeds the hardware ceiling
 - **THEN** the gate SHALL fail and report a hardware-level scatter reason
+
+## Historical Design Decisions (Traceability)
+
+The following decisions were established during the original Sync Refactor (Phases 0-2.14) and are preserved here for durable rationale:
+
+- **D1 (PSF Sensor)**: Treat PSF electrical contract as unknown; use generic adapter until hardware is verified.
+- **D2 (Advance Dwell)**: Default advance-dwell hard stop is 6000 ms with a 400 ms start delay.
+- **D3 (Settings Version)**: `SETTINGS_VERSION` is bumped ONLY when fields are added to or removed from the `settings_t` struct.
+- **D4 (Hot-swap)**: `BUF_SENSOR_TYPE` changes are accepted ONLY when the system is IDLE (sync, toolchange, and cutter all inactive).
+- **D5 (Reload Follow)**: Reload follow logic remains identical to baseline; new telemetry is for observability only.
+- **D6 (Overshoot)**: `SYNC_OVERSHOOT_PCT` extension is feature-flagged and defaults to OFF.
+- **D7 (Status Back-compat)**: USB status strings are additive-at-tail; existing field order and names are FROZEN.
+- **D2.5-A (Integral Center)**: Drift recovery uses a low-gain integral term (default gain 0.0) with a 0.6 mm clamp.
+- **D2.5-B (Confidence Model)**: Estimator confidence uses physics-based sigma growth rather than wall-clock decay.
