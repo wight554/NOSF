@@ -47,7 +47,7 @@ startup path.
 ## Follow-Up Ideas
 
 - Move future Pi validation captures into `openspec/design/validation/` as short
-  dated summaries rather than appending long logs to `TASK.md`.
+  dated summaries rather than keeping long logs in ad hoc scratch files.
 - Add ADRs for durable policies: observe-only calibration, schema migration
   registry, acceptance-gate FAIL/WARN split, and global-first AI config.
 - Convert future Phase 2.x work into `openspec/changes/<id>/proposal.md`,

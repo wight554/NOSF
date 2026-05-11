@@ -61,7 +61,8 @@ Add `cavemem` MCP to `~/.claude/settings.json` and `~/.gemini/settings.json`:
 
 - **No local config commits**: `.agent/`, `.agents/`, `.claude/`, `.codex/`, `.gemini/`, `.github/skills/`, `.github/prompts/`, and `skills-lock.json` must NOT be committed. Relies on global config above.
 - **Model Attribution**: Include `Generated-By: <Agent> (<Model>)` in commit messages.
-- **Workflow**: Follow `TASK.md` protocol (Research -> Plan -> Implement) for context management.
+- **Workflow**: Follow the OpenSpec workflow in `AGENTS.md` and
+  `openspec/specs/task-workflow/spec.md` for context management.
 
 ## OpenSpec / OpsX Setup
 

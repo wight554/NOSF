@@ -15,7 +15,7 @@ This file links normalized OpenSpec requirements to the historical notes that in
 | `analyzer-rigor` | `SYNC_REFACTOR_PHASE_2_12.md` |
 | `acceptance-gate-parity` | `SYNC_REFACTOR_PHASE_2_13.md` |
 | `acceptance-gate-semantics` | `SYNC_REFACTOR_PHASE_2_14.md` and follow-up gate fixes |
-| `task-workflow` | `AGENTS.md`, `TASK.md` |
+| `task-workflow` | `AGENTS.md`, former `TASK.md`, `openspec/design/task-history/` |
 
 ## Aggregate Sync Requirement Map
 

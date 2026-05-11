@@ -28,7 +28,6 @@ CMakeCache.txt
 cmake_install.cmake
 
 # AI Scratchpads
-TASK.md
 scratch/
 
 # local AI/agent config lives in home directories; keep repo to project specs

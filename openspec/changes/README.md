@@ -12,6 +12,4 @@ openspec/changes/<change-id>/
 ```
 
 After the change ships, keep only durable design decisions and validation
-summaries under `openspec/design/`; implementation scratch can stay in `TASK.md`
-or disappear with the branch.
-
+summaries under `openspec/design/`; do not recreate repo-root `TASK.md`.

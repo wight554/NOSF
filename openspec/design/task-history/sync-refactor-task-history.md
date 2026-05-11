@@ -584,3 +584,30 @@ Audit acceptance-gate logic to differentiate between FAIL (logic invalidity/hard
   durable OpenSpec contract.
 - Updated OpenSpec README, sync-refactor history index, traceability map, and
   AGENTS guidance so agents start from specs and use phase notes as provenance.
+
+## OpenSpec Task and Context Split
+
+### Findings
+- `TASK.md` is 586 lines and mostly historical sync-refactor findings/plans;
+  that content is useful, but it makes the active handoff file noisy.
+- `openspec/design/sync-refactor/tasks.md` has a concise ledger, but there is no
+  OpenSpec-owned verbatim archive of the old `TASK.md` narrative.
+- `CONTEXT.md` is only 186 lines and still useful as a quick architecture guide,
+  but its durable architecture/gotcha rules should also exist as an OpenSpec
+  spec so agents can validate and discover them with `openspec list --specs`.
+
+### Plan
+- Archive the current full `TASK.md` content under `openspec/design/` before
+  trimming it.
+- Add a validated `project-architecture` OpenSpec spec based on `CONTEXT.md`
+  module ownership, runtime parameter pattern, persistence/protocol rules, and
+  critical gotchas.
+- Replace `TASK.md` with a lean current-task handoff that points to the
+  OpenSpec task history and specs.
+- Update `AGENTS.md`, `CONTEXT.md`, and OpenSpec indexes to reference the new
+  locations.
+- Validate with `openspec validate --specs`, `openspec list --specs`, and
+  `git diff --check`.
+
+### Completed Steps
+- Pending.

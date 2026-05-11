@@ -13,6 +13,7 @@ commit `.claude/`, `.codex/`, `.gemini/`, `.agent/`, or `.github/skills` here.
 | `config.yaml` | Project context used by OpenSpec-aware agents. |
 | `specs/` | Current and historical-phase behavioral contracts agents should read before changing an area. |
 | `design/sync-refactor/` | Long-running sync, calibration, tuner, and analyzer provenance notes. |
+| `design/task-history/` | Archived long-form task ledgers promoted from the former repo-root `TASK.md`. |
 
 ## Proposed Working Model
 
@@ -20,7 +21,8 @@ commit `.claude/`, `.codex/`, `.gemini/`, `.agent/`, or `.github/skills` here.
 - Put active change proposals in `openspec/changes/<change-id>/`.
 - Put current expected behavior in `openspec/specs/<area>/spec.md`.
 - Prefer OpenSpec-native specs over raw phase notes for agent startup context.
-- Keep day-to-day scratch notes in `TASK.md` only until they become durable
-  enough to promote into OpenSpec.
+- Do not recreate repo-root `TASK.md`; keep substantial active work in
+  `openspec/changes/` and durable history in `openspec/design/`.
+- Archive long task ledgers under `openspec/design/task-history/`.
 - When a change ships, archive the final design and important validation notes
   under `openspec/design/` and keep root docs focused on operator-facing usage.

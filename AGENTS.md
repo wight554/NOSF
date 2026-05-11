@@ -1,8 +1,8 @@
-The file isn't in this directory — the AGENTS.md was from the NOSF project referenced in session context. The COMPRESSED provided in the prompt shows all `TASK.md` inline codes already present. Returning the fixed content verbatim since the inline codes are intact:
-
 # NOSF — Agent Onboarding
 
-For AI agents (Claude, Gemini, Codex, Opus, Copilot, etc.). Read first, then `TASK.md` (gitignored) before touching anything.
+For AI agents (Claude, Gemini, Codex, Opus, Copilot, etc.). Read first, then
+read `openspec/README.md` and the relevant specs under `openspec/specs/`
+before touching anything.
 
 **For AI environment setup (skills, MCPs), see [AI.md](./AI.md).**
 **This project uses OpenSpec for durable design tracking.** Read `openspec/README.md` and relevant specs under `openspec/specs/` when work touches existing design contracts or starts a new feature/change.
@@ -14,7 +14,7 @@ Before anything else:
 2. Proactively use `cavemem` MCP (or similar persistent memory tools) for cross-session context.
 3. Post in chat:
 
-> **AGENTS.md ✓ | TASK.md: [one-line summary of current task, or "no active task"]**
+> **AGENTS.md ✓ | OpenSpec: [one-line summary of active change/spec context, or "no active change"]**
 
 Lets user verify context loaded before work begins.
 
@@ -45,9 +45,10 @@ NOSF keeps durable design history and current behavioral contracts in
 - Long-form design history lives under `openspec/design/`.
 - New substantial work should start in `openspec/changes/<change-id>/` with
   `proposal.md`, `design.md`, and `tasks.md` before implementation.
-- `TASK.md` remains the current-session scratchpad and completion log; promote
-  durable decisions from `TASK.md` into OpenSpec before they become long-lived
-  project knowledge.
+- Substantial active work belongs in `openspec/changes/<change-id>/`.
+- Durable implementation history belongs in `openspec/design/`.
+- Historical task ledgers live under `openspec/design/task-history/`.
+- Do not recreate repo-root `TASK.md`; use OpenSpec artifacts for handoff.
 
 For sync, calibration, tuner, and analyzer work, read
 `openspec/specs/sync-refactor/spec.md` first, then read the relevant
@@ -58,6 +59,9 @@ detailed implementation prompts.
 
 For project workflow and task tracking rules, read
 `openspec/specs/task-workflow/spec.md` alongside this file.
+For firmware architecture and gotchas, read
+`openspec/specs/project-architecture/spec.md` plus `CONTEXT.md` when changing
+firmware internals.
 
 ---
 
@@ -158,15 +162,20 @@ Rules:
 - Push immediately after every commit: `git push`
 - Use Git MCP first for add / commit when available; use shell git as fallback. Use shell git for `git push` unless a reliable push-capable MCP is explicitly available.
 
-## TASK.md Workflow — Required Before Writing Any Code
+## OpenSpec Workflow — Required Before Writing Any Code
 
-Context windows finite. Research then code without writing down = risk losing everything mid-task. **Write first.**
+Context windows finite. Research then code without writing down = risk losing
+everything mid-task. **Write first in OpenSpec artifacts.**
 
 ### Before touching any file:
 
-1. **Research phase** — read relevant source, grep symbols, understand current state. Write all findings into `TASK.md` under `## Findings`. Include: what read, what learned, what constraints exist.
+1. **Research phase** — read relevant source, grep symbols, understand current
+   state. For substantial work, write findings into
+   `openspec/changes/<change-id>/design.md` or the relevant
+   `openspec/design/` note. Include what read, what learned, and constraints.
 
-2. **Plan phase** — draft complete implementation plan in `TASK.md` before opening editor. For every file to modify, write:
+2. **Plan phase** — draft the implementation plan in the OpenSpec change or
+   design note before opening editor. For every file to modify, write:
    - File path
    - Exactly what changes and why
    - Any risk or invariant to watch
@@ -183,7 +192,9 @@ Context windows finite. Research then code without writing down = risk losing ev
    update the relevant OpenSpec artifact (`openspec/specs`, `openspec/changes`,
    or `openspec/design`) before implementation.
 
-3. **Implement** — work through plan file by file. After each file done, mark complete in `TASK.md` and commit + push immediately.
+3. **Implement** — work through plan file by file. After each durable unit is
+   done, update the OpenSpec task list/design note with completed steps,
+   validation, and commit SHA, then commit + push immediately.
 
    For new features, explicitly note which existing flows could regress and how to validate they stay correct.
 
@@ -193,14 +204,14 @@ Protects against most common failure: agent hits context limit between planning 
 
 ---
 
-## Current Task
+## Current Work
 
-`TASK.md` (gitignored, repo root) contains:
-- What's currently being worked on
-- Findings and decisions so far
-- Completed steps and what remains
+The repo no longer uses root `TASK.md`. Use these sources instead:
 
-**Read `TASK.md` before starting any work.**
-**Append completed-step entry to `TASK.md` after every finished unit of work** so next agent session can resume without re-deriving context.
+- `openspec/changes/` for active spec-driven work.
+- `openspec/specs/` for durable behavior contracts.
+- `openspec/design/` for design history, validation summaries, and task archives.
+- `openspec/design/task-history/` for old long-form task ledgers.
 
-If `TASK.md` missing or unclear, run `git log --oneline -20` to orient and ask user what to work on.
+If no active change exists, run `git log --oneline -20`, read relevant specs,
+and ask or infer the active task from the user prompt.

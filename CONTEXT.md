@@ -1,8 +1,11 @@
 # NOSF — Project Context
 
-Deep ref for firmware work. Architectural source of truth for agents; `TASK.md` is task log, may have stale notes.
-Durable implementation design notes live under `openspec/design/`, with the
-sync refactor history in `openspec/design/sync-refactor/`.
+Quick ref for firmware work. The validated architecture contract lives in
+`openspec/specs/project-architecture/spec.md`; this file remains a compact
+navigation guide for agents. Durable implementation design notes live under
+`openspec/design/`, with sync refactor history in
+`openspec/design/sync-refactor/` and old task ledgers in
+`openspec/design/task-history/`.
 
 Phase 2.8 adds host-side live tuner; firmware delta is the `LIVE_TUNE_LOCK` flag in `protocol.c`. No settings version change.
 Phase 2.9 makes calibration observe-only by default, matures `nosf_analyze.py`, and keeps the final workflow host-detached after reviewed defaults are flashed.
@@ -184,3 +187,5 @@ Current `SETTINGS_VERSION`: `47` in `firmware/src/settings_store.c`.
 | Change board pins or hardware assumptions | `config.h` + `HARDWARE.md` |
 | Run or extend bring-up / regression validation | `TEST_CASES.md` + `BUILD_FLASH.md` |
 | Change agent workflow / repo rules | `AGENTS.md` + `WORKFLOW.md` |
+| Need historical task/finding details | `openspec/design/task-history/` |
+| Need validated architecture contract | `openspec/specs/project-architecture/spec.md` |

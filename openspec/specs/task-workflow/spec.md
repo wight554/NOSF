@@ -3,57 +3,61 @@
 ## Purpose
 
 Capture the project workflow contract that was historically spread across
-`AGENTS.md` and the gitignored `TASK.md`. `TASK.md` remains the active scratchpad
-and handoff ledger, while this spec records the durable rules agents should
-follow.
+`AGENTS.md` and the former gitignored `TASK.md`. The repository no longer uses a
+root `TASK.md`; OpenSpec specs, changes, design notes, and task-history archives
+are the durable workflow surface.
 
 ## Requirements
 
-### Requirement: Agents shall start by loading project context
+### Requirement: Agents shall start by loading OpenSpec context
 
-Agents SHALL read onboarding and current task context before changing files.
+Agents SHALL read onboarding and relevant OpenSpec context before changing
+files.
 
 #### Scenario: A new agent session begins
 
 - **WHEN** an agent starts work in the repository
 - **THEN** it reads `AGENTS.md`
-- **AND** it reads `TASK.md` when present
+- **AND** it reads `openspec/README.md`
+- **AND** it reads relevant specs under `openspec/specs/`
 - **AND** it posts the configured session-start banner before implementation
 
-### Requirement: Findings and plan shall precede implementation
+### Requirement: Findings and plan shall be recorded in OpenSpec artifacts
 
-Before touching code or durable docs, agents SHALL write relevant findings and a
-file-level plan into `TASK.md`.
+Before touching code or durable docs for substantial work, agents SHALL record
+relevant findings and a file-level plan in the matching OpenSpec change or
+design artifact.
 
 #### Scenario: A task requires repository edits
 
 - **WHEN** the agent has completed initial research
 - **THEN** it records what was read, what was learned, constraints, planned file
-  changes, and risks in `TASK.md`
+  changes, and risks in `openspec/changes/<change-id>/` or the relevant
+  `openspec/design/` note
 - **AND** implementation begins only after that plan exists
 
-### Requirement: Completed work shall be recorded in TASK.md
+### Requirement: Completed work shall be recorded in OpenSpec
 
-Agents SHALL update `TASK.md` after each finished unit of work so later sessions
-can resume without re-deriving context.
+Agents SHALL update the relevant OpenSpec task list, design note, validation
+summary, or task-history archive after each finished unit of durable work.
 
 #### Scenario: A milestone or commit lands
 
 - **WHEN** the agent completes a unit of work
-- **THEN** `TASK.md` records the completed step, validation run, and commit short
-  SHA when applicable
+- **THEN** an OpenSpec artifact records the completed step, validation run, and
+  commit short SHA when applicable
 
-### Requirement: Durable behavior shall be promoted into OpenSpec
+### Requirement: Root TASK.md shall not be recreated
 
-`TASK.md` SHALL NOT be the only long-term source for project behavior, design
-decisions, or workflow rules.
+The repository SHALL NOT use repo-root `TASK.md` as an active or ignored
+handoff file.
 
-#### Scenario: A task creates a durable behavior contract
+#### Scenario: An agent needs scratch or handoff notes
 
-- **WHEN** a decision or behavior will matter beyond the current session
-- **THEN** the relevant `openspec/specs`, `openspec/changes`, or
-  `openspec/design` artifact is created or updated
-- **AND** `TASK.md` links or summarizes that durable artifact
+- **WHEN** a task creates notes that future agents need
+- **THEN** those notes are written to `openspec/changes/`,
+  `openspec/design/`, or `openspec/design/task-history/`
+- **AND** no repo-root `TASK.md` is created
 
 ### Requirement: Commits shall be small, attributed, and pushed
 

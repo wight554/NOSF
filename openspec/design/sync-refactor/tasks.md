@@ -56,3 +56,4 @@ This ledger maps the historical Phase 2.x implementation notes into the current 
 - [ ] 7.1 Promote durable policy decisions into ADRs under `openspec/design/adr/`.
 - [ ] 7.2 Add Pi validation summaries under `openspec/design/validation/` after accepted calibration patches.
 - [ ] 7.3 Use `openspec/changes/<change-id>/proposal.md`, `design.md`, and `tasks.md` for future Phase 2.x work before implementation.
+- [x] 7.4 Archive the long-form root `TASK.md` into `openspec/design/task-history/`, remove root `TASK.md`, and add `project-architecture` as a validated OpenSpec spec.
