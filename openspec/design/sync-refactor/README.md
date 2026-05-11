@@ -4,21 +4,23 @@ This folder contains the implementation notes and phase plans that previously
 lived at the repository root as `SYNC_REFACTOR*.md`.
 
 For current expected behavior, start with
-`../../specs/sync-refactor/spec.md`. The files in this folder are historical
-source notes and should not be treated as the shortest path to current truth.
+`../../specs/sync-refactor/spec.md`. For phase-specific behavior, use the
+OpenSpec spec listed in the Phase Map. The `SYNC_REFACTOR*.md` files in this
+folder are provenance notes and implementation prompts, not the preferred agent
+startup path.
 
 ## Phase Map
 
-| File | Scope | Status |
-|---|---|---|
-| `SYNC_REFACTOR_PLAN.md` | Main sync hardening plan: instrumentation, trailing bias, buffer abstraction, estimator confidence, telemetry pipeline. | Historical source of truth for Phases 0-2.7. |
-| `SYNC_REFACTOR_PHASE_2_8.md` | Closed-loop live tuner design. | Implemented, but live writes are no longer the default workflow. |
-| `SYNC_REFACTOR_PHASE_2_9.md` | Observe-only calibration workflow, state schemas, analyzer review patches. | Canonical calibration workflow foundation. |
-| `SYNC_REFACTOR_PHASE_2_10.md` | Klipper UDS motion tracking and sidecar marker replacement. | Implemented host-only marker flow. |
-| `SYNC_REFACTOR_PHASE_2_11.md` | Smarter bucket lock/unlock, residual statistics, schema 4. | Implemented tuner hysteresis. |
-| `SYNC_REFACTOR_PHASE_2_12.md` | Analyzer rigor and relative tuner noise gate. | Implemented recommendation hardening. |
-| `SYNC_REFACTOR_PHASE_2_13.md` | Acceptance-gate parity and mature-run consistency. | Implemented gate/recommendation parity. |
-| `SYNC_REFACTOR_PHASE_2_14.md` | FAIL/WARN acceptance-gate semantics. | Implemented gate semantics split. |
+| Provenance file | OpenSpec spec | Scope | Status |
+|---|---|---|---|
+| `SYNC_REFACTOR_PLAN.md` | `../../specs/sync-refactor-foundation/spec.md` | Main sync hardening plan: instrumentation, trailing bias, buffer abstraction, estimator confidence, telemetry pipeline. | Historical source for Phases 0-2.7. |
+| `SYNC_REFACTOR_PHASE_2_8.md` | `../../specs/live-tuner/spec.md` | Closed-loop live tuner design. | Implemented, but live writes are no longer the default workflow. |
+| `SYNC_REFACTOR_PHASE_2_9.md` | `../../specs/calibration-workflow/spec.md` | Observe-only calibration workflow, state schemas, analyzer review patches. | Canonical calibration workflow foundation. |
+| `SYNC_REFACTOR_PHASE_2_10.md` | `../../specs/klipper-motion-tracking/spec.md` | Klipper UDS motion tracking and sidecar marker replacement. | Implemented host-only marker flow. |
+| `SYNC_REFACTOR_PHASE_2_11.md` | `../../specs/bucket-locking/spec.md` | Smarter bucket lock/unlock, residual statistics, schema 4. | Implemented tuner hysteresis. |
+| `SYNC_REFACTOR_PHASE_2_12.md` | `../../specs/analyzer-rigor/spec.md` | Analyzer rigor and relative tuner noise gate. | Implemented recommendation hardening. |
+| `SYNC_REFACTOR_PHASE_2_13.md` | `../../specs/acceptance-gate-parity/spec.md` | Acceptance-gate parity and mature-run consistency. | Implemented gate/recommendation parity. |
+| `SYNC_REFACTOR_PHASE_2_14.md` | `../../specs/acceptance-gate-semantics/spec.md` | FAIL/WARN acceptance-gate semantics. | Implemented gate semantics split. |
 
 ## Current Design Baseline
 
@@ -34,7 +36,11 @@ source notes and should not be treated as the shortest path to current truth.
 
 ## OpenSpec Alignment
 
-- Current contract: `openspec/specs/sync-refactor/spec.md`
+- Current aggregate contract: `openspec/specs/sync-refactor/spec.md`
+- Phase contracts: `openspec/specs/sync-refactor-foundation/`,
+  `live-tuner/`, `calibration-workflow/`, `klipper-motion-tracking/`,
+  `bucket-locking/`, `analyzer-rigor/`, `acceptance-gate-parity/`, and
+  `acceptance-gate-semantics/`
 - Completed task ledger: `tasks.md`
 - Requirement-to-history map: `spec-traceability.md`
 

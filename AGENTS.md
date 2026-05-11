@@ -50,8 +50,14 @@ NOSF keeps durable design history and current behavioral contracts in
   project knowledge.
 
 For sync, calibration, tuner, and analyzer work, read
-`openspec/specs/sync-refactor/spec.md` first, then use
-`openspec/design/sync-refactor/` only for historical rationale.
+`openspec/specs/sync-refactor/spec.md` first, then read the relevant
+phase-level spec under `openspec/specs/` (`calibration-workflow`,
+`bucket-locking`, `analyzer-rigor`, etc.). Use
+`openspec/design/sync-refactor/` only for provenance, original rationale, and
+detailed implementation prompts.
+
+For project workflow and task tracking rules, read
+`openspec/specs/task-workflow/spec.md` alongside this file.
 
 ---
 

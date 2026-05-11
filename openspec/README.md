@@ -11,14 +11,15 @@ commit `.claude/`, `.codex/`, `.gemini/`, `.agent/`, or `.github/skills` here.
 | Path | Purpose |
 |---|---|
 | `config.yaml` | Project context used by OpenSpec-aware agents. |
-| `specs/` | Current behavioral contracts agents should read before changing an area. |
-| `design/sync-refactor/` | Long-running sync, calibration, tuner, and analyzer design history. |
+| `specs/` | Current and historical-phase behavioral contracts agents should read before changing an area. |
+| `design/sync-refactor/` | Long-running sync, calibration, tuner, and analyzer provenance notes. |
 
 ## Proposed Working Model
 
 - Put durable design decisions in `openspec/design/`.
 - Put active change proposals in `openspec/changes/<change-id>/`.
 - Put current expected behavior in `openspec/specs/<area>/spec.md`.
+- Prefer OpenSpec-native specs over raw phase notes for agent startup context.
 - Keep day-to-day scratch notes in `TASK.md` only until they become durable
   enough to promote into OpenSpec.
 - When a change ships, archive the final design and important validation notes

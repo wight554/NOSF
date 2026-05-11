@@ -562,3 +562,25 @@ Audit acceptance-gate logic to differentiate between FAIL (logic invalidity/hard
 
 ### Completed Steps
 - Added `openspec/specs/sync-refactor/spec.md` with 9 validated requirements, plus `tasks.md` and `spec-traceability.md` under `openspec/design/sync-refactor/`. Updated `AGENTS.md`, `AI.md`, and OpenSpec indexes to state that NOSF uses OpenSpec. Validation passed (`openspec list --specs`, `openspec validate --specs sync-refactor`, `git diff --check`). Commit pending.
+
+## OpenSpec Phase Spec Conversion
+
+### Findings
+- A single current-state `sync-refactor` spec is not enough for readability/integrity; it hides phase-level contracts that old agents used to find in `SYNC_REFACTOR_PHASE_*.md`.
+- Historical files should remain available as provenance, but each old phase area should have an OpenSpec-native `Purpose` + `Requirements` spec.
+- `TASK.md` workflow is itself a project contract and should also be represented as an OpenSpec spec rather than only prose in `AGENTS.md`.
+
+### Plan
+- Add OpenSpec specs for the historical sync-refactor phase areas: foundation, live tuning, calibration workflow, Klipper motion tracking, bucket locking, analyzer rigor, acceptance-gate parity, and acceptance-gate semantics.
+- Add an OpenSpec spec for `TASK.md` workflow and project tracking.
+- Update OpenSpec indexes and traceability so agents know which spec replaces which historical file.
+- Validate every spec with `openspec validate --specs`.
+
+### Completed Steps
+- Added OpenSpec-native phase specs for the historical sync-refactor foundation,
+  live tuner, calibration workflow, Klipper motion tracking, bucket locking,
+  analyzer rigor, acceptance-gate parity, and acceptance-gate semantics.
+- Added `task-workflow` spec so `TASK.md`/AGENTS workflow is represented as a
+  durable OpenSpec contract.
+- Updated OpenSpec README, sync-refactor history index, traceability map, and
+  AGENTS guidance so agents start from specs and use phase notes as provenance.
