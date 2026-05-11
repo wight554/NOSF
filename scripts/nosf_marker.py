@@ -12,6 +12,10 @@ import time
 
 
 def main():
+    print(
+        "Warning: nosf_marker.py is deprecated; prefer gcode_marker.py --emit sidecar with Klipper API motion tracking.",
+        file=sys.stderr,
+    )
     ap = argparse.ArgumentParser(description="Append a NOSF marker to a local marker file.")
     ap.add_argument("--file", default="/tmp/nosf-markers.log", help="Marker file path")
     ap.add_argument("tag", nargs=argparse.REMAINDER, help="Marker tag, e.g. NT:Outer_wall:V335")

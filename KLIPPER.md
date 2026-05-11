@@ -49,11 +49,6 @@ Add to `printer.cfg`:
 command: python3 /home/pi/NOSF/scripts/nosf_cmd.py
 timeout: 130.0
 verbose: True
-
-[gcode_shell_command nosf_marker]
-command: python3 /home/pi/NOSF/scripts/nosf_marker.py --file /tmp/nosf-markers-myprinter.log
-timeout: 2.0
-verbose: False
 ```
 
 Adjust the path to match your Pi home directory. Test it with:
@@ -312,7 +307,20 @@ prints a loud warning.
 In observe mode the tuner persists its tracking state but sends no `SET:`
 commands and no `SV:`.
 
-Fallback shell-marker mode is still available for debugging older setups:
+### Legacy Shell-Marker Fallback
+
+Shell-marker mode is deprecated, but still available for debugging older
+setups. Add the legacy marker command to `printer.cfg` only when using this
+fallback:
+
+```ini
+[gcode_shell_command nosf_marker]
+command: python3 /home/pi/NOSF/scripts/nosf_marker.py --file /tmp/nosf-markers-myprinter.log
+timeout: 2.0
+verbose: False
+```
+
+Then generate a shell-marker G-code file and force marker fallback in the tuner:
 
 ```bash
 python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode \

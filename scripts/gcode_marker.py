@@ -455,7 +455,7 @@ def main():
     parser.add_argument("--dia", type=float, default=1.75, help="Filament diameter")
     parser.add_argument("--every-layer", action="store_true", help="Deprecated. Layer markers are now on by default.")
     parser.add_argument("--no-layer-markers", action="store_false", dest="every_layer", help="Disable per-layer marker injection")
-    parser.add_argument("--emit", choices=["m118", "mark", "file", "both", "sidecar"], default="m118",
+    parser.add_argument("--emit", choices=["m118", "mark", "file", "both", "sidecar"], default="sidecar",
                         help="Marker output: M118 echo, direct NOSF MARK command, local marker file, M118+MARK, or sidecar JSON")
     parser.add_argument("--shell-cmd", default="nosf",
                         help="Klipper gcode_shell_command name for --emit mark/both")
@@ -464,6 +464,11 @@ def main():
     args = parser.parse_args()
     if "--every-layer" in sys.argv:
         print("Warning: --every-layer is deprecated. Layer markers are now injected by default.", file=sys.stderr)
+    if args.emit in ("file", "mark", "both"):
+        print(
+            "Warning: shell-marker emit modes are deprecated; prefer --emit sidecar with nosf_live_tuner.py --klipper-uds.",
+            file=sys.stderr,
+        )
 
     in_place = args.output is None
     if in_place:
