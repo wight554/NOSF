@@ -1,97 +1,39 @@
 # Task Workflow Specification
 
 ## Purpose
-
-Capture the project workflow contract that was historically spread across
-`AGENTS.md` and the former gitignored `TASK.md`. The repository no longer uses a
-root `TASK.md`; OpenSpec specs and active changes are the durable workflow
-surface.
+Workflow contract (ex-AGENTS.md + TASK.md). NO root TASK.md.
 
 ## Requirements
 
-### Requirement: Agents shall start by loading OpenSpec context
+### REQ: Load Context First
+Agents MUST read `AGENTS.md`, `openspec/README.md`, and relevant specs before work.
+- **SCEN: Session Start**: read docs -> post banner.
 
-Agents SHALL read onboarding and relevant OpenSpec context before changing
-files.
+### REQ: OpenSpec Changes
+Record findings + file-level plan in `openspec/changes/<id>/` before code.
+- **SCEN: Edit Required**: research -> record learned/risks/plan in change.
 
-#### Scenario: A new agent session begins
+### REQ: Record Completion
+Update change task list + spec after durable work.
+- **SCEN: Milestone Complete**: record step + validation + SHA.
 
-- **WHEN** an agent starts work in the repository
-- **THEN** it reads `AGENTS.md`
-- **AND** it reads `openspec/README.md`
-- **AND** it reads relevant specs under `openspec/specs/`
-- **AND** it posts the configured session-start banner before implementation
+### REQ: NO root TASK.md
+Handoff/scratch belongs in `openspec/changes/`. Fold to specs when durable.
 
-### Requirement: Findings and plan shall be recorded in OpenSpec changes
+### REQ: Small Commits
+Commit + push small attributed units promptly.
+- **SCEN: Doc Fix**: validation pass -> commit + footer -> push.
 
-Before touching code or durable docs for substantial work, agents SHALL record
-relevant findings and a file-level plan in the matching OpenSpec change.
-
-#### Scenario: A task requires repository edits
-
-- **WHEN** the agent has completed initial research
-- **THEN** it records what was read, what was learned, constraints, planned file
-  changes, and risks in `openspec/changes/<change-id>/`
-- **AND** implementation begins only after that plan exists
-
-### Requirement: Completed work shall be recorded in OpenSpec
-
-Agents SHALL update the relevant OpenSpec change task list and target spec after
-each finished unit of durable work.
-
-#### Scenario: A milestone or commit lands
-
-- **WHEN** the agent completes a unit of work
-- **THEN** an OpenSpec artifact records the completed step, validation run, and
-  commit short SHA when applicable
-
-### Requirement: Root TASK.md shall not be recreated
-
-The repository SHALL NOT use repo-root `TASK.md` as an active or ignored
-handoff file.
-
-#### Scenario: An agent needs scratch or handoff notes
-
-- **WHEN** a task creates notes that future agents need
-- **THEN** those notes are written to `openspec/changes/` while active and then
-  folded into `openspec/specs/` when durable
-- **AND** no repo-root `TASK.md` is created
-
-### Requirement: Commits shall be small, attributed, and pushed
-
-Finished units of work SHALL be committed with the required generated-by footer
-and pushed promptly unless the user explicitly pauses the workflow.
-
-#### Scenario: A docs-only OpenSpec conversion is complete
-
-- **WHEN** validation passes for the edited docs/specs
-- **THEN** the agent commits the scoped changes with an explanatory body
-- **AND** the commit includes the required `Generated-By` footer
-- **AND** the branch is pushed
-
-### Requirement: Local AI configuration shall stay out of project commits
-
-Local agent configuration SHALL remain global or ignored unless the project has
-explicitly decided to commit a project-owned AI artifact.
-
-#### Scenario: Global skills are installed for agent workflows
-
-- **WHEN** the repository working tree is committed
-- **THEN** `.agents/`, `.claude/`, `.codex/`, `.gemini/`, `.agent/`,
-  `.github/skills`, and lockfiles listed by project policy are not included
-- **AND** project-owned OpenSpec documentation remains committed in
-  `openspec/`
+### REQ: NO Local AI Config in Commits
+Keep `.agents/`, `.claude/`, `.gemini/` etc. OUT of project.
 
 ## Historical Phase Ledger (Sync Refactor)
-
-The following milestones define the durable history of the Sync Refactor project (Phases 0-2.14). Detailed implementation prose is available in git history via commit messages and deleted phase notes.
-
-- **Phase 0-1**: Sync Foundation and Adapter Logic.
-- **Phase 2.0-2.7**: PSF/Analog Adapter, Estimator Integration, and Dwell Guards.
-- **Phase 2.8**: Live Tuner Foundation (Bucket state, EWMA estimation).
-- **Phase 2.9**: Calibration Workflow (Observe-only, state migration, patch emission).
-- **Phase 2.10**: Klipper Motion Tracking (Sidecar/UDS tracking, marker correlation).
-- **Phase 2.11**: Bucket Locking (Chatter resistance, catastrophic/streak/drift unlock).
-- **Phase 2.12**: Analyzer Rigor (Safe mode, precision-weighted recommendations, BP-sigma).
-- **Phase 2.13**: Acceptance Gate Parity (Consistency reduction, comparable runs).
-- **Phase 2.14**: Gate Semantics (FAIL/WARN separation, denominator floor, hardware ceiling).
+- **Phase 0-1**: Sync Foundation.
+- **Phase 2.0-2.7**: PSF/Analog, Estimator, Dwell.
+- **Phase 2.8**: Live Tuner (Buckets, EWMA).
+- **Phase 2.9**: Cal Workflow (Observe-only, patch).
+- **Phase 2.10**: Klipper Tracking (Sidecar, UDS).
+- **Phase 2.11**: Bucket Locking (Hysteresis, 3-channel unlock).
+- **Phase 2.12**: Analyzer Rigor (Safe mode, weighted recs).
+- **Phase 2.13**: Gate Parity (Consistency reduction).
+- **Phase 2.14**: Gate Semantics (FAIL/WARN, mass floor).

@@ -1,96 +1,37 @@
 # Acceptance Gate Semantics Specification
 
 ## Purpose
-
-Capture the OpenSpec-native contract for Phase 2.14 acceptance-gate semantics
-and follow-up analyzer behavior. Old planning prose is available through git
-history when needed.
+Phase 2.14 gate semantics and decision logic.
 
 ## Requirements
 
-### Requirement: Acceptance gate shall separate rejection from advisories
+### REQ: Separate Rejection from Advisory
+FAIL ONLY on reliability issues. Stale config / incomplete soak = WARN.
+- **SCEN: Stable Rec / Stale Config**: consistency PASS -> WARN stale. Emit patch.
 
-The analyzer SHALL fail only on conditions that make the recommendation
-unreliable, while reporting stale config and incomplete soak signals as warnings.
+### REQ: Floored Denominator
+Avoid penalty for immature buckets in mass calc.
+- **SCEN: Many Low-Evidence Buckets**: use mature evidence denominator floor.
 
-#### Scenario: Recommendations are stable but current config is stale
+### REQ: Mass Gray Band
+WARN between PASS and FAIL thresholds.
+- **SCEN: Gray Mass**: above hard floor / below target -> PASS + WARN.
 
-- **WHEN** consistency passes and contributor evidence is adequate
-- **AND** the current config differs from the learned recommendation
-- **THEN** the gate may warn about stale current config
-- **AND** it still emits an applicable patch when no reliability failure exists
+### REQ: Sigma Ceiling
+BP sigma > ref but < ceiling -> WARN stale ref. Emit patch.
+- **SCEN: High BP Sigma**: above current but below 5.0mm -> WARN. Recommend correction.
 
-### Requirement: Contributor mass shall use a floored denominator
+### REQ: Soak Maturity
+Report run-count/duration without hiding recs.
+- **SCEN: 2 Runs**: consistent -> PASS + soak-immature WARN. Rec visible.
 
-Contributor-mass coverage SHALL avoid penalizing the operator for many tiny,
-irrelevant, or immature buckets by applying the Phase 2.14 denominator floor
-semantics.
-
-#### Scenario: Many low-evidence buckets exist in state
-
-- **WHEN** the state file includes many buckets with little usable evidence
-- **THEN** contributor mass is computed from the mature evidence denominator
-  defined by analyzer semantics
-- **AND** the gate does not fail solely because immature buckets inflate the raw
-  bucket universe
-
-### Requirement: Contributor mass gray band shall warn before hard failure
-
-Contributor mass below the ideal threshold but above the hard minimum SHALL
-produce a warning instead of a rejection.
-
-#### Scenario: Contributor mass is between pass and warn thresholds
-
-- **WHEN** contributor mass is above the hard pass floor but below the preferred
-  coverage target
-- **THEN** the patch records a contributor-mass warning
-- **AND** the acceptance gate can still pass if other hard criteria pass
-
-### Requirement: Hardware sigma ceiling shall not block corrective patches
-
-The acceptance gate SHALL treat buffer sigma that exceeds the current configured
-reference as a stale-config warning when the emitted patch can correct the
-reference.
-
-#### Scenario: BP sigma p95 is higher than current reference
-
-- **WHEN** the analyzer computes a supported higher buffer reference value
-- **THEN** the patch can recommend the corrected value
-- **AND** the gate records the stale reference as a warning rather than a hard
-  failure
-
-### Requirement: Soak maturity shall be reported without hiding recommendations
-
-Run-count and duration maturity checks SHALL help the operator judge confidence
-without hiding otherwise stable recommendations.
-
-#### Scenario: Only two calibration runs are provided
-
-- **WHEN** per-run consistency is stable but run count is below the soak target
-- **THEN** the patch records a soak-immature warning
-- **AND** the recommendation remains visible with its computed confidence
-
-### Requirement: Analyzer input shall support shell-expanded CSV groups
-
-The analyzer SHALL accept multiple CSV paths passed through `--in`, including
-paths produced by shell glob expansion.
-
-#### Scenario: Operator passes a wildcard-expanded run set
-
-- **WHEN** the shell expands `--in ~/nosf-runs/phase212-run*.csv` into multiple
-  paths
-- **THEN** the analyzer reads all provided files in order
-- **AND** source/run diagnostics identify the files used
+### REQ: Glob Input
+Support shell-expanded CSV groups (`--in *.csv`).
 
 ## Standard Constants and Thresholds
 
-The following analyzer constants are preserved here as part of the durable behavioral contract:
-
-- **Contributor Mass Denominator Floor (`DENOMINATOR_MIN_BUCKET_N`)**: 50. Buckets with fewer than 50 samples do not count towards the evidence denominator.
-- **Hardware Sigma Ceiling (`SIGMA_HARDWARE_CEILING_MM`)**: 5.0 mm. BP sigma p95 above this threshold is treated as a mechanical/hardware failure.
-- **Soak Duration Warning (`DURATION_WARN_MIN_S`)**: 1800 s (30 minutes). Total calibration duration below this produces a soak-immature warning.
-- **Comparable Runs Minimum**: 2. Consistency reduction requires at least 2 comparable runs to pass.
-- **Contributor Mass Gray Band**:
-    - **FAIL**: < 40%
-    - **WARN**: 40% to 65%
-    - **PASS**: > 65%
+- **Mass Floor (`DENOMINATOR_MIN_BUCKET_N`)**: 50 samples.
+- **Hardware Ceiling (`SIGMA_HARDWARE_CEILING_MM`)**: 5.0 mm.
+- **Soak Min (`DURATION_WARN_MIN_S`)**: 1800 s (30 min).
+- **Min Comparable Runs**: 2.
+- **Mass Band**: FAIL < 40%; WARN 40-65%; PASS > 65%.

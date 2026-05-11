@@ -1,83 +1,44 @@
 # Live Tuner Specification
 
 ## Purpose
-
-Capture the OpenSpec-native contract for Phase 2.8 live tuning and Phase 2.11 chatter resistance. This spec is the readable behavioral contract for the live tuner area; old planning prose is available through git history when needed.
+Tuner contract for Phase 2.8 and Phase 2.11 (chatter resistance).
 
 ## Requirements
 
-### Requirement: Tuner shall learn per-feature velocity buckets
+### REQ: Per-Feature Velocity Buckets
+Tuner aggregate telemetry into feature + velocity buckets (rate + bias).
+- **SCEN: Marker Active**: tune samples + marker -> update rounded velocity bucket.
+- **AND** update rate, uncertainty, bias, N, layers, runs, motion time.
 
-The live tuner SHALL aggregate telemetry into feature-and-filament-velocity
-buckets that estimate stable sync rate and trailing bias.
+### REQ: Machine-Scoped Persistence
+Persist bucket state in machine-scoped JSON.
+- **SCEN: Tuner Restart**: load machine state -> extend evidence (no zero-start).
 
-#### Scenario: Telemetry arrives with marker context
+### REQ: Observe-Only Default
+NO firmware writes without explicit flags.
+- **SCEN: No Write Flags**: record + report buckets. NO `SET`, NO `SV`.
 
-- **WHEN** tune samples arrive while a feature marker is active
-- **THEN** samples are credited to the matching rounded velocity bucket
-- **AND** the bucket updates its rate estimate, uncertainty, bias, sample count,
-  layer count, run count, and cumulative motion time
+### REQ: Review-Only Workflow
+Prefer analyzer review patches over blind tuning.
+- **SCEN: Cal Data Ready**: analyzer emits patch for review -> operator flash.
 
-### Requirement: Bucket state shall be persisted by machine
+### REQ: Diagnostics
+Tuner MUST explain bucket states (TRACKING, STABLE, LOCKED).
+- **SCEN: state-info**: output state + counts + wait reason (e.g. noise).
 
-Learned bucket state SHALL be stored in a machine-scoped JSON state file so
-calibration evidence can accumulate across runs.
+## Historical Rationale and Constants
 
-#### Scenario: The operator restarts the tuner
-
-- **WHEN** a previous state file exists for the selected machine id
-- **THEN** the tuner loads existing bucket evidence
-- **AND** new samples extend that evidence instead of starting from zero
-
-### Requirement: Live writes shall require explicit opt-in
-
-The tuner SHALL NOT send firmware-setting writes during normal observe-only use.
-Any live write behavior SHALL be guarded by explicit command-line flags.
-
-#### Scenario: Tuner runs without write flags
-
-- **WHEN** the operator starts the tuner with no baseline-write or bias-write
-  permission
-- **THEN** the tuner records and reports bucket evidence
-- **AND** it sends no firmware `SET` writes and no save command
-
-### Requirement: Review patches shall be preferred over blind live tuning
-
-The tuning workflow SHALL prefer analyzer-generated review patches over applying
-live learned values directly.
-
-#### Scenario: Calibration data is available
-
-- **WHEN** the operator has state and CSV telemetry from calibration prints
-- **THEN** the analyzer emits a review patch for human inspection
-- **AND** operator-facing docs direct the operator to review and flash explicit
-  settings rather than blindly trusting live updates
-
-### Requirement: Tuner diagnostics shall explain non-locking buckets
-
-The tuner SHALL provide human-readable state and wait reasons that explain why a
-bucket is TRACKING, STABLE, or LOCKED.
-
-#### Scenario: The operator runs state-info
-
-- **WHEN** `nosf_live_tuner.py --state-info` is invoked
-- **THEN** the output lists bucket state, evidence counts, and a wait reason
-- **AND** the reason is specific enough to guide the next calibration step
-
-## Historical Design Rationale and Constants
-
-### Live-Tune Lock Rationale
-The `LIVE_TUNE_LOCK` protocol (SET:LIVE_TUNE_LOCK:1) was introduced to prevent race conditions between the host tuner and the firmware's internal state. When locked, the firmware accepts live tuning writes; when unlocked, it reverts to persisted defaults.
+### Live-Tune Lock
+`LIVE_TUNE_LOCK:1` prevents host-firmware races. LOCKED = accepts writes; UNLOCKED = defaults.
 
 ### Chatter Resistance (Phase 2.11)
-To prevent "chatter" (rapid locking/unlocking due to noise), the following thresholds were established:
-- **Noise Ratio Gate (`sigma/x`)**: Buckets must have relative residual noise below the configured threshold (default 0.25) to lock.
-- **Three-Channel Unlock**:
-    - **Catastrophic**: Single residual exceeds 10.0 * sigma.
-    - **Streak**: 5 consecutive residuals exceed 3.0 * sigma.
-    - **Drift**: EWMA of residuals drifts by more than 4.0 * sigma.
-- **Lock Dwell**: A bucket must remain stable for at least 100 samples after warmup before locking.
+- **Noise Gate (`sigma/x`)**: threshold pass required to lock (default 0.25).
+- **3-Channel Unlock**:
+    - **Catastrophic**: residual > 10.0 * sigma.
+    - **Streak**: 5 residuals > 3.0 * sigma.
+    - **Drift**: EWMA drift > 4.0 * sigma.
+- **Lock Dwell**: 100 samples min after warmup.
 
-### Rollback Mechanics
-- **`--reset-runtime`**: Sends `SET:LIVE_TUNE_LOCK:0` and `LOAD` to the firmware, clearing in-memory tuner state and re-applying persisted defaults.
-- **Schema 4 Migration**: The migration from schema 3 to 4 is one-way. It adds scalar residual statistics to buckets to support the three-channel unlock logic without requiring full sample history.
+### Rollback
+- **`--reset-runtime`**: `LOCK:0` + `LOAD`. Clear memory, re-apply defaults.
+- **Schema 4 Migration**: One-way. Adds residual stats for 3-channel unlock.
