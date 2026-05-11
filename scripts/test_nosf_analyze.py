@@ -129,7 +129,7 @@ def test_bias_clamped_to_safe_range():
     return "bias recommendation clamps to safe max"
 
 
-def test_acceptance_gate_fail_low_coverage():
+def test_acceptance_gate_warns_low_raw_coverage():
     with tempfile.TemporaryDirectory() as td:
         csvs = []
         for idx in range(3):
@@ -145,12 +145,13 @@ def test_acceptance_gate_fail_low_coverage():
         err = StringIO()
         with redirect_stderr(err):
             rc = analyze.run(args)
-        assert rc == 1, rc
-        assert "coverage" in err.getvalue(), err.getvalue()
+        assert rc == 0, (rc, err.getvalue())
         with open(out) as fh:
             text = fh.read()
-        assert "Acceptance gate: FAIL" in text, text
-        return "acceptance gate fails with explicit low-coverage reason"
+        assert "Acceptance gate: PASS" in text, text
+        assert "raw MID coverage" in text, text
+        assert "Failure reasons" not in text, text
+        return "low raw MID coverage warns but does not fail acceptance"
 
 
 def test_acceptance_gate_pass_three_runs():
@@ -557,12 +558,34 @@ def phase_2_13_state_records():
     }
 
 
+def phase_2_13_state_with_nonlocked_mass(extra_count, extra_n):
+    records = phase_2_13_state_records()
+    for idx in range(extra_count):
+        records[f"Stable{idx}_v1000"] = {
+            "state": "STABLE",
+            "locked": False,
+            "x": 700 + idx,
+            "n": extra_n,
+            "resid_var_ewma": 10000.0,
+            "cumulative_mid_s": 120,
+        }
+    return records
+
+
 def phase_2_13_comparable_run(path, bp_delta=-0.756):
     rows = []
     for i in range(50):
         ts = int(i * (601000 / 49))
         rows.append(row(ts, feature="LockedC", v_fil=1000, est=720, bp=-3.0 + bp_delta, rt=-3.0))
     return {"path": path, "rows": rows}
+
+
+def phase_2_13_three_comparable_runs():
+    return [
+        phase_2_13_comparable_run("run-a.csv"),
+        phase_2_13_comparable_run("run-b.csv"),
+        phase_2_13_comparable_run("run-c.csv"),
+    ]
 
 
 def test_immature_run_skipped_with_reason():
@@ -646,11 +669,71 @@ def test_rejected_patch_includes_per_run_estimates():
         return "rejected patch includes per-run estimate diagnostics"
 
 
+def test_contributor_mass_below_threshold_fails():
+    state = phase_2_13_state_with_nonlocked_mass(extra_count=5, extra_n=1000)
+    runs = phase_2_13_three_comparable_runs()
+    rows = [r for run in runs for r in run["rows"]]
+    gate = analyze.acceptance_gate(rows, runs, state, analyze.DEFAULTS.copy())
+    assert not gate["pass"], gate
+    assert gate["contributor_mass"] < analyze.CONTRIBUTOR_MASS_PASS, gate
+    assert any("contributor mass" in reason for reason in gate["reasons"]), gate
+    return "contributor mass below hard threshold fails acceptance"
+
+
+def test_contributor_mass_warn_tier_passes():
+    state = phase_2_13_state_with_nonlocked_mass(extra_count=3, extra_n=500)
+    runs = phase_2_13_three_comparable_runs()
+    rows = [r for run in runs for r in run["rows"]]
+    gate = analyze.acceptance_gate(rows, runs, state, analyze.DEFAULTS.copy())
+    assert gate["pass"], gate
+    assert analyze.CONTRIBUTOR_MASS_PASS <= gate["contributor_mass"] < analyze.CONTRIBUTOR_MASS_WARN, gate
+    assert any("contributor mass" in warning for warning in gate["warnings"]), gate
+    return "contributor mass warning tier is visible but non-failing"
+
+
+def test_raw_coverage_below_80_does_not_fail_alone():
+    state = phase_2_13_state_records()
+    runs = []
+    for idx in range(3):
+        run_rows = list(phase_2_13_comparable_run(f"run-{idx}.csv")["rows"])
+        run_rows.extend(
+            row(i * 6000, feature="Unqualified", v_fil=1000, est=720)
+            for i in range(100)
+        )
+        runs.append({"path": f"run-{idx}.csv", "rows": run_rows})
+    rows = [r for run in runs for r in run["rows"]]
+    gate = analyze.acceptance_gate(rows, runs, state, analyze.DEFAULTS.copy())
+    assert gate["pass"], gate
+    assert gate["raw_coverage"] < analyze.RAW_COVERAGE_WARN, gate
+    assert any("raw MID coverage" in warning for warning in gate["warnings"]), gate
+    assert not any("coverage" in reason for reason in gate["reasons"]), gate
+    return "raw row coverage below 80 percent is diagnostic only"
+
+
+def test_acceptance_sigma_p95_uses_bp_derived_value():
+    state = phase_2_13_state_records()
+    runs = []
+    for idx in range(3):
+        rows = []
+        for i in range(50):
+            bp = [-6.0, -3.0, 0.0][i % 3]
+            rows.append(row(int(i * (601000 / 49)), feature="LockedC", v_fil=1000, est=720, bp=bp, rt=-3.0, sigma=0.01))
+        runs.append({"path": f"run-{idx}.csv", "rows": rows})
+    rows = [r for run in runs for r in run["rows"]]
+    current = analyze.DEFAULTS.copy()
+    current["buf_variance_blend_ref_mm"] = 0.1
+    gate = analyze.acceptance_gate(rows, runs, state, current)
+    assert not gate["pass"], gate
+    assert gate["sigma_p95"] > 0.1, gate
+    assert any("sigma p95" in reason for reason in gate["reasons"]), gate
+    return "acceptance sigma p95 comes from BP scatter, not CSV sigma_mm"
+
+
 def main():
     tests = [
         ("baseline", test_baseline_from_dominant_cluster),
         ("bias-clamp", test_bias_clamped_to_safe_range),
-        ("gate-fail", test_acceptance_gate_fail_low_coverage),
+        ("gate-raw-warn", test_acceptance_gate_warns_low_raw_coverage),
         ("gate-pass", test_acceptance_gate_pass_three_runs),
         ("bin-align", test_25_bin_alignment_with_tuner),
         ("safe-refuse", test_refuses_emit_when_zero_locked_in_safe_mode),
@@ -673,6 +756,10 @@ def main():
         ("three-run-filter", test_three_run_field_repro_passes_after_filter),
         ("true-disagree", test_true_disagreement_still_fails),
         ("gate-diag", test_rejected_patch_includes_per_run_estimates),
+        ("mass-fail", test_contributor_mass_below_threshold_fails),
+        ("mass-warn", test_contributor_mass_warn_tier_passes),
+        ("raw-warn", test_raw_coverage_below_80_does_not_fail_alone),
+        ("gate-bp-sigma", test_acceptance_sigma_p95_uses_bp_derived_value),
     ]
     print(f"{'case':<12} result")
     print(f"{'-' * 12} {'-' * 40}")

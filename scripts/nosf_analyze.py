@@ -27,6 +27,9 @@ V_NOISE_FLOOR = 100.0
 MIN_LEARN_EST_SPS = 100.0
 MIN_COMPARABLE_BUCKETS = 3  # Per-run gate estimates need at least this many contributors.
 MIN_RUN_BUCKET_ROWS = 50  # At least one contributing bucket must have this many rows in the run.
+CONTRIBUTOR_MASS_PASS = 0.50  # Hard gate: qualifying buckets must hold at least this sample mass.
+CONTRIBUTOR_MASS_WARN = 0.65  # Soft warning below this contributor mass.
+RAW_COVERAGE_WARN = 0.80  # Raw MID-row coverage is diagnostic only, not a hard failure.
 BIAS_SAFE_MIN = 0.05
 BIAS_SAFE_MAX = 0.65
 DEFAULTS = {
@@ -300,6 +303,28 @@ def contributor_entries(state_buckets, force=False, include_stale=False):
         for entry in raw_entries:
             entry["norm_weight"] = entry["weight"] / total_w
     return sorted(raw_entries, key=lambda e: e["weight"], reverse=True)
+
+
+def qualifying_labels(state_buckets, force=False, include_stale=False):
+    locked = locked_bucket_labels(state_buckets)
+    if locked:
+        return locked
+    if force:
+        return force_qualifying_labels(state_buckets, include_stale=include_stale)
+    return set()
+
+
+def contributor_mass(state_buckets, labels):
+    total_n = 0
+    contributor_n = 0
+    for label, raw in state_buckets.items():
+        if label.startswith("_") or not isinstance(raw, dict):
+            continue
+        n = int(raw.get("n", 0))
+        total_n += n
+        if label in labels:
+            contributor_n += n
+    return (contributor_n / total_n) if total_n > 0 else 0.0
 
 
 def recommend_for_subset(runs_subset, rows_subset, state_buckets, current, mode, force, include_stale):
@@ -590,15 +615,22 @@ def legacy_consistency_by_run(runs, state_buckets, current, mode="safe", force=F
 
 def acceptance_gate(rows, runs, state_buckets, current, mode="safe", force=False, include_stale=False):
     reasons = []
+    warnings = []
     mids = mid_rows(rows)
     locked = locked_bucket_labels(state_buckets)
+    qualifying = qualifying_labels(state_buckets, force=force, include_stale=include_stale)
     locked_mid = [
         r for r in mids
         if bucket_label(r.get("feature", ""), to_float(r.get("v_fil"))) in locked
     ]
-    coverage = (len(locked_mid) / len(mids)) if mids else 0.0
-    if coverage < 0.80:
-        reasons.append(f"coverage {coverage * 100:.1f}% < 80.0%")
+    raw_coverage = (len(locked_mid) / len(mids)) if mids else 0.0
+    mass = contributor_mass(state_buckets, qualifying)
+    if mass < CONTRIBUTOR_MASS_PASS:
+        reasons.append(f"contributor mass {mass * 100:.1f}% < {CONTRIBUTOR_MASS_PASS * 100:.1f}%")
+    elif mass < CONTRIBUTOR_MASS_WARN:
+        warnings.append(f"contributor mass {mass * 100:.1f}% < {CONTRIBUTOR_MASS_WARN * 100:.1f}%")
+    if raw_coverage < RAW_COVERAGE_WARN:
+        warnings.append(f"raw MID coverage {raw_coverage * 100:.1f}% < {RAW_COVERAGE_WARN * 100:.1f}%")
 
     consistency = consistency_report_by_run(
         runs,
@@ -615,7 +647,16 @@ def acceptance_gate(rows, runs, state_buckets, current, mode="safe", force=False
     if bias_delta > 0.05:
         reasons.append(f"bias consistency delta {bias_delta:.3f} > 0.050")
 
-    sigma_vals = [to_float(r.get("sigma_mm")) for r in mids if r.get("sigma_mm") not in ("", None)]
+    by_qualifying_bucket = defaultdict(list)
+    for row in mids:
+        label = bucket_label(row.get("feature", ""), to_float(row.get("v_fil")))
+        if label in qualifying:
+            by_qualifying_bucket[label].append(row)
+    sigma_vals = [
+        sigma for bucket_rows in by_qualifying_bucket.values()
+        for sigma in [buffer_position_sigma_mm(bucket_rows)]
+        if sigma is not None
+    ]
     sigma_p95 = percentile(sigma_vals, 95)
     if sigma_p95 >= current["buf_variance_blend_ref_mm"]:
         reasons.append(f"sigma p95 {sigma_p95:.2f} >= current ref {current['buf_variance_blend_ref_mm']:.2f}")
@@ -629,6 +670,7 @@ def acceptance_gate(rows, runs, state_buckets, current, mode="safe", force=False
         reasons.append(f"locked bucket count {len(locked)} < 3")
 
     telemetry = {
+        # TODO Phase 2.14+: parse real ADV / EST events; zero here is placeholder, not a clean signal.
         "ADV_DWELL_STOP": 0,
         "ADV_RISK_HIGH": 0,
         "EST_FALLBACK": 0,
@@ -643,7 +685,10 @@ def acceptance_gate(rows, runs, state_buckets, current, mode="safe", force=False
     return {
         "pass": not reasons,
         "reasons": reasons,
-        "coverage": coverage,
+        "warnings": warnings,
+        "coverage": raw_coverage,
+        "raw_coverage": raw_coverage,
+        "contributor_mass": mass,
         "max_baseline_delta": base_delta,
         "max_bias_delta": bias_delta,
         "sigma_p95": sigma_p95,
@@ -671,7 +716,10 @@ def write_patch(path, runs, rows, state_buckets, current, recommendations, gate,
         fh.write(f"# Source: {len(runs)} runs, {len(rows)} samples, {len(locked)} LOCKED buckets\n")
         if gate:
             fh.write(f"# Acceptance gate: {'PASS' if gate['pass'] else 'FAIL'}\n")
-            fh.write(f"# Coverage: {gate['coverage'] * 100:.1f} % of MID time in LOCKED buckets\n")
+            fh.write(
+                f"# Coverage: contributor mass {gate.get('contributor_mass', 0.0) * 100:.1f} %, "
+                f"raw MID coverage {gate.get('raw_coverage', gate['coverage']) * 100:.1f} %\n"
+            )
             fh.write(
                 f"# Consistency: max baseline delta {gate['max_baseline_delta']:.0f} sps, "
                 f"max bias delta {gate['max_bias_delta']:.3f}\n"
@@ -700,12 +748,18 @@ def write_patch(path, runs, rows, state_buckets, current, recommendations, gate,
             if gate.get("consistency_skipped"):
                 fh.write("# Consistency: skipped (need >= 2 comparable runs)\n")
             tel = gate["telemetry"]
+            fh.write("# Telemetry: not currently parsed from logs;\n")
+            fh.write("# counters reflect pending feature, not real events\n")
             fh.write(
                 "# Telemetry: "
                 f"ADV_RISK_HIGH={tel['ADV_RISK_HIGH']}, "
                 f"EST_FALLBACK={tel['EST_FALLBACK']}, "
                 f"ADV_DWELL_STOP={tel['ADV_DWELL_STOP']}\n"
             )
+            if gate.get("warnings"):
+                fh.write("# Warnings:\n")
+                for warning in gate["warnings"]:
+                    fh.write(f"# - {warning}\n")
             if gate["reasons"]:
                 fh.write("# Failure reasons:\n")
                 for reason in gate["reasons"]:

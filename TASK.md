@@ -437,6 +437,7 @@ Settings version 46u → 47u.
 
 ### Completed Steps
 - Phase 2.13 preflight read done; implementation begins at 2.13.1.
-- 2.13.1 done: added synthetic three-run acceptance-gate parity fixture and soft expected-fail analyzer test; validation passed (full Phase 2.13 gate). Committed and pushed `f002eb5`.
+- 2.13.1 done: added synthetic three-run acceptance-gate parity fixture and soft expected-fail analyzer test; validation passed (full Phase 2.13 gate). Committed and pushed `7951502`.
 - 2.13.2 done: factored `recommend_for_subset()`, made `compute_recommendations()` a wrapper, changed acceptance-gate consistency to use per-run recommendations, and flipped the parity fixture to a hard assertion. Validation passed (full Phase 2.13 gate). Committed and pushed `e24aef8`.
-- 2.13.3 done: added comparable/immature run classification, skipped immature runs from consistency reduction, emitted per-run estimate diagnostics in patches, and covered skipped/true-disagreement cases. Validation passed (full Phase 2.13 gate). Committed and pushed `626d0ee`.
+- 2.13.3 done: added comparable/immature run classification, skipped immature runs from consistency reduction, emitted per-run estimate diagnostics in patches, and covered skipped/true-disagreement cases. Validation passed (full Phase 2.13 gate). Committed and pushed `19589c0`.
+- 2.13.4 done: added contributor-mass coverage gate, downgraded raw MID coverage to patch warning, switched acceptance sigma to qualifying BP scatter, and documented telemetry counters as placeholders. Validation passed (full Phase 2.13 gate). Commit SHA to be recorded after push.
