@@ -101,10 +101,31 @@ def read_csv_runs(paths):
     for idx, path in enumerate(paths, 1):
         with open(path, newline="") as fh:
             rows = list(csv.DictReader(fh))
+            
+        normalized = []
         for row in rows:
-            row["_run"] = idx
-            row["_path"] = path
-        runs.append({"path": path, "rows": rows})
+            # Map nosf_logger.py (Phase 2.7) OR nosf_live_tuner.py CsvEmitter (Phase 2.9/2.11)
+            norm = {
+                "_run": idx,
+                "_path": path,
+                "ts_ms": row.get("wall_ts") or row.get("ts_ms"),
+                "est_sps": row.get("EST") or row.get("est_sps"),
+                "v_fil": row.get("v_fil") or row.get("v_fil"),
+                "bp_mm": row.get("BP") or row.get("bp_mm"),
+                "rt_mm": row.get("RT") or row.get("rt_mm"),
+                "zone": row.get("TC") or row.get("zone"),
+                "feature": row.get("feature") or row.get("feature", ""),
+                "sigma_mm": row.get("BL") or row.get("sigma_mm"),
+                "mc": row.get("mc") or row.get("mc", "0"),
+            }
+            if norm["ts_ms"] and "." in norm["ts_ms"] and "wall_ts" in row:
+                # Convert wall_ts (seconds) to ms for older logic compatibility
+                try:
+                    norm["ts_ms"] = float(norm["ts_ms"]) * 1000.0
+                except ValueError:
+                    pass
+            normalized.append(norm)
+        runs.append({"path": path, "rows": normalized})
     rows = [row for run in runs for row in run["rows"]]
     return runs, rows
 
