@@ -18,6 +18,12 @@ import nosf_analyze as analyze
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 FIELD_CSV_FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "phase_2_12_field_csv.csv")
 FIELD_STATE_FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "phase_2_12_field_state.json")
+PHASE_2_13_STATE_FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "phase_2_13_three_run_state.json")
+PHASE_2_13_RUN_FIXTURES = [
+    os.path.join(REPO_ROOT, "tests", "fixtures", "phase_2_13_run_a.csv"),
+    os.path.join(REPO_ROOT, "tests", "fixtures", "phase_2_13_run_b.csv"),
+    os.path.join(REPO_ROOT, "tests", "fixtures", "phase_2_13_run_c.csv"),
+]
 
 FIELDS = [
     "ts_ms", "zone", "bp_mm", "sigma_mm", "est_sps", "rt_mm", "cf",
@@ -491,6 +497,28 @@ def test_contributors_block_emitted():
         return "patch includes contributors block with bucket weights"
 
 
+def test_phase_2_13_field_repro_gate_should_pass():
+    state = analyze.load_state(PHASE_2_13_STATE_FIXTURE)
+    baselines = []
+    biases = []
+    for path in PHASE_2_13_RUN_FIXTURES:
+        runs, rows = analyze.read_csv_runs([path])
+        recs = analyze.compute_recommendations(rows, runs, state, analyze.DEFAULTS.copy(), "safe")
+        baselines.append(recs["baseline_rate"][0])
+        biases.append(recs["sync_trailing_bias_frac"][0])
+    assert all(700 <= value <= 730 for value in baselines), baselines
+    assert max(baselines) - min(baselines) <= 50.0, baselines
+    assert max(biases) - min(biases) <= 0.05, biases
+
+    runs, rows = analyze.read_csv_runs(PHASE_2_13_RUN_FIXTURES)
+    gate = analyze.acceptance_gate(rows, runs, state, analyze.DEFAULTS.copy())
+    assert gate["max_baseline_delta"] >= 600.0, gate
+    assert not gate["pass"], gate
+    print("EXPECTED FAIL: phase 2.13 acceptance-gate parity")
+    # Hard-asserted in milestone 2.13.2 after the gate uses recommendations.
+    return "phase 2.13 fixture exposes raw gate/recommendation mismatch"
+
+
 def main():
     tests = [
         ("baseline", test_baseline_from_dominant_cluster),
@@ -510,6 +538,7 @@ def main():
         ("bp-sigma", test_buf_variance_blend_ref_mm_from_bp_not_bl),
         ("mid-timeout", test_mid_creep_timeout_default_when_insufficient_data),
         ("contributors", test_contributors_block_emitted),
+        ("gate-parity", test_phase_2_13_field_repro_gate_should_pass),
     ]
     print(f"{'case':<12} result")
     print(f"{'-' * 12} {'-' * 40}")

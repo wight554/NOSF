@@ -1,0 +1,65 @@
+{
+  "_schema": 4,
+  "myprinter": {
+    "LockedA_v1000": {
+      "P": 18.0,
+      "bias": 0.303,
+      "cumulative_mid_s": 120.0,
+      "last_seen": 1778519000,
+      "locked": true,
+      "n": 500,
+      "resid_var_ewma": 10000.0,
+      "runs_seen": 3,
+      "state": "LOCKED",
+      "x": 700.0
+    },
+    "LockedB_v1000": {
+      "P": 18.0,
+      "bias": 0.303,
+      "cumulative_mid_s": 120.0,
+      "last_seen": 1778519001,
+      "locked": true,
+      "n": 500,
+      "resid_var_ewma": 10000.0,
+      "runs_seen": 3,
+      "state": "LOCKED",
+      "x": 710.0
+    },
+    "LockedC_v1000": {
+      "P": 18.0,
+      "bias": 0.303,
+      "cumulative_mid_s": 120.0,
+      "last_seen": 1778519002,
+      "locked": true,
+      "n": 500,
+      "resid_var_ewma": 10000.0,
+      "runs_seen": 3,
+      "state": "LOCKED",
+      "x": 720.0
+    },
+    "LockedD_v1000": {
+      "P": 18.0,
+      "bias": 0.303,
+      "cumulative_mid_s": 120.0,
+      "last_seen": 1778519003,
+      "locked": true,
+      "n": 500,
+      "resid_var_ewma": 10000.0,
+      "runs_seen": 3,
+      "state": "LOCKED",
+      "x": 730.0
+    },
+    "LockedE_v1000": {
+      "P": 18.0,
+      "bias": 0.303,
+      "cumulative_mid_s": 120.0,
+      "last_seen": 1778519004,
+      "locked": true,
+      "n": 500,
+      "resid_var_ewma": 10000.0,
+      "runs_seen": 3,
+      "state": "LOCKED",
+      "x": 740.0
+    }
+  }
+}

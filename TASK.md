@@ -413,3 +413,28 @@ Settings version 46u → 47u.
 - Required sequence: back up `~/nosf-state/buckets-myprinter.json`; run three back-to-back calibration prints with `nosf_live_tuner.py --observe-daemon --debug --progress-interval 5 --csv-out ~/nosf-runs/phase212-runN.csv`; capture `--state-info --verbose` after each run; run `nosf_analyze.py --mode safe --state ~/nosf-state/buckets-myprinter.json --out ~/nosf-runs/phase212-runN.patch.ini` after each run.
 - Record after maintainer run: LOCKED bucket count progression run-1/run-2/run-3, `baseline_rate` and `sync_trailing_bias_frac` recommendation progression, final `buf_variance_blend_ref_mm`, top five high-traffic `sigma/x` ratios, and any `NOISE_RATIO_THR` adjustment.
 - Success criteria: at least 5 LOCKED buckets by run 3; baseline drift after run 2 under 50 sps; variance reference within `[0.1, 5.0]` mm; `mid_creep_timeout_ms` remains DEFAULT/current unless a future signal exists.
+
+---
+
+## Phase 2.13 — Acceptance Gate Parity
+
+### Findings
+- Read `AGENTS.md`: session banner posted; keep TASK-first workflow, no local AI config, one milestone per commit/push, Python validation for script edits, and `Generated-By: GPT-5.5 (High)` footer.
+- Read `TASK.md`: Phase 2.12 implementation is complete through 2.12.6 local gate; Pi validation exposed an analyzer acceptance-gate mismatch rather than a tuner learning failure.
+- Read `SYNC_REFACTOR_PHASE_2_13.md`: source of truth. Phase 2.13 is host-only, keeps schema 4, preserves Phase 2.12 recommendation semantics, and fixes the acceptance gate to compare the same state-aware recommendation path used by normal analyzer output.
+- Read `SYNC_REFACTOR_PHASE_2_12.md`: preserve LOCKED-bucket floor, safe/aggressive/force behavior, precision-weighted baseline/bias, BP-derived variance reference, and `[nosf_contributors]` output.
+- Read `scripts/nosf_analyze.py`: `compute_recommendations()` is state-aware, but `consistency_by_run()` uses raw per-bucket per-run medians from all MID rows. `acceptance_gate()` fails on raw LOCKED row coverage, raw per-bucket deltas, CSV `sigma_mm`, and hard-coded telemetry zeros.
+- Read `scripts/test_nosf_analyze.py`: existing tests cover Phase 2.12 recommendation behavior and patch output, but not acceptance-gate parity with standalone recommendations.
+- Read `scripts/nosf_live_tuner.py` for schema only: schema remains 4; no tuner learning-loop changes are needed.
+- Read docs: MANUAL/KLIPPER/README/CONTEXT document Phase 2.12 analyzer modes; 2.13 docs must explain per-run estimates, skipped immature runs, contributor-mass coverage, and telemetry-placeholder limits.
+
+### Plan
+- **2.13.1 — Repro fixture:** add synthetic state and three CSV fixtures under `tests/fixtures/`; add a soft expected-fail test showing raw gate deltas are bogus while standalone recommendations are close.
+- **2.13.2 — Shared recommendation path:** add `recommend_for_subset(...)`, make `compute_recommendations()` a wrapper, and make gate consistency use per-run recommendations instead of raw per-bucket medians; flip repro to hard assertion.
+- **2.13.3 — Mature-run diagnostics:** add comparable/immature run classification, skip immature runs from consistency, and emit per-run estimate diagnostics in patches.
+- **2.13.4 — Coverage refinement:** add contributor-mass coverage gate, downgrade raw 80% row coverage to warning, derive gate sigma from BP rows, and label telemetry counters as pending placeholders.
+- **2.13.5 — Docs and Pi validation:** update MANUAL/KLIPPER/README/CONTEXT and record maintainer Pi validation against existing phase212 CSVs/state without destructive DB edits.
+
+### Completed Steps
+- Phase 2.13 preflight read done; implementation begins at 2.13.1.
+- 2.13.1 done: added synthetic three-run acceptance-gate parity fixture and soft expected-fail analyzer test; validation passed (full Phase 2.13 gate). Committed and pushed `f002eb5`.
