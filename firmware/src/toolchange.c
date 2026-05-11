@@ -506,6 +506,9 @@ void tc_tick(uint32_t now_ms) {
             float trailing_push_mm_s = sync_trailing_wall_velocity_mm_s(A);
 
             int target_sps = (int)(extruder_est_sps * RELOAD_LEAN_FACTOR);
+            if (target_sps < PRESS_SPS) {
+                target_sps = PRESS_SPS;
+            }
             if (g_buf.state == BUF_TRAILING) {
                 target_sps = TRAILING_SPS;
             } else if (g_buf.state == BUF_ADVANCE) {
