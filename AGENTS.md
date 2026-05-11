@@ -9,7 +9,7 @@ For AI agents (Claude, Gemini, Codex, Opus, Copilot, etc.). Read first, then `TA
 ## Session Start Protocol
 
 Before anything else:
-1. Activate `caveman` skill (intensity: full). Note: also available as a skill in GitHub Copilot.
+1. Activate `caveman` skill (intensity: full).
 2. Proactively use `cavemem` MCP (or similar persistent memory tools) for cross-session context.
 3. Post in chat:
 
