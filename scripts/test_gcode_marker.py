@@ -43,8 +43,9 @@ def test_sidecar_orca_sample():
         for feature in ("Bottom_surface", "Outer_wall", "Sparse_infill", "Top_surface"):
             assert feature in features, features
         assert all(seg["v_fil_bin"] > 0 for seg in data["segments"]), data["segments"]
-        assert any(seg.get("skip") for seg in data["segments"]), data["segments"]
-        return "Orca sample sidecar has layers, features, v bins, skip segment"
+        assert not any(seg.get("skip") for seg in data["segments"]), data["segments"]
+        assert any(seg.get("object") for seg in data["segments"]), data["segments"]
+        return "Orca sample sidecar has layers, features, v bins, object metadata"
 
 
 def test_sidecar_relative_e():

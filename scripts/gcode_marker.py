@@ -27,7 +27,7 @@ HEIGHT_RE = re.compile(r"^;HEIGHT:([-+]?\d*\.?\d*)")
 LHEIGHT_RE = re.compile(r"^;layer_height=([-+]?\d*\.?\d*)")
 LAYER_RE = re.compile(r"^;LAYER:(\d+)")
 LAYER_CHANGE_RE = re.compile(r"^;LAYER_CHANGE\b")
-EXCLUDE_START_RE = re.compile(r"^EXCLUDE_OBJECT_START\b")
+EXCLUDE_START_RE = re.compile(r"^EXCLUDE_OBJECT_START\b(?:.*\bNAME=([^\s]+))?")
 EXCLUDE_END_RE = re.compile(r"^EXCLUDE_OBJECT_END\b")
 
 
@@ -103,6 +103,7 @@ def _empty_segment(
     x_end,
     y_end,
     skip,
+    object_name="",
 ):
     return {
         "byte_start": line_start,
@@ -122,6 +123,7 @@ def _empty_segment(
         "x_end": float(x_end),
         "y_end": float(y_end),
         "skip": bool(skip),
+        "object": object_name or "",
     }
 
 
@@ -142,7 +144,7 @@ def build_sidecar(input_path, sidecar_path, dia):
     current_e = 0.0
     e_mode = "absolute"
     layer_change_n = -1
-    in_skip = False
+    current_object = ""
     layers = []
     segments = []
     current_segment = None
@@ -187,12 +189,13 @@ def build_sidecar(input_path, sidecar_path, dia):
                 if "E" in params:
                     current_e = params["E"]
 
-            if EXCLUDE_START_RE.match(raw_line):
-                in_skip = True
+            exclude_start = EXCLUDE_START_RE.match(raw_line)
+            if exclude_start:
                 close_segment()
+                current_object = exclude_start.group(1) or current_object
             elif EXCLUDE_END_RE.match(raw_line):
                 close_segment()
-                in_skip = False
+                current_object = ""
 
             layer_match = LAYER_RE.match(raw_line)
             if layer_match:
@@ -264,7 +267,7 @@ def build_sidecar(input_path, sidecar_path, dia):
                 current_w,
                 current_h,
                 _v_bin(v_fil),
-                in_skip,
+                current_object,
             )
             active_key = None
             if current_segment is not None:
@@ -274,7 +277,7 @@ def build_sidecar(input_path, sidecar_path, dia):
                     current_segment["width_mm"],
                     current_segment["height_mm"],
                     current_segment["v_fil_bin"],
-                    current_segment["skip"],
+                    current_segment.get("object", ""),
                 )
 
             if move in ("G2", "G3"):
@@ -283,7 +286,7 @@ def build_sidecar(input_path, sidecar_path, dia):
                     _empty_segment(
                         line_start, line_end, current_layer, current_feature,
                         end_z, current_w, current_h, current_f, v_fil,
-                        prev_e, end_e, prev_x, prev_y, end_x, end_y, in_skip,
+                        prev_e, end_e, prev_x, prev_y, end_x, end_y, False, current_object,
                     )
                 )
                 continue
@@ -293,7 +296,7 @@ def build_sidecar(input_path, sidecar_path, dia):
                 current_segment = _empty_segment(
                     line_start, line_end, current_layer, current_feature,
                     end_z, current_w, current_h, current_f, v_fil,
-                    prev_e, end_e, prev_x, prev_y, end_x, end_y, in_skip,
+                    prev_e, end_e, prev_x, prev_y, end_x, end_y, False, current_object,
                 )
             else:
                 current_segment["byte_end"] = line_end
