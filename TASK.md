@@ -357,3 +357,10 @@ Settings version 46u → 47u.
 - 2.11.2 done: added residual EWMA bucket fields, schema 3→4 migration, schema-chain tests, and analyzer schema-4 load compatibility while leaving lock/unlock behavior unchanged; validation passed (`python3 -m py_compile scripts/nosf_live_tuner.py`, `python3 -m py_compile scripts/test_nosf_live_tuner.py`, `python3 scripts/test_nosf_live_tuner.py`, `python3 scripts/test_phase_2_10_parity.py`, `python3 scripts/test_klipper_motion_tracker.py`, `python3 -m py_compile scripts/*.py`). Committed and pushed `4aaabc6`.
 - 2.11.3 done: replaced single-sample unlock with catastrophic/streak/drift channels, added noise-gated locking and lock dwell, flipped chatter repro to a hard assertion, and added algorithm tests; validation passed (`python3 -m py_compile scripts/nosf_live_tuner.py`, `python3 -m py_compile scripts/test_nosf_live_tuner.py`, `python3 scripts/test_nosf_live_tuner.py`, `python3 scripts/test_phase_2_10_parity.py`, `python3 scripts/test_klipper_motion_tracker.py`, `python3 -m py_compile scripts/*.py`). Committed and pushed `1b22fc0`.
 - 2.11.4 done: added `--state-info --verbose` residual columns, verbose CSV fields, new wait reasons, and docs for interpreting noisy buckets; validation passed (`python3 -m py_compile scripts/nosf_live_tuner.py`, `python3 scripts/test_nosf_live_tuner.py`). Commit SHA reported after push.
+
+### Phase 2.11 Pi Validation (May 11 2026)
+- Verified lock dwell counter incrementing (1/20 -> 20/20).
+- Verified noise gating: buckets with high sigma2 kept in STABLE/wait=noise.
+- Verified drift channel: Outer wall_v1375 correctly unlocked on sustained 300+ sps deviation.
+- Observed zero chatter: LOCKED buckets stayed locked through scatter that previously caused unlocks.
+- Logic behaves as intended: patient with noise, decisive on drift.
