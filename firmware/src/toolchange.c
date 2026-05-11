@@ -505,7 +505,9 @@ void tc_tick(uint32_t now_ms) {
             float trailing_wall_ms = sync_trailing_wall_time_ms(A);
             float trailing_push_mm_s = sync_trailing_wall_velocity_mm_s(A);
 
-            int target_sps = (int)(extruder_est_sps * RELOAD_LEAN_FACTOR);
+            // We must OVER-feed to close the gap and maintain pressure on the old tail.
+            // Under-feeding creates a gap because the MMU pushes slower than the extruder pulls!
+            int target_sps = (int)(extruder_est_sps * 1.15f);
             if (target_sps < PRESS_SPS) {
                 target_sps = PRESS_SPS;
             }
