@@ -1,6 +1,8 @@
 # NOSF — Project Context
 
 Deep ref for firmware work. Architectural source of truth for agents; `TASK.md` is task log, may have stale notes.
+Durable implementation design notes live under `openspec/design/`, with the
+sync refactor history in `openspec/design/sync-refactor/`.
 
 Phase 2.8 adds host-side live tuner; firmware delta is the `LIVE_TUNE_LOCK` flag in `protocol.c`. No settings version change.
 Phase 2.9 makes calibration observe-only by default, matures `nosf_analyze.py`, and keeps the final workflow host-detached after reviewed defaults are flashed.

@@ -96,4 +96,8 @@ Do not copy `.claude/`, `.codex/`, `.gemini/`, `.agent/`, or `.github/skills`
 into the project. If a project needs custom OpenSpec behavior, encode it in
 `openspec/config.yaml` or committed specs, not tool-local skill folders.
 
+For durable implementation notes, prefer `openspec/design/<area>/` over root
+Markdown files. Root docs should stay operator-facing (`README.md`, `MANUAL.md`,
+`KLIPPER.md`) or agent-facing (`AGENTS.md`, `AI.md`).
+
 See `AGENTS.md` for firmware engineering mandates and full session start protocol.

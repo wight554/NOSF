@@ -529,3 +529,19 @@ Audit acceptance-gate logic to differentiate between FAIL (logic invalidity/hard
 
 ### Completed Steps
 - Global OpenSpec/OpsX skills installed under `~/.agents`, `~/.claude`, `~/.codex`, `~/.gemini`, and `~/.github`; project-local copies removed. Ignore/docs/OpenSpec config updates pending commit.
+
+## OpenSpec Design Migration
+
+### Findings
+- The root `SYNC_REFACTOR*.md` files contain durable implementation notes, phase plans, validation thinking, and design rationale rather than day-to-day scratch work.
+- These files are better suited to `openspec/design/` so future agents have one place to look for design history.
+- Root docs should stay either operator-facing (`README.md`, `MANUAL.md`, `KLIPPER.md`) or agent-facing (`AGENTS.md`, `AI.md`); detailed phase design belongs under OpenSpec.
+
+### Plan
+- Move `SYNC_REFACTOR_PLAN.md` and `SYNC_REFACTOR_PHASE_2_8.md` through `SYNC_REFACTOR_PHASE_2_14.md` into `openspec/design/sync-refactor/`.
+- Add OpenSpec README/index files summarizing layout, current design baseline, and future tracking suggestions.
+- Update `CONTEXT.md` and `AI.md` to point agents at `openspec/design/`.
+- Validate links/status with `git status` and commit.
+
+### Completed Steps
+- Moved sync-refactor phase notes into `openspec/design/sync-refactor/` and added OpenSpec indexes. Added proposed `changes/`, `design/adr/`, and `design/validation/` tracking scaffolds. Validation passed (`git diff --check`). Commit pending.
