@@ -8,6 +8,7 @@ void cutter_start(lane_t *L, uint32_t now_ms);
 void cutter_abort(void);
 void cutter_tick(uint32_t now_ms);
 void tc_start(int target_lane, uint32_t now_ms);
+void tc_manual_reload(uint32_t now_ms);
 void tc_abort(void);
 tc_state_t tc_state(void);
 void tc_tick(uint32_t now_ms);

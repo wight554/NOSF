@@ -253,6 +253,17 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         set_toolhead_filament(false);
         lane_start(A, TASK_LOAD_FULL, FEED_SPS, true, now_ms, (float)LOAD_MAX_MM);
         cmd_reply("OK", NULL);
+    } else if (!strcmp(cmd, "RL")) {
+        lane_t *A = get_active_lane_and_clear_error();
+        if (!A) return;
+        if (!lane_in_present(A)) { cmd_reply("ER", "NO_FILAMENT"); return; }
+        lane_t *other = lane_ptr(other_lane(active_lane));
+        if (other && lane_out_present(other) && other->task == TASK_IDLE) {
+            cmd_reply("ER", "OTHER_LANE_ACTIVE");
+            return;
+        }
+        tc_manual_reload(now_ms);
+        cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "FD")) {
         lane_t *A = get_active_lane_and_clear_error();
         if (!A) return;

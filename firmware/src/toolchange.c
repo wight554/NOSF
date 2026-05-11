@@ -208,6 +208,32 @@ void tc_start(int target_lane, uint32_t now_ms) {
     }
 }
 
+void tc_manual_reload(uint32_t now_ms) {
+    if (g_tc_ctx.state != TC_IDLE && g_tc_ctx.state != TC_ERROR) return;
+    lane_t *A = lane_ptr(active_lane);
+    if (!A) return;
+
+    memset(&g_tc_ctx, 0, sizeof(g_tc_ctx));
+    g_tc_ctx.target_lane = active_lane;
+    g_tc_ctx.from_lane = active_lane;
+    set_toolhead_filament(false);
+    
+    char lane_s[2] = { (char)('0' + active_lane), 0 };
+    cmd_event("RELOAD:JOINING", lane_s);
+    
+    int approach_sps = FEED_SPS;
+    if (approach_sps <= 0) approach_sps = JOIN_SPS;
+    
+    lane_start(A, TASK_FEED, approach_sps, true, now_ms, 2000.0f);
+    
+    g_tc_ctx.ready_to_join_since_ms = 0;
+    g_tc_ctx.reload_tick_ms = now_ms;
+    g_tc_ctx.reload_current_sps = 0;
+    g_tc_ctx.last_trailing_ms = 0;
+    g_tc_ctx.phase_start_ms = now_ms;
+    g_tc_ctx.state = TC_RELOAD_APPROACH;
+}
+
 void tc_abort(void) {
     if (g_tc_ctx.state == TC_IDLE) return;
     stop_all();
