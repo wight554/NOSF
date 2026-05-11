@@ -100,7 +100,19 @@ RECHECK_AGE_DAYS = 30
 STALE_AGE_DAYS = 60
 Q_PROCESS = 25.0
 R_BASE = 100.0
-SCHEMA_VERSION = 3
+A_R = 0.05  # residual EWMA alpha
+A_V = 0.05  # residual variance EWMA alpha
+N_WARMUP_FOR_NOISE = 50  # samples before noise gate can affect locking
+V_NOISE_LOCK_THR = 400.0  # sps^2; sigma ~= 20 sps
+K_CATA = 8.0  # catastrophic residual threshold in sigma
+K_STREAK_SIGMA = 3.0  # moderate outlier threshold in sigma
+N_STREAK = 5  # moderate outliers before streak unlock
+K_DRIFT = 4.0  # drift threshold in EWMA standard errors
+EWMA_EFFECTIVE_N = 19.0  # ~= 1 / A_R - 1
+MIN_LOCK_DWELL = 20  # locked samples before moderate unlock channels
+M_DRIFT_DWELL = 30  # locked samples before drift channel
+P_UNLOCK_RESET = 400.0  # reset P after unlock without cold-starting bucket
+SCHEMA_VERSION = 4
 DEFAULT_STATE_DIR = os.path.expanduser("~/nosf-state")
 PATCH_KEYS = [
     "baseline_rate",
@@ -146,6 +158,14 @@ class Bucket:
     rail_skip_count: int = 0
     rollback_count: int = 0
     first_seen_run: str = ""
+    resid_ewma: float = 0.0
+    resid_abs_ewma: float = 0.0
+    resid_var_ewma: float = R_BASE
+    outlier_streak: int = 0
+    locked_sample_count: int = 0
+    locked_since_run_seq: int = 0
+    last_unlock_reason: str = ""
+    last_unlock_at: float = 0.0
 
 
 def default_state_path(machine_id: str) -> str:
@@ -178,6 +198,14 @@ def kf_predict_update(bucket: Bucket, z: float, cf: float, apx: int, dt_s: float
     bucket.x += K * (z - bucket.x)
     bucket.P *= 1.0 - K
     bucket.n += 1
+    update_residual_stats(bucket, z)
+
+
+def update_residual_stats(bucket: Bucket, z: float) -> None:
+    resid = z - bucket.x
+    bucket.resid_ewma = (1.0 - A_R) * bucket.resid_ewma + A_R * resid
+    bucket.resid_abs_ewma = (1.0 - A_R) * bucket.resid_abs_ewma + A_R * abs(resid)
+    bucket.resid_var_ewma = (1.0 - A_V) * bucket.resid_var_ewma + A_V * (resid * resid)
 
 
 class CsvEmitter:
@@ -222,9 +250,28 @@ def _migrate_2_to_3(data: dict) -> dict:
     data["_schema"] = 3
     return data
 
+def _migrate_3_to_4(data: dict) -> dict:
+    for machine_id, machine_data in data.items():
+        if machine_id.startswith("_") or not isinstance(machine_data, dict):
+            continue
+        for label, raw in machine_data.items():
+            if label.startswith("_") or not isinstance(raw, dict):
+                continue
+            raw.setdefault("resid_ewma", 0.0)
+            raw.setdefault("resid_abs_ewma", 0.0)
+            raw.setdefault("resid_var_ewma", R_BASE)
+            raw.setdefault("outlier_streak", 0)
+            raw.setdefault("locked_sample_count", 0)
+            raw.setdefault("locked_since_run_seq", 0)
+            raw.setdefault("last_unlock_reason", "")
+            raw.setdefault("last_unlock_at", 0.0)
+    data["_schema"] = 4
+    return data
+
 _MIGRATIONS = {
     1: _migrate_1_to_2,
     2: _migrate_2_to_3,
+    3: _migrate_3_to_4,
 }
 
 def migrate_state_data(data: dict) -> dict:
@@ -328,6 +375,14 @@ class Tuner:
                 rail_skip_count=int(raw.get("rail_skip_count", 0)),
                 rollback_count=int(raw.get("rollback_count", 0)),
                 first_seen_run=str(raw.get("first_seen_run", "")),
+                resid_ewma=float(raw.get("resid_ewma", 0.0)),
+                resid_abs_ewma=float(raw.get("resid_abs_ewma", 0.0)),
+                resid_var_ewma=float(raw.get("resid_var_ewma", R_BASE)),
+                outlier_streak=int(raw.get("outlier_streak", 0)),
+                locked_sample_count=int(raw.get("locked_sample_count", 0)),
+                locked_since_run_seq=int(raw.get("locked_since_run_seq", 0)),
+                last_unlock_reason=str(raw.get("last_unlock_reason", "")),
+                last_unlock_at=float(raw.get("last_unlock_at", 0.0)),
             )
             self.buckets[label] = b
 
@@ -363,6 +418,14 @@ class Tuner:
                 "rail_skip_count": b.rail_skip_count,
                 "rollback_count": b.rollback_count,
                 "first_seen_run": b.first_seen_run,
+                "resid_ewma": b.resid_ewma,
+                "resid_abs_ewma": b.resid_abs_ewma,
+                "resid_var_ewma": b.resid_var_ewma,
+                "outlier_streak": b.outlier_streak,
+                "locked_sample_count": b.locked_sample_count,
+                "locked_since_run_seq": b.locked_since_run_seq,
+                "last_unlock_reason": b.last_unlock_reason,
+                "last_unlock_at": b.last_unlock_at,
             }
             for label, b in sorted(self.buckets.items())
         }
@@ -845,6 +908,14 @@ def bucket_from_raw(label: str, raw: dict) -> Bucket:
         rail_skip_count=int(raw.get("rail_skip_count", 0)),
         rollback_count=int(raw.get("rollback_count", 0)),
         first_seen_run=str(raw.get("first_seen_run", "")),
+        resid_ewma=float(raw.get("resid_ewma", 0.0)),
+        resid_abs_ewma=float(raw.get("resid_abs_ewma", 0.0)),
+        resid_var_ewma=float(raw.get("resid_var_ewma", R_BASE)),
+        outlier_streak=int(raw.get("outlier_streak", 0)),
+        locked_sample_count=int(raw.get("locked_sample_count", 0)),
+        locked_since_run_seq=int(raw.get("locked_since_run_seq", 0)),
+        last_unlock_reason=str(raw.get("last_unlock_reason", "")),
+        last_unlock_at=float(raw.get("last_unlock_at", 0.0)),
     )
 
 

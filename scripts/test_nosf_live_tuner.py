@@ -278,60 +278,131 @@ def test_schema1_migration():
         assert raw["low_flow_skip_count"] == 0, raw
         assert raw["rail_skip_count"] == 0, raw
         assert raw["rollback_count"] == 0, raw
-        return "schema 1 state migrates to schema 2 with zeroed counters"
+        return "schema 1 state migrates to current schema with zeroed counters"
 
 
-def test_schema2_to_3_migration_preserves_buckets():
+def _schema2_state():
+    return {
+        "_schema": 2,
+        "test": {
+            "LOCKED_v40": {
+                "x": 1820.0,
+                "P": 78.2,
+                "n": 4321,
+                "bias": 0.420,
+                "bp_ewma": -3.1,
+                "locked": True,
+                "state": "LOCKED",
+                "last_set_x": 1820.0,
+                "last_set_bias": 0.420,
+                "runs_seen": 2,
+                "layers_seen": 5,
+                "cumulative_mid_s": 80.0,
+                "low_flow_skip_count": 1,
+                "rail_skip_count": 2,
+                "rollback_count": 3,
+                "first_seen": 100.0,
+                "last_seen": 200.0,
+                "first_seen_run": "run1",
+            },
+            "TRACKING_v50": {
+                "x": 1500.0,
+                "P": 1000.0,
+                "n": 12,
+                "bias": 0.390,
+                "state": "TRACKING",
+                "locked": False,
+            },
+            "STABLE_v75": {
+                "x": 1666.0,
+                "P": 40.0,
+                "n": 250,
+                "bias": 0.410,
+                "state": "STABLE",
+                "locked": False,
+            },
+        },
+    }
+
+
+def _schema3_state():
+    data = _schema2_state()
+    data = tuner_mod._migrate_2_to_3(tuner_mod._migrate_1_to_2(data) if data["_schema"] == 1 else data)
+    return data
+
+
+def _assert_schema4_defaults(raw):
+    assert raw["resid_ewma"] == 0.0, raw
+    assert raw["resid_abs_ewma"] == 0.0, raw
+    assert raw["resid_var_ewma"] == tuner_mod.R_BASE, raw
+    assert raw["outlier_streak"] == 0, raw
+    assert raw["locked_sample_count"] == 0, raw
+    assert raw["locked_since_run_seq"] == 0, raw
+    assert raw["last_unlock_reason"] == "", raw
+    assert raw["last_unlock_at"] == 0.0, raw
+
+
+def test_schema3_to_4_migration_preserves_buckets():
+    with tempfile.TemporaryDirectory() as td:
+        state_path = os.path.join(td, "state.json")
+        data = _schema3_state()
+        data["test"]["_meta"]["last_commit_run_seq"] = 7
+        with open(state_path, "w") as fh:
+            json.dump(data, fh)
+        before = json.loads(json.dumps(data))
+        clock = Clock()
+        t = tuner_mod.Tuner(FakeSerial(), state_path, "test", now_fn=clock.now, wall_fn=clock.now)
+        b = t.buckets["LOCKED_v40"]
+        assert b.x == before["test"]["LOCKED_v40"]["x"], b
+        assert b.n == before["test"]["LOCKED_v40"]["n"], b
+        assert b.locked is True, b.locked
+        assert b.state == "LOCKED", b.state
+        assert b.resid_var_ewma == tuner_mod.R_BASE, b.resid_var_ewma
+
+        t._persist()
+        with open(state_path) as fh:
+            migrated = json.load(fh)
+        assert migrated["_schema"] == tuner_mod.SCHEMA_VERSION, migrated
+        assert migrated["test"]["_meta"] == before["test"]["_meta"], migrated["test"]["_meta"]
+        raw = migrated["test"]["LOCKED_v40"]
+        assert raw["x"] == before["test"]["LOCKED_v40"]["x"], raw
+        assert raw["state"] == "LOCKED", raw
+        assert raw["locked"] is True, raw
+        _assert_schema4_defaults(raw)
+
+        clock2 = Clock()
+        t2 = tuner_mod.Tuner(FakeSerial(), state_path, "test", now_fn=clock2.now, wall_fn=clock2.now)
+        assert t2.buckets["LOCKED_v40"].resid_var_ewma == tuner_mod.R_BASE
+        return "schema 3 state migrates to schema 4 preserving buckets and _meta"
+
+
+def test_schema2_to_4_migration_preserves_buckets():
     with tempfile.TemporaryDirectory() as td:
         state_path = os.path.join(td, "state.json")
         with open(state_path, "w") as fh:
-            json.dump(
-                {
-                    "_schema": 2,
-                    "test": {
-                        "PERIMETER_v40": {
-                            "x": 1820.0,
-                            "P": 78.2,
-                            "n": 4321,
-                            "bias": 0.420,
-                            "bp_ewma": -3.1,
-                            "locked": True,
-                            "state": "LOCKED",
-                            "last_set_x": 1820.0,
-                            "last_set_bias": 0.420,
-                            "runs_seen": 2,
-                            "layers_seen": 5,
-                            "cumulative_mid_s": 80.0,
-                            "low_flow_skip_count": 0,
-                            "rail_skip_count": 0,
-                            "rollback_count": 0,
-                            "first_seen": 100.0,
-                            "last_seen": 200.0,
-                            "first_seen_run": "run1",
-                        }
-                    },
-                },
-                fh,
-            )
+            json.dump(_schema2_state(), fh)
         clock = Clock()
         t = tuner_mod.Tuner(FakeSerial(), state_path, "test", now_fn=clock.now, wall_fn=clock.now)
-        b = t.buckets["PERIMETER_v40"]
+        b = t.buckets["LOCKED_v40"]
         assert b.x == 1820.0, b
         assert b.n == 4321, b
         assert b.locked is True, b.locked
         assert b.state == "LOCKED", b.state
+        assert b.rollback_count == 3, b.rollback_count
         
         t._persist()
         with open(state_path) as fh:
             migrated = json.load(fh)
-        assert migrated["_schema"] == 3, migrated
+        assert migrated["_schema"] == tuner_mod.SCHEMA_VERSION, migrated
         assert "_meta" in migrated["test"], migrated
+        assert set(["LOCKED_v40", "TRACKING_v50", "STABLE_v75"]).issubset(migrated["test"]), migrated
         meta = migrated["test"]["_meta"]
         assert "baseline_rate" in meta["last_commit_values"], meta
         assert meta["last_commit_values"]["baseline_rate"]["source"] == "default", meta
-        return "schema 2 state migrates to schema 3 preserving buckets and creating _meta"
+        _assert_schema4_defaults(migrated["test"]["LOCKED_v40"])
+        return "schema 2 state migrates to schema 4 preserving buckets and creating _meta"
 
-def test_schema_chain_1_to_3():
+def test_schema_chain_1_to_4():
     with tempfile.TemporaryDirectory() as td:
         state_path = os.path.join(td, "state.json")
         with open(state_path, "w") as fh:
@@ -356,12 +427,14 @@ def test_schema_chain_1_to_3():
         t = tuner_mod.Tuner(FakeSerial(), state_path, "test", now_fn=clock.now, wall_fn=clock.now)
         b = t.buckets["PERIMETER_v40"]
         assert b.x == 1820.0, b
+        assert b.resid_var_ewma == tuner_mod.R_BASE, b.resid_var_ewma
         
         t._persist()
         with open(state_path) as fh:
             migrated = json.load(fh)
-        assert migrated["_schema"] == 3, migrated
-        return "schema 1 state migrates to schema 3 via chain"
+        assert migrated["_schema"] == tuner_mod.SCHEMA_VERSION, migrated
+        _assert_schema4_defaults(migrated["test"]["PERIMETER_v40"])
+        return "schema 1 state migrates to schema 4 via chain"
 
 def test_schema_too_new_refused():
     with tempfile.TemporaryDirectory() as td:
@@ -378,6 +451,15 @@ def test_schema_too_new_refused():
 
 def test_existing_production_state_loads():
     return "skipped (no production state file in dev)"
+
+
+def test_residual_stats_accumulate():
+    b = tuner_mod.Bucket(label="PERIMETER_v40", x=100.0, P=100.0)
+    tuner_mod.kf_predict_update(b, 160.0, cf=1.0, apx=0, dt_s=1.0)
+    assert b.n == 1, b.n
+    assert b.resid_abs_ewma > 0.0, b.resid_abs_ewma
+    assert b.resid_var_ewma > tuner_mod.R_BASE, b.resid_var_ewma
+    return "residual EWMA fields accumulate after KF update"
 
 
 def test_recommend_recheck_outputs_verdict():
@@ -925,6 +1007,7 @@ def _run_phase_2_11_chatter_repro_fixture():
             cumulative_mid_s=float(control["cumulative_mid_s"]),
             first_seen=clock.now(),
             last_seen=clock.now(),
+            resid_var_ewma=float(control.get("resid_var_ewma", tuner_mod.R_BASE)),
         )
         t.buckets[b.label] = b
         t.active_label = b.label
@@ -974,10 +1057,12 @@ def main():
         ("bias-on", test_allow_bias_writes_writes),
         ("no-sv-patch", test_finish_commit_emits_patch_no_sv),
         ("schema1", test_schema1_migration),
-        ("schema2-to-3", test_schema2_to_3_migration_preserves_buckets),
-        ("schema-chain", test_schema_chain_1_to_3),
+        ("schema3-to-4", test_schema3_to_4_migration_preserves_buckets),
+        ("schema2-to-4", test_schema2_to_4_migration_preserves_buckets),
+        ("schema-chain", test_schema_chain_1_to_4),
         ("schema-too-new", test_schema_too_new_refused),
         ("schema-prod", test_existing_production_state_loads),
+        ("resid-stats", test_residual_stats_accumulate),
         ("recheck-verd", test_recommend_recheck_outputs_verdict),
         ("prune-stale", test_prune_stale_removes_old_buckets),
         ("daemon-no-exit", test_daemon_does_not_exit_on_finish),

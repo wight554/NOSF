@@ -15,6 +15,11 @@ import statistics as stats
 import sys
 from collections import defaultdict
 
+try:
+    from nosf_live_tuner import migrate_state_data
+except ImportError:
+    migrate_state_data = None
+
 
 SAFETY_K = {"safe": 1.5, "aggressive": 1.0}
 BIAS_SAFE_MIN = 0.05
@@ -109,14 +114,18 @@ def load_state(path):
         return {}
     with open(path) as fh:
         data = json.load(fh)
+    if migrate_state_data is not None:
+        data = migrate_state_data(data)
     schema = data.get("_schema")
-    if schema not in (1, 2):
+    if schema not in (1, 2, 3, 4):
         raise ValueError(f"unsupported state schema {schema!r}")
     buckets = {}
     for machine, machine_buckets in data.items():
         if machine.startswith("_") or not isinstance(machine_buckets, dict):
             continue
         for label, raw in machine_buckets.items():
+            if label.startswith("_"):
+                continue
             buckets[label] = raw
     return buckets
 
