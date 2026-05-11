@@ -2,6 +2,7 @@
 """Stdlib regression fixture for nosf_live_tuner.py."""
 
 import json
+import math
 import os
 import shutil
 import sys
@@ -460,6 +461,148 @@ def test_residual_stats_accumulate():
     assert b.resid_abs_ewma > 0.0, b.resid_abs_ewma
     assert b.resid_var_ewma > tuner_mod.R_BASE, b.resid_var_ewma
     return "residual EWMA fields accumulate after KF update"
+
+
+def _locked_bucket(label="PERIMETER_v40", sigma=50.0):
+    return tuner_mod.Bucket(
+        label=label,
+        x=1000.0,
+        P=20.0,
+        n=600,
+        bias=0.400,
+        state="LOCKED",
+        locked=True,
+        runs_seen=2,
+        layers_seen=5,
+        cumulative_mid_s=90.0,
+        resid_var_ewma=sigma * sigma,
+        locked_sample_count=tuner_mod.MIN_LOCK_DWELL,
+    )
+
+
+def _blank_tuner(td, clock=None):
+    if clock is None:
+        clock = Clock()
+    return tuner_mod.Tuner(FakeSerial(), os.path.join(td, "state.json"), "test", now_fn=clock.now, wall_fn=clock.now)
+
+
+def test_locked_bucket_survives_single_outlier():
+    with tempfile.TemporaryDirectory() as td:
+        t = _blank_tuner(td)
+        b = _locked_bucket(sigma=50.0)
+        reason = t._evaluate_unlock(b, 6.0 * t._resid_sigma(b))
+        assert reason == "", reason
+        assert b.locked and b.state == "LOCKED", b
+        assert b.outlier_streak == 1, b.outlier_streak
+        return "single moderate outlier does not unlock a locked bucket"
+
+
+def test_locked_bucket_unlocks_on_streak():
+    with tempfile.TemporaryDirectory() as td:
+        t = _blank_tuner(td)
+        b = _locked_bucket(sigma=50.0)
+        reason = ""
+        for _ in range(tuner_mod.N_STREAK):
+            reason = t._evaluate_unlock(b, 4.0 * t._resid_sigma(b))
+        assert reason == "streak", reason
+        t._apply_unlock(b, reason, b.x + 200.0)
+        assert not b.locked and b.state == "TRACKING", b
+        assert b.last_unlock_reason == "streak", b.last_unlock_reason
+        assert b.P == tuner_mod.P_UNLOCK_RESET, b.P
+        return "five sustained moderate outliers unlock via streak"
+
+
+def test_locked_bucket_unlocks_on_catastrophic():
+    with tempfile.TemporaryDirectory() as td:
+        t = _blank_tuner(td)
+        b = _locked_bucket(sigma=50.0)
+        reason = t._evaluate_unlock(b, 12.0 * t._resid_sigma(b))
+        assert reason == "catastrophic", reason
+        t._apply_unlock(b, reason, b.x + 600.0)
+        assert b.last_unlock_reason == "catastrophic", b.last_unlock_reason
+        return "single catastrophic residual unlocks immediately"
+
+
+def test_locked_bucket_unlocks_on_drift():
+    with tempfile.TemporaryDirectory() as td:
+        t = _blank_tuner(td)
+        b = _locked_bucket(sigma=50.0)
+        b.locked_sample_count = tuner_mod.M_DRIFT_DWELL
+        drift_sigma = t._resid_sigma(b) / math.sqrt(tuner_mod.EWMA_EFFECTIVE_N)
+        b.resid_ewma = tuner_mod.K_DRIFT * drift_sigma + 1.0
+        reason = t._evaluate_unlock(b, 0.0)
+        assert reason == "drift", reason
+        t._apply_unlock(b, reason, b.x)
+        assert b.last_unlock_reason == "drift", b.last_unlock_reason
+        return "sustained EWMA drift unlocks after dwell"
+
+
+def test_noisy_bucket_never_locks():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t = _blank_tuner(td, clock)
+        b = tuner_mod.Bucket(
+            label="PERIMETER_v40",
+            x=1600.0,
+            P=20.0,
+            n=600,
+            bias=0.400,
+            runs_seen=2,
+            layers_seen=5,
+            cumulative_mid_s=90.0,
+            state="STABLE",
+            resid_var_ewma=tuner_mod.V_NOISE_LOCK_THR + 1.0,
+        )
+        t.buckets[b.label] = b
+        t.total_print_mid_s = 400.0
+        t._maybe_lock(b, clock.now())
+        assert b.state == "STABLE", b.state
+        assert not b.locked
+        assert "noise" in t._bucket_wait_reason(b, clock.now())
+        return "noisy ready bucket remains STABLE instead of locking"
+
+
+def test_lock_dwell_blocks_immediate_unlock():
+    with tempfile.TemporaryDirectory() as td:
+        t = _blank_tuner(td)
+        b = _locked_bucket(sigma=50.0)
+        b.locked_sample_count = 0
+        reason = ""
+        for _ in range(tuner_mod.N_STREAK):
+            reason = t._evaluate_unlock(b, 4.0 * t._resid_sigma(b))
+            b.locked_sample_count += 1
+        assert reason == "", reason
+        assert b.outlier_streak == tuner_mod.N_STREAK, b.outlier_streak
+        return "minimum lock dwell blocks moderate-channel unlocks"
+
+
+def test_unlock_then_relock_does_not_chatter():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t = _blank_tuner(td, clock)
+        b = _locked_bucket(sigma=50.0)
+        t._apply_unlock(b, "drift", b.x + 150.0)
+        b.P = 20.0
+        b.state = "STABLE"
+        b.locked = False
+        b.resid_var_ewma = tuner_mod.V_NOISE_LOCK_THR + 100.0
+        t.total_print_mid_s = 400.0
+        t._maybe_lock(b, clock.now())
+        assert b.state == "STABLE", b.state
+        assert not b.locked
+        assert b.last_unlock_reason == "drift", b.last_unlock_reason
+        return "post-unlock noisy bucket does not immediately relock"
+
+
+def test_resid_var_ewma_warm_start_does_not_unlock():
+    with tempfile.TemporaryDirectory() as td:
+        t = _blank_tuner(td)
+        b = _locked_bucket(sigma=10.0)
+        b.locked_sample_count = 0
+        reason = t._evaluate_unlock(b, 2.0 * t._resid_sigma(b))
+        assert reason == "", reason
+        assert b.outlier_streak == 0, b.outlier_streak
+        return "fresh locked bucket ignores moderate warm-start residual"
 
 
 def test_recommend_recheck_outputs_verdict():
@@ -1037,12 +1180,7 @@ def _run_phase_2_11_chatter_repro_fixture():
 
 
 def test_phase_2_11_chatter_repro_fixture():
-    # Hard-asserted in milestone 2.11.3.
-    try:
-        return _run_phase_2_11_chatter_repro_fixture()
-    except AssertionError as exc:
-        print(f"EXPECTED FAIL: phase 2.11 chatter repro ({exc})")
-        return "EXPECTED FAIL: phase 2.11 chatter repro"
+    return _run_phase_2_11_chatter_repro_fixture()
 
 
 def main():
@@ -1063,6 +1201,14 @@ def main():
         ("schema-too-new", test_schema_too_new_refused),
         ("schema-prod", test_existing_production_state_loads),
         ("resid-stats", test_residual_stats_accumulate),
+        ("outlier-one", test_locked_bucket_survives_single_outlier),
+        ("outlier-streak", test_locked_bucket_unlocks_on_streak),
+        ("outlier-cata", test_locked_bucket_unlocks_on_catastrophic),
+        ("outlier-drift", test_locked_bucket_unlocks_on_drift),
+        ("noise-lock", test_noisy_bucket_never_locks),
+        ("lock-dwell", test_lock_dwell_blocks_immediate_unlock),
+        ("relock-noise", test_unlock_then_relock_does_not_chatter),
+        ("warm-resid", test_resid_var_ewma_warm_start_does_not_unlock),
         ("recheck-verd", test_recommend_recheck_outputs_verdict),
         ("prune-stale", test_prune_stale_removes_old_buckets),
         ("daemon-no-exit", test_daemon_does_not_exit_on_finish),

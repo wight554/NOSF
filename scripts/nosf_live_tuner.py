@@ -33,6 +33,7 @@ older buckets decay gently over multi-day tuning cycles.
 
 import argparse
 import json
+import math
 import os
 import platform
 import queue
@@ -206,6 +207,10 @@ def update_residual_stats(bucket: Bucket, z: float) -> None:
     bucket.resid_ewma = (1.0 - A_R) * bucket.resid_ewma + A_R * resid
     bucket.resid_abs_ewma = (1.0 - A_R) * bucket.resid_abs_ewma + A_R * abs(resid)
     bucket.resid_var_ewma = (1.0 - A_V) * bucket.resid_var_ewma + A_V * (resid * resid)
+
+
+def resid_sigma(bucket: Bucket) -> float:
+    return math.sqrt(max(bucket.resid_var_ewma, R_BASE))
 
 
 class CsvEmitter:
@@ -652,16 +657,12 @@ class Tuner:
             self.total_print_mid_s += dt_s
 
         if b.state == "LOCKED" or b.locked:
-            if abs(est - b.x) * abs(est - b.x) > 4.0 * (b.P + R_BASE):
-                if self.debug:
-                    print(
-                        f"[tuner] bucket {b.label} unlock outlier "
-                        f"est={est:.0f} x={b.x:.0f} P={b.P:.1f}",
-                        file=sys.stderr,
-                    )
-                b.state = "TRACKING"
-                b.locked = False
-                b.P = max(b.P, 1e4)
+            resid = est - b.x
+            update_residual_stats(b, est)
+            self._credit_locked_sample(b)
+            reason = self._evaluate_unlock(b, resid)
+            if reason:
+                self._apply_unlock(b, reason, est)
             self._debug_bucket_progress(b, now, est, bp, cf, apx)
             return
 
@@ -764,13 +765,66 @@ class Tuner:
             and self.total_print_mid_s >= MIN_PRINT_MID_S
         )
         if b.state == "STABLE" and (ready_A or ready_B):
+            if not self._noise_ok_for_lock(b):
+                b.state = "STABLE"
+                if b.stable_since == 0.0:
+                    b.stable_since = now
+                return
             b.state = "LOCKED"
             b.locked = True
+            b.locked_sample_count = 0
+            b.locked_since_run_seq = self.run_seq
+            b.outlier_streak = 0
             self._persist()
             return
         b.state = "STABLE"
         if b.stable_since == 0.0:
             b.stable_since = now
+
+    def _noise_ok_for_lock(self, b: Bucket) -> bool:
+        if b.n < N_WARMUP_FOR_NOISE:
+            return True
+        return b.resid_var_ewma <= V_NOISE_LOCK_THR
+
+    def _resid_sigma(self, b: Bucket) -> float:
+        return resid_sigma(b)
+
+    def _evaluate_unlock(self, b: Bucket, resid: float) -> str:
+        sigma = self._resid_sigma(b)
+        if abs(resid) > K_CATA * sigma:
+            return "catastrophic"
+        if abs(resid) > K_STREAK_SIGMA * sigma:
+            b.outlier_streak += 1
+        else:
+            b.outlier_streak = max(0, b.outlier_streak - 1)
+        if b.locked_sample_count < MIN_LOCK_DWELL:
+            return ""
+        if b.outlier_streak >= N_STREAK:
+            return "streak"
+        if b.locked_sample_count >= M_DRIFT_DWELL:
+            drift_sigma = sigma / math.sqrt(EWMA_EFFECTIVE_N)
+            if drift_sigma > 0.0 and abs(b.resid_ewma) > K_DRIFT * drift_sigma:
+                return "drift"
+        return ""
+
+    def _apply_unlock(self, b: Bucket, reason: str, est: float) -> None:
+        if self.debug:
+            print(
+                f"[tuner] bucket {b.label} unlock {reason} "
+                f"est={est:.0f} x={b.x:.0f} P={b.P:.1f}",
+                file=sys.stderr,
+            )
+        b.state = "TRACKING"
+        b.locked = False
+        b.P = max(b.P, P_UNLOCK_RESET)
+        b.outlier_streak = 0
+        b.resid_var_ewma = max(b.resid_var_ewma, R_BASE * 2.0)
+        b.last_unlock_reason = reason
+        b.last_unlock_at = self.wall_fn()
+        b.locked_sample_count = 0
+
+    def _credit_locked_sample(self, b: Bucket) -> None:
+        b.locked_sample_count += 1
 
     def _rollback_active(self) -> None:
         if not self.active_label:
@@ -921,11 +975,15 @@ def bucket_from_raw(label: str, raw: dict) -> Bucket:
 
 def bucket_wait_reason(b: Bucket, total_print_mid_s: float = 0.0) -> str:
     if b.state == "LOCKED" or b.locked:
+        if b.locked_sample_count < MIN_LOCK_DWELL:
+            return f"dwell {b.locked_sample_count}/{MIN_LOCK_DWELL}"
         return "locked"
     if b.P >= P_STABLE_THR:
         return f"variance P>={P_STABLE_THR:.0f}"
     if not (BIAS_SAFE_MIN <= b.bias <= BIAS_SAFE_MAX):
         return "bias rail guard"
+    if b.n >= N_WARMUP_FOR_NOISE and b.resid_var_ewma > V_NOISE_LOCK_THR:
+        return f"noise sigma2={b.resid_var_ewma:.0f}>{int(V_NOISE_LOCK_THR)}"
     
     reasons_A = []
     if b.n < N_MIN_SAMPLES_CUMULATIVE: reasons_A.append(f"samples {b.n}/{N_MIN_SAMPLES_CUMULATIVE}")
