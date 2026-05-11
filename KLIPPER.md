@@ -1,7 +1,8 @@
 # NOSF — Klipper Integration
 
 This document covers connecting Klipper to NOSF: serial setup, the shell
-command helper, toolhead sensor and toolchange macros, and buffer/sync tuning.
+command helper, Klipper API motion tracking for calibration, toolhead sensor
+and toolchange macros, and buffer/sync tuning.
 
 For the NOSF command reference see `MANUAL.md`; for behavioral details see
 `BEHAVIOR.md`.
@@ -256,40 +257,79 @@ stream internal state to a CSV file for offline analysis.
 
 ## Calibration Prints
 
-Phase 2.9 uses calibration prints to bake standalone defaults. The normal flow
-is observe-only: gather telemetry, run the analyzer, review a patch, merge
-chosen values into `config.ini`, rebuild, flash, then detach the host.
+Phase 2.10 uses calibration prints to bake standalone defaults without pausing
+Klipper on every feature marker. The normal flow is observe-only: generate a
+sidecar, gather telemetry through the Klipper API socket, run the analyzer,
+review a patch, merge chosen values into `config.ini`, rebuild, flash, then
+detach the host.
 
 Before running the first 2.9.9 build, please back up your state file:
 ```bash
 cp ~/nosf-state/buckets-<id>.json ~/nosf-state/buckets-<id>.json.schema2.bak
 ```
 
-Preprocess calibration G-code with local marker delivery:
+Confirm the Klipper API socket path on the Pi:
+
+```bash
+ps -ef | grep '[k]lippy.py'
+```
+
+Use the `-a` argument from that command. Common modern installs use
+`/home/pi/printer_data/comms/klippy.sock`; older examples may show
+`/tmp/klippy_uds`.
+
+Generate a sidecar next to the calibration G-code:
 
 ```bash
 python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode \
-    --emit file
+    --emit sidecar
 ```
 
 By default, layer changes are recognized (both `;LAYER:<n>` and OrcaSlicer
 `;LAYER_CHANGE` comments). Use `--no-layer-markers` to disable.
 
-Run the observe-only tuner during a calibration print:
+Upload/print the generated `input.nosf.gcode`, and run the observe-only tuner:
 
 ```bash
 python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
     --machine-id myprinter \
     --observe-daemon \
     --csv-out ~/nosf-runs/run1.csv \
+    --klipper-uds /home/pi/printer_data/comms/klippy.sock \
+    --sidecar /home/pi/printer_data/gcodes/input.nosf.json &
+```
+
+`--klipper-mode auto` is the default: the tuner tries the Klipper UDS first and
+falls back to marker input if it is unavailable. Use `--klipper-mode on` when
+you want a missing socket to fail fast, or `--klipper-mode off` for shell-marker
+fallback testing. When both UDS and `--marker-file` are configured, UDS wins
+after a sidecar is attached.
+
+The sidecar stores the source G-code SHA-256. If the G-code is re-sliced or
+edited without regenerating the sidecar, the tuner refuses to attach it and
+prints a loud warning.
+
+In observe mode the tuner persists its tracking state but sends no `SET:`
+commands and no `SV:`.
+
+Fallback shell-marker mode is still available for debugging older setups:
+
+```bash
+python3 scripts/gcode_marker.py input.gcode --output input.nosf.gcode \
+    --emit file
+
+python3 scripts/nosf_live_tuner.py --port /dev/ttyACM0 \
+    --machine-id myprinter \
+    --observe-daemon \
+    --csv-out ~/nosf-runs/run1.csv \
+    --klipper-mode off \
     --marker-file /tmp/nosf-markers-myprinter.log &
 ```
 
 `--emit file` inserts `RUN_SHELL_COMMAND CMD=nosf_marker PARAMS="..."` lines.
 `nosf_marker.py` appends each marker to `/tmp/nosf-markers-myprinter.log`, and
 the tuner tails that file while it remains the only process owning
-`/dev/ttyACM0`. In observe mode the tuner persists its tracking state
-but sends no `SET:` commands and no `SV:`.
+`/dev/ttyACM0`.
 The tuner truncates `--marker-file` when it starts, so each calibration run
 starts from fresh marker state. Add `--keep-marker-file` only when attaching to
 a print that is already in progress.

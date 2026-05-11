@@ -111,8 +111,8 @@ python3 scripts/nosf_cmd.py "SV:"
 - `scripts/nosf_logger.py`: Deprecated. Use `nosf_live_tuner.py --csv-out` instead.
 - `scripts/nosf_analyze.py`: Offline calibration analyzer with seven-tunable review patch and acceptance gate
 - `scripts/nosf_live_tuner.py`: Observe-only calibration bucket learner; emits reviewable patches, with live writes reserved for explicit debug flags
-- `scripts/gcode_marker.py`: G-code metadata injector for telemetry correlation; use `--emit file` for live tuner prints
-- `scripts/nosf_marker.py`: Klipper marker-file bridge used by `gcode_marker.py --emit file`
+- `scripts/gcode_marker.py`: G-code metadata injector and sidecar generator for Klipper API motion tracking
+- `scripts/nosf_marker.py`: Legacy Klipper marker-file bridge used by `gcode_marker.py --emit file`
 - `scripts/gen_config.py`: Generate `tune.h` from `config.ini`
 - `scripts/validate_regression.sh`: One-command static regression gate before flashing hardware
 
@@ -138,7 +138,7 @@ bash scripts/validate_regression.sh
 Calibration workflow:
 
 ```text
-marked calibration prints -> analyze CSV/state -> review config.patch.ini
+sidecar + Klipper UDS calibration prints -> analyze CSV/state -> review config.patch.ini
 -> copy accepted values to config.ini -> regenerate/build/flash -> detach host
 ```
 

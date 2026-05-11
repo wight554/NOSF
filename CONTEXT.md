@@ -4,6 +4,7 @@ Deep ref for firmware work. Architectural source of truth for agents; `TASK.md` 
 
 Phase 2.8 adds host-side live tuner; firmware delta is the `LIVE_TUNE_LOCK` flag in `protocol.c`. No settings version change.
 Phase 2.9 makes calibration observe-only by default, matures `nosf_analyze.py`, and keeps the final workflow host-detached after reviewed defaults are flashed.
+Phase 2.10 replaces per-marker `gcode_shell_command` calibration markers with sidecar JSON plus Klipper API `objects/subscribe` motion tracking; shell-marker mode remains a fallback.
 
 ---
 
