@@ -25,6 +25,10 @@ PHASE_2_13_RUN_FIXTURES = [
     os.path.join(REPO_ROOT, "tests", "fixtures", "phase_2_13_run_c.csv"),
 ]
 
+PHASE_2_14_DILUTED_STATE = os.path.join(REPO_ROOT, "tests/fixtures/phase_2_14_diluted_state.json")
+PHASE_2_14_HIGH_SIGMA_A = os.path.join(REPO_ROOT, "tests/fixtures/phase_2_14_high_sigma_run_a.csv")
+PHASE_2_14_HIGH_SIGMA_B = os.path.join(REPO_ROOT, "tests/fixtures/phase_2_14_high_sigma_run_b.csv")
+
 FIELDS = [
     "ts_ms", "zone", "bp_mm", "sigma_mm", "est_sps", "rt_mm", "cf",
     "adv_dwell_ms", "tb", "mc", "vb", "bpv_mm", "feature", "v_fil",
@@ -729,6 +733,46 @@ def test_acceptance_sigma_p95_uses_bp_derived_value():
     return "acceptance sigma p95 comes from BP scatter, not CSV sigma_mm"
 
 
+def test_2_14_diluted_mass_fails_initially():
+    """Reproduce Phase 2.14 bug: sparse buckets dilute mass < 50%."""
+    state = analyze.load_state(PHASE_2_14_DILUTED_STATE)
+    runs = phase_2_13_three_comparable_runs()
+    rows = [r for run in runs for r in run["rows"]]
+    gate = analyze.acceptance_gate(rows, runs, state, analyze.DEFAULTS.copy())
+    # Currently this SHOULD fail because we haven't implemented the floor yet.
+    assert not gate["pass"], "Expected mass dilution to FAIL initially"
+    assert gate["contributor_mass"] < 0.5, gate["contributor_mass"]
+    return "diluted mass fails as expected (initially)"
+
+
+def test_2_14_high_sigma_fails_initially():
+    """Reproduce Phase 2.14 bug: high sigma (2.0) fails when it should warn."""
+    state = analyze.load_state(PHASE_2_13_STATE_FIXTURE)
+    runs, rows = analyze.read_csv_runs([PHASE_2_14_HIGH_SIGMA_A, PHASE_2_14_HIGH_SIGMA_B, PHASE_2_13_RUN_FIXTURES[2]])
+    current = analyze.DEFAULTS.copy()
+    current["buf_variance_blend_ref_mm"] = 1.0
+    gate = analyze.acceptance_gate(rows, runs, state, current)
+    # Currently this SHOULD fail because any sigma > current_ref fails.
+    assert not gate["pass"], "Expected high sigma to FAIL initially"
+    assert gate["sigma_p95"] > 1.0, gate["sigma_p95"]
+    return "high sigma fails as expected (initially)"
+
+
+def test_2_14_two_runs_fails_initially():
+    """Reproduce Phase 2.14 bug: 2 runs fail even if consistent and mature."""
+    state = phase_2_13_state_records()
+    runs = [
+        phase_2_13_comparable_run("run-a.csv"),
+        phase_2_13_comparable_run("run-b.csv"),
+    ]
+    rows = [r for run in runs for r in run["rows"]]
+    gate = analyze.acceptance_gate(rows, runs, state, analyze.DEFAULTS.copy())
+    # Currently this SHOULD fail because run count < 3 is a hard failure.
+    assert not gate["pass"], "Expected 2 runs to FAIL initially"
+    assert any("run count 2 < 3" in r for r in gate["reasons"]), gate["reasons"]
+    return "two runs fail as expected (initially)"
+
+
 def main():
     tests = [
         ("baseline", test_baseline_from_dominant_cluster),
@@ -760,6 +804,9 @@ def main():
         ("mass-warn", test_contributor_mass_warn_tier_passes),
         ("raw-warn", test_raw_coverage_below_80_does_not_fail_alone),
         ("gate-bp-sigma", test_acceptance_sigma_p95_uses_bp_derived_value),
+        ("2.14-mass", test_2_14_diluted_mass_fails_initially),
+        ("2.14-sigma", test_2_14_high_sigma_fails_initially),
+        ("2.14-runs", test_2_14_two_runs_fails_initially),
     ]
     print(f"{'case':<12} result")
     print(f"{'-' * 12} {'-' * 40}")
