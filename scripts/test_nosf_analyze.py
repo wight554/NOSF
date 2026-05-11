@@ -194,6 +194,21 @@ def test_25_bin_alignment_with_tuner():
     return "analyzer uses 25 mm3/s bucket bins"
 
 
+def test_input_glob_expansion():
+    with tempfile.TemporaryDirectory() as td:
+        first = os.path.join(td, "phase212-run1.csv")
+        second = os.path.join(td, "phase212-run2.csv")
+        write_csv(first, [row(0, feature="LockedA", v_fil=1000)])
+        write_csv(second, [row(0, feature="LockedA", v_fil=1000)])
+        runs, rows = analyze.read_csv_runs([os.path.join(td, "phase212-run*csv")])
+        assert [os.path.basename(run["path"]) for run in runs] == [
+            "phase212-run1.csv",
+            "phase212-run2.csv",
+        ], runs
+        assert len(rows) == 2, rows
+        return "input glob expands to sorted CSV run list"
+
+
 def test_refuses_emit_when_zero_locked_in_safe_mode():
     with tempfile.TemporaryDirectory() as td:
         csv_path = os.path.join(td, "run.csv")
@@ -806,6 +821,7 @@ def main():
         ("gate-raw-warn", test_acceptance_gate_warns_low_raw_coverage),
         ("gate-pass", test_acceptance_gate_pass_three_runs),
         ("bin-align", test_25_bin_alignment_with_tuner),
+        ("input-glob", test_input_glob_expansion),
         ("safe-refuse", test_refuses_emit_when_zero_locked_in_safe_mode),
         ("aggr-warn", test_warns_emit_when_zero_locked_in_aggressive_mode),
         ("force-emit", test_force_emits_when_zero_locked_in_safe_mode),

@@ -497,3 +497,19 @@ Audit acceptance-gate logic to differentiate between FAIL (logic invalidity/hard
 
 ### Completed Steps
 - Implemented gray-band contributor-mass behavior: <40% remains FAIL, 40-65% is WARN. Validation passed (`python3 scripts/test_nosf_analyze.py`, `python3 scripts/test_nosf_live_tuner.py`, `python3 scripts/test_phase_2_10_parity.py`, `python3 scripts/test_klipper_motion_tracker.py`, `python3 scripts/test_gcode_marker.py`, `python3 -m py_compile scripts/*.py`). Commit pending.
+
+## Analyzer Input Glob Support
+
+### Findings
+- Maintainer wants `scripts/nosf_analyze.py --in ~/nosf-runs/phase212-run1*csv` to work without manually listing files.
+- Shells usually expand unquoted globs, but analyzer-side expansion is still useful for quoted patterns, scripts, and clearer no-match errors.
+- `read_csv_runs(paths)` is the narrow input boundary used by CLI and tests, so expanding there preserves existing `--in file1 file2` behavior.
+
+### Plan
+- Add stdlib glob/user-home expansion for `--in` path arguments, preserving normal explicit paths and sorting matches per pattern.
+- Raise a normal file-not-found error when a glob pattern has no matches.
+- Add analyzer regression coverage for glob expansion.
+- Validate analyzer tests and script py_compile, then commit and push.
+
+### Completed Steps
+- Implemented `--in` glob expansion in `read_csv_runs()` with `~` support and sorted matches. Added analyzer regression coverage for `phase212-run*csv`. Validation passed (`python3 -m py_compile scripts/nosf_analyze.py scripts/test_nosf_analyze.py`, `python3 scripts/test_nosf_analyze.py`, `python3 -m py_compile scripts/*.py`). Commit pending.

@@ -8,6 +8,8 @@ config patch. Pure stdlib only.
 
 import argparse
 import csv
+import errno
+import glob
 import json
 import math
 import os
@@ -106,7 +108,22 @@ def to_float(raw, default=0.0):
         return default
 
 
+def expand_input_paths(paths):
+    expanded = []
+    for raw in paths:
+        path = os.path.expanduser(raw)
+        if glob.has_magic(path):
+            matches = sorted(glob.glob(path))
+            if not matches:
+                raise FileNotFoundError(errno.ENOENT, "no matches for input pattern", raw)
+            expanded.extend(matches)
+        else:
+            expanded.append(path)
+    return expanded
+
+
 def read_csv_runs(paths):
+    paths = expand_input_paths(paths)
     runs = []
     for idx, path in enumerate(paths, 1):
         with open(path, newline="") as fh:
