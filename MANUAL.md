@@ -318,11 +318,12 @@ contains at least 50 MID rows for at least three contributing buckets.
 
 - **FAIL (Recommendation Unreliable)**: Triggered by high scatter 
   (sigma_p95 >= 5.0 mm), inconsistent recommendations between runs, 
-  low contributor mass (< 50% after ignoring sparse buckets), or having
+  very low contributor mass (< 40% after ignoring sparse buckets), or having
   fewer than 2 comparable runs.
 - **WARN (Config Stale / Immature)**: Triggered by actual scatter exceeding 
-  the current config reference, low run counts (< 3), short print durations 
-  (< 30 min total or any run < 10 min), or having fewer than 3 LOCKED buckets.
+  the current config reference, contributor mass below 65%, low run counts
+  (< 3), short print durations (< 30 min total or any run < 10 min), or
+  having fewer than 3 LOCKED buckets.
 
 Raw MID-row coverage is reported as a diagnostic warning only. On FAIL, the 
 analyzer still writes a patch with `Acceptance gate: FAIL` and prints explicit 

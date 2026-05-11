@@ -698,6 +698,17 @@ def test_contributor_mass_warn_tier_passes():
     return "contributor mass warning tier is visible but non-failing"
 
 
+def test_contributor_mass_gray_band_passes_with_warning():
+    state = phase_2_13_state_with_nonlocked_mass(extra_count=3, extra_n=1000)
+    runs = phase_2_13_three_comparable_runs()
+    rows = [r for run in runs for r in run["rows"]]
+    gate = analyze.acceptance_gate(rows, runs, state, analyze.DEFAULTS.copy())
+    assert gate["pass"], gate
+    assert 0.40 <= gate["contributor_mass"] < 0.50, gate
+    assert any("contributor mass" in warning for warning in gate["warnings"]), gate
+    return "contributor mass 40-50 percent gray band warns but passes"
+
+
 def test_raw_coverage_below_80_does_not_fail_alone():
     state = phase_2_13_state_records()
     runs = []
@@ -817,6 +828,7 @@ def main():
         ("gate-diag", test_rejected_patch_includes_per_run_estimates),
         ("mass-fail", test_contributor_mass_below_threshold_fails),
         ("mass-warn", test_contributor_mass_warn_tier_passes),
+        ("mass-gray", test_contributor_mass_gray_band_passes_with_warning),
         ("raw-warn", test_raw_coverage_below_80_does_not_fail_alone),
         ("gate-bp-sigma", test_acceptance_sigma_p95_uses_bp_derived_value),
         ("2.14-mass", test_2_14_diluted_mass_fails_initially),

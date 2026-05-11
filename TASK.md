@@ -481,3 +481,19 @@ Audit acceptance-gate logic to differentiate between FAIL (logic invalidity/hard
 - [x] `2.14-runs`: two runs pass with warning after demotion
 - [x] `gate-bp-sigma`: updated to expect WARN
 - [x] `gate-parity`: updated to expect FAIL (due to immature field data)
+
+## Phase 2.14 Follow-up — Contributor Mass Gray Band
+
+### Findings
+- Maintainer Pi validation after Phase 2.14 still rejects otherwise stable recommendations solely on `contributor mass 47.8% < 50.0%`.
+- Patch diagnostics show the hard recommendation-quality signals are healthy: 15 contributors, HIGH confidence, four comparable runs, baseline delta 0 sps, and bias delta 0.022.
+- Therefore the 50% contributor-mass edge is acting as a policy cliff. Below ~40% still means locked contributors are a minority of mature state evidence and should fail, but 40-65% should be a visible coverage warning when consistency and contributor count are already strong.
+
+### Plan
+- Lower the hard contributor-mass floor from 50% to 40%, keeping the 65% warning tier.
+- Add a regression test for the 40-50% gray band so the operator's 47.8% case passes with a warning.
+- Update MANUAL.md and KLIPPER.md wording from `<50%` hard failure to `<40%` hard failure / `<65%` warning.
+- Validate analyzer and script suites, then commit and push.
+
+### Completed Steps
+- Implemented gray-band contributor-mass behavior: <40% remains FAIL, 40-65% is WARN. Validation passed (`python3 scripts/test_nosf_analyze.py`, `python3 scripts/test_nosf_live_tuner.py`, `python3 scripts/test_phase_2_10_parity.py`, `python3 scripts/test_klipper_motion_tracker.py`, `python3 scripts/test_gcode_marker.py`, `python3 -m py_compile scripts/*.py`). Commit pending.
