@@ -1,46 +1,46 @@
 # Acceptance Gate Parity Specification
 
 ## Purpose
-Gate parity + mature run consistency.
+Gate parity and mature-run consistency.
 
 ## Requirements
 
-### REQ: Shared Recommendation Path
-Gate MUST compare per-run recs from the same state-aware path as patch.
-- **SCEN: Stable Rec**: raw bucket medians vary, but shared path consistent -> PASS.
+### Requirement: Shared Recommendation Path
+Gate MUST compare per-run recommendations from the same state-aware path as the patch.
+- **Scenario: Stable Recommendation**: Raw bucket medians vary, but shared path is consistent -> PASS.
 
-### REQ: Back-Compat
-`compute_recommendations` MUST retain dict shape/semantics.
-- **SCEN: Test Import**: callers get same keys/tuples/labels.
+### Requirement: Backward-Compatibility
+`compute_recommendations` MUST retain dictionary shape and semantics.
+- **Scenario: Test Import**: Existing callers receive the same keys, tuples, and labels.
 
-### REQ: Classification
-Classify runs (comparable/skipped) before delta check.
-- **SCEN: Low Rows**: run < thresholds -> SKIP consistency. Report reason in patch.
+### Requirement: Classification
+Classify runs (comparable or skipped) before checking consistency deltas.
+- **Scenario: Low Rows**: Run below thresholds -> SKIP consistency check. Report reason in patch.
 
-### REQ: Diagnostic Visibility
+### Requirement: Diagnostic Visibility
 Patch MUST include per-run estimates regardless of gate outcome.
-- **SCEN: Coverage Fail**: gate fails -> still include estimates, skip reasons, placeholders.
+- **Scenario: Coverage Failure**: Gate fails -> still include estimates, skip reasons, and placeholders.
 
-### REQ: Contributor Mass Hard Gate
-FAIL only on mass. WARN on raw rows.
-- **SCEN: Low Raw / OK Mass**: mass >= pass floor -> PASS + WARN raw coverage.
+### Requirement: Contributor Mass Hard Gate
+FAIL only on contributor mass. WARN on raw row coverage.
+- **Scenario: Low Raw Row Coverage**: Mass >= pass floor -> PASS with raw-coverage warning.
 
-### REQ: Placeholder Telemetry
-Mark telemetry counters as pending until log parsing exists.
-- **SCEN: zero Counters**: patch states "not parsed". No false "no-event" proof.
+### Requirement: Placeholder Telemetry
+Mark telemetry counters as pending until real log parsing exists.
+- **Scenario: Zero Counters**: Patch explicitly states "not currently parsed". No false "no-event" proof.
 
 ## Historical Rationale and Constants
 
 ### Stability
-Shared `recommend_for_subset` path ensures gate measures real stability, not raw bucket noise.
+The shared `recommend_for_subset` path ensures the gate measures real recommendation stability, not raw per-bucket noise.
 
-### Thresholds
-- **`MIN_COMPARABLE_BUCKETS = 3`**.
-- **`MIN_RUN_BUCKET_ROWS = 50`**.
-- **`CONTRIBUTOR_MASS_PASS = 0.50`** (FAIL floor).
-- **`CONTRIBUTOR_MASS_WARN = 0.65`** (Target).
-- **`RAW_COVERAGE_WARN = 0.80`** (WARN floor).
+### Thresholds and Constants
+- **`MIN_COMPARABLE_BUCKETS = 3`**: Minimum qualifying buckets per run.
+- **`MIN_RUN_BUCKET_ROWS = 50`**: Minimum rows per bucket in a run.
+- **`CONTRIBUTOR_MASS_PASS = 0.50`**: Hard failure floor.
+- **`CONTRIBUTOR_MASS_WARN = 0.65`**: Preferred coverage target.
+- **`RAW_COVERAGE_WARN = 0.80`**: Warning floor for raw MID row coverage.
 
-### Risk
-- **Wrapper**: `compute_recommendations` is thin wrapper for test stability.
-- **Classification**: Minimum 2 comparable runs req.
+### Risks and Constraints
+- **Wrapper**: `compute_recommendations` is a thin wrapper to maintain test stability.
+- **Classification**: A minimum of 2 comparable runs is required for consistency reduction.

@@ -1,40 +1,40 @@
 # Klipper Motion Tracking Specification
 
 ## Purpose
-Klipper sidecar + UDS motion tracking contract.
+Klipper sidecar and UDS motion tracking contract.
 
 ## Requirements
 
-### REQ: Sidecar Metadata Markers
+### Requirement: Sidecar Metadata Markers
 Synthesize markers from slicer sidecar JSON, not G-code strings.
-- **SCEN: Sidecar Path**: synth feature/velocity events from sidecar metadata.
+- **Scenario: Sidecar Path**: Synthesize feature and velocity events from sidecar metadata.
 
-### REQ: UDS Ingress Parity
-UDS flow feeds existing `on_m118` contract.
-- **SCEN: Segment Transition**: Identifty transition -> synth marker string -> feed `on_m118`. Dispatch stable.
+### Requirement: UDS Ingress Parity
+UDS flow feeds the existing `on_m118` ingress contract.
+- **Scenario: Segment Transition**: Identify transition -> synthesize marker string -> feed `on_m118`. Dispatch logic stable.
 
-### REQ: Stable Matcher Surface
-`SegmentMatcher` MUST remain compatible with tuner/tests.
-- **SCEN: Segment Crossing**: Cross boundary -> emit marker ONCE. Tuner agnostic to source.
+### Requirement: Stable Matcher Surface
+`SegmentMatcher` MUST remain compatible with tuner and tests.
+- **Scenario: Segment Crossing**: Cross boundary -> emit marker ONCE. Tuner is agnostic to source.
 
-### REQ: Host-Only
-Tracking MUST NOT require firmware changes.
+### Requirement: Host-Only
+Motion tracking MUST NOT require firmware changes.
 
-### REQ: Fallback Paths
-Retain manual marker support when UDS/sidecar unavailable.
+### Requirement: Fallback Paths
+Retain manual G-code marker support when UDS or sidecar is unavailable.
 
 ## Historical Rationale and Constraints
 
 ### Stutter Removal
-Sidecar + UDS avoids `RUN_SHELL_COMMAND` latency (stutter). Passive measurement.
+Sidecar + UDS avoids `RUN_SHELL_COMMAND` latency (stutter). Calibration becomes a passive measurement.
 
 ### UDS Contract
-- **Paths**: `/tmp/klippy_uds`, `/tmp/klippy.sock`.
-- **Subs**: `print_stats`, `virtual_sdcard`, `motion_report`, `extruder`, `display_status`.
-- **Z-Sanity**: uses Z + cumulative E to handle `file_position` jumps.
+- **Default Paths**: `/tmp/klippy_uds`, `/tmp/klippy.sock`.
+- **Subscriptions**: `print_stats`, `virtual_sdcard`, `motion_report`, `extruder`, `display_status`.
+- **Z-Sanity**: Uses Z-axis + cumulative E-axis to handle non-monotonic `file_position` jumps.
 
-### Frozen
-- **Sidecar SHA**: mismatch -> REFUSE. Re-run `gcode_marker.py`.
-- **Boundaries**: Throttled deltas. ONCE per crossing.
+### Frozen Constraints
+- **Sidecar SHA**: Mismatch -> REFUSE to load. Operator MUST re-run `gcode_marker.py`.
+- **Boundaries**: Throttled deltas. Emitted exactly ONCE per crossing.
 - **Retract Guard**: `live_extruder_velocity` jitter filtered.
-- **Canceled Objects**: `EXCLUDE_OBJECT` zones tagged "skip" in sidecar.
+- **Canceled Objects**: `EXCLUDE_OBJECT` zones tagged as "skip" in the sidecar.

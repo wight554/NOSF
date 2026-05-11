@@ -5,40 +5,40 @@ Tuner contract for Phase 2.8 and Phase 2.11 (chatter resistance).
 
 ## Requirements
 
-### REQ: Per-Feature Velocity Buckets
-Tuner aggregate telemetry into feature + velocity buckets (rate + bias).
-- **SCEN: Marker Active**: tune samples + marker -> update rounded velocity bucket.
-- **AND** update rate, uncertainty, bias, N, layers, runs, motion time.
+### Requirement: Per-Feature Velocity Buckets
+Tuner aggregates telemetry into feature + velocity buckets (rate + bias).
+- **Scenario: Marker Active**: Tune samples arrive while marker is active -> update rounded velocity bucket.
+- **AND** update rate, uncertainty, bias, sample count, layers, runs, and motion time.
 
-### REQ: Machine-Scoped Persistence
+### Requirement: Machine-Scoped Persistence
 Persist bucket state in machine-scoped JSON.
-- **SCEN: Tuner Restart**: load machine state -> extend evidence (no zero-start).
+- **Scenario: Tuner Restart**: Load machine state -> extend evidence (no starting from zero).
 
-### REQ: Observe-Only Default
-NO firmware writes without explicit flags.
-- **SCEN: No Write Flags**: record + report buckets. NO `SET`, NO `SV`.
+### Requirement: Observe-Only Default
+NO firmware writes without explicit permission flags.
+- **Scenario: No Write Flags**: Record and report buckets. NO `SET` writes, NO `SV` (save).
 
-### REQ: Review-Only Workflow
+### Requirement: Review-Only Workflow
 Prefer analyzer review patches over blind tuning.
-- **SCEN: Cal Data Ready**: analyzer emits patch for review -> operator flash.
+- **Scenario: Calibration Data Ready**: Analyzer emits patch for review -> operator reviews and flashes.
 
-### REQ: Diagnostics
+### Requirement: Diagnostics
 Tuner MUST explain bucket states (TRACKING, STABLE, LOCKED).
-- **SCEN: state-info**: output state + counts + wait reason (e.g. noise).
+- **Scenario: state-info**: Output bucket state, evidence counts, and wait reason (e.g. noise).
 
 ## Historical Rationale and Constants
 
 ### Live-Tune Lock
-`LIVE_TUNE_LOCK:1` prevents host-firmware races. LOCKED = accepts writes; UNLOCKED = defaults.
+`LIVE_TUNE_LOCK:1` prevents host-firmware races. LOCKED = accepts host writes; UNLOCKED = reverts to defaults.
 
 ### Chatter Resistance (Phase 2.11)
-- **Noise Gate (`sigma/x`)**: threshold pass required to lock (default 0.25).
+- **Noise Gate (`sigma/x`)**: Relative residual noise threshold required to lock (default 0.25).
 - **3-Channel Unlock**:
-    - **Catastrophic**: residual > 10.0 * sigma.
-    - **Streak**: 5 residuals > 3.0 * sigma.
-    - **Drift**: EWMA drift > 4.0 * sigma.
-- **Lock Dwell**: 100 samples min after warmup.
+    - **Catastrophic**: Residual exceeds 10.0 * sigma.
+    - **Streak**: 5 consecutive residuals exceed 3.0 * sigma.
+    - **Drift**: EWMA of residuals drifts more than 4.0 * sigma.
+- **Lock Dwell**: Minimum 100 samples required after warmup.
 
 ### Rollback
-- **`--reset-runtime`**: `LOCK:0` + `LOAD`. Clear memory, re-apply defaults.
-- **Schema 4 Migration**: One-way. Adds residual stats for 3-channel unlock.
+- **`--reset-runtime`**: Sends `LOCK:0` + `LOAD`. Clears memory and re-applies defaults.
+- **Schema 4 Migration**: One-way. Adds scalar residual stats to support 3-channel unlock.

@@ -5,53 +5,53 @@ Durable contract for NOSF sync, tuning, tracking, and analyzer.
 
 ## Requirements
 
-### REQ: Standalone Sync
-RUN sync/TC/RELOAD without host after cal flash.
-- **SCEN: Host Detached**: cal reviewed + flashed -> RUN from firmware/runtime ONLY. NO host tuner req.
-- **SCEN: Live Debug**: `nosf_live_tuner.py` without writes -> OBSERVE ONLY. NO `SET`/`SV`.
+### Requirement: Standalone Sync
+NOSF runs sync, toolchange, and RELOAD without host after calibration flash.
+- **Scenario: Host Detached**: Calibration reviewed + flashed -> run from firmware/runtime ONLY. NO host tuner required.
+- **Scenario: Live Debug**: `nosf_live_tuner.py` without writes -> observe only. NO `SET`/`SV` commands.
 
-### REQ: Observe-Only Cal
-Collect markers + buckets + patches without mutation unless explicit.
-- **SCEN: Default Tuner**: markers arrive -> update state/CSV. NO firmware writes.
-- **SCEN: Review Patch**: `nosf_analyze.py` -> emit patch. Operator MUST copy to `config.ini`.
+### Requirement: Observe-Only Calibration
+Collect markers, buckets, and patches without mutation unless explicit opt-in.
+- **Scenario: Default Tuner**: Markers arrive -> update state/CSV. NO firmware writes.
+- **Scenario: Review Patch**: `nosf_analyze.py` -> emit patch. Operator MUST copy to `config.ini`.
 
-### REQ: Sidecar + UDS Tracking
+### Requirement: Sidecar + UDS Tracking
 Prefer sidecar JSON + Klipper UDS over shell markers.
-- **SCEN: Sidecar Active**: sidecar + UDS -> synth `NOSF_TUNE` events. `on_m118` stable.
-- **SCEN: Fallback**: UDS/sidecar fail -> use legacy marker-file/shell flow.
+- **Scenario: Sidecar Active**: Sidecar + UDS -> synthesize `NOSF_TUNE` events. `on_m118` contract stable.
+- **Scenario: Fallback**: UDS/sidecar fail -> use legacy marker-file or shell flow.
 
-### REQ: Durable/Migratable State
-Tuner MUST persist buckets + migrate schema without data loss.
-- **SCEN: Schema 3 -> 4**: load S3 -> migrate S4. Keep estimates, locks, `_meta`.
-- **SCEN: Future Refusal**: schema > current -> REFUSE (no auto-mutation).
+### Requirement: Durable/Migratable State
+Tuner MUST persist buckets and migrate schema without data loss.
+- **Scenario: Schema 3 -> 4**: Load S3 -> migrate S4. Keep estimates, locks, and `_meta`.
+- **Scenario: Future Refusal**: Schema > current -> refuse (no auto-mutation).
 
-### REQ: Chatter Resistance
+### Requirement: Chatter Resistance
 LOCKED on evidence/noise pass. UNLOCK on strong mismatch.
-- **SCEN: Low Evidence**: few samples/runs -> stay TRACKING/STABLE.
-- **SCEN: Moderate Outlier**: single outlier -> stay LOCKED.
-- **SCEN: Catastrophic/Streak/Drift**: threshold hit -> UNLOCK to TRACKING.
+- **Scenario: Low Evidence**: Insufficient samples/runs -> stay TRACKING/STABLE.
+- **Scenario: Moderate Outlier**: Single outlier -> stay LOCKED.
+- **Scenario: Catastrophic/Streak/Drift**: Threshold hit -> UNLOCK to TRACKING.
 
-### REQ: Relative Noise Gate
+### Requirement: Relative Noise Gate
 Use `sigma/x` ratio, not absolute variance.
-- **SCEN: High Flow**: `sigma/x` <= threshold -> LOCK.
-- **SCEN: Low Flow**: `sigma/x` > threshold -> STABLE (reason: noise).
+- **Scenario: High Flow**: `sigma/x` <= threshold -> LOCK.
+- **Scenario: Low Flow**: `sigma/x` > threshold -> STABLE (reason: noise).
 
-### REQ: State-Aware Recommendations
+### Requirement: State-Aware Recommendations
 Weight by precision/count, not raw CSV clusters.
-- **SCEN: LOCKED Exists**: use LOCKED qualifying set ONLY.
-- **SCEN: Safe Mode (Zero Locked)**: safe + no locked -> REFUSE patch. exit 1.
-- **SCEN: Precision Weighting**: qualifying buckets -> weight by `n/sigma²`. Trim tails.
+- **Scenario: LOCKED Exists**: Use LOCKED qualifying set ONLY.
+- **Scenario: Safe Mode (Zero Locked)**: Safe mode + no locked buckets -> refuse patch. Exit 1.
+- **Scenario: Precision Weighting**: Qualifying buckets -> weight by `n/sigma²`. Trim tails.
 
-### REQ: Comparable Run Consistency
+### Requirement: Comparable Run Consistency
 Gate consistency uses recommendation path, filtered to mature runs.
-- **SCEN: Recommendation Stable**: per-bucket medians vary, but path consistent -> PASS.
-- **SCEN: Immature Run**: few rows/low confidence -> SKIP consistency. Report in patch.
+- **Scenario: Recommendation Stable**: Per-bucket medians vary, but path consistent -> PASS.
+- **Scenario: Immature Run**: Few rows/low confidence -> SKIP consistency. Report in patch.
 
-### REQ: FAIL vs WARN
-FAIL only on unreliable rec or pathol scatter. Stale config/immature soak = WARN.
-- **SCEN: Stale Var Ref**: BP sigma p95 > `var_ref` but < ceiling -> WARN. Emit patch.
-- **SCEN: Gray Mass**: mass > floor but < target -> PASS + WARN.
-- **SCEN: Pathol Scatter**: BP sigma p95 > ceiling -> FAIL (hardware failure).
+### Requirement: FAIL vs WARN
+FAIL only on unreliable recommendations or pathological scatter. Stale config/immature soak = WARN.
+- **Scenario: Stale Variance Reference**: BP sigma p95 > current reference but < ceiling -> WARN. Emit patch.
+- **Scenario: Gray Mass**: Mass > floor but < target -> PASS with mass warning.
+- **Scenario: Pathological Scatter**: BP sigma p95 > ceiling -> FAIL (hardware failure).
 
 ## Historical Design Decisions (Traceability)
 - **D1 (PSF)**: Generic adapter until hardware land.
