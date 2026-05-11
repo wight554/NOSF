@@ -2,10 +2,9 @@
 
 ## Purpose
 
-Capture the OpenSpec-native contract for Phase 2.8 live tuning. The historical
-source note remains at
-`openspec/design/sync-refactor/SYNC_REFACTOR_PHASE_2_8.md`; this spec is the
-readable behavioral contract for the live tuner area.
+Capture the OpenSpec-native contract for Phase 2.8 live tuning. This spec is the
+readable behavioral contract for the live tuner area; old planning prose is
+available through git history when needed.
 
 ## Requirements
 

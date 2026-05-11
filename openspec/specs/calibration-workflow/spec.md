@@ -3,8 +3,7 @@
 ## Purpose
 
 Capture the OpenSpec-native contract for Phase 2.9 observe-only calibration.
-The detailed historical plan remains at
-`openspec/design/sync-refactor/SYNC_REFACTOR_PHASE_2_9.md`.
+Old planning prose is available through git history when needed.
 
 ## Requirements
 

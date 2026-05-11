@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the current behavioral contract for NOSF sync calibration, live-tuner bucket learning, Klipper marker tracking, analyzer recommendations, and acceptance-gate semantics. Historical implementation notes live under `openspec/design/sync-refactor/`; this spec is the normalized current contract agents should read first.
+Define the current behavioral contract for NOSF sync calibration, live-tuner bucket learning, Klipper marker tracking, analyzer recommendations, and acceptance-gate semantics. This spec is the normalized current contract agents should read first; migrated historical phase prose is available through git history when needed.
 
 ## Requirements
 

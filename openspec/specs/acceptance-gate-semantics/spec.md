@@ -3,8 +3,8 @@
 ## Purpose
 
 Capture the OpenSpec-native contract for Phase 2.14 acceptance-gate semantics
-and follow-up analyzer behavior. The historical source note remains at
-`openspec/design/sync-refactor/SYNC_REFACTOR_PHASE_2_14.md`.
+and follow-up analyzer behavior. Old planning prose is available through git
+history when needed.
 
 ## Requirements
 

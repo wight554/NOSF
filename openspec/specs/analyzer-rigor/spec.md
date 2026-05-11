@@ -3,8 +3,8 @@
 ## Purpose
 
 Capture the OpenSpec-native contract for Phase 2.12 analyzer rigor and the
-relative tuner noise gate. The historical source note remains at
-`openspec/design/sync-refactor/SYNC_REFACTOR_PHASE_2_12.md`.
+relative tuner noise gate. Old planning prose is available through git history
+when needed.
 
 ## Requirements
 

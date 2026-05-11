@@ -4,8 +4,8 @@
 
 Capture the project workflow contract that was historically spread across
 `AGENTS.md` and the former gitignored `TASK.md`. The repository no longer uses a
-root `TASK.md`; OpenSpec specs, changes, design notes, and task-history archives
-are the durable workflow surface.
+root `TASK.md`; OpenSpec specs and active changes are the durable workflow
+surface.
 
 ## Requirements
 
@@ -22,24 +22,22 @@ files.
 - **AND** it reads relevant specs under `openspec/specs/`
 - **AND** it posts the configured session-start banner before implementation
 
-### Requirement: Findings and plan shall be recorded in OpenSpec artifacts
+### Requirement: Findings and plan shall be recorded in OpenSpec changes
 
 Before touching code or durable docs for substantial work, agents SHALL record
-relevant findings and a file-level plan in the matching OpenSpec change or
-design artifact.
+relevant findings and a file-level plan in the matching OpenSpec change.
 
 #### Scenario: A task requires repository edits
 
 - **WHEN** the agent has completed initial research
 - **THEN** it records what was read, what was learned, constraints, planned file
-  changes, and risks in `openspec/changes/<change-id>/` or the relevant
-  `openspec/design/` note
+  changes, and risks in `openspec/changes/<change-id>/`
 - **AND** implementation begins only after that plan exists
 
 ### Requirement: Completed work shall be recorded in OpenSpec
 
-Agents SHALL update the relevant OpenSpec task list, design note, validation
-summary, or task-history archive after each finished unit of durable work.
+Agents SHALL update the relevant OpenSpec change task list and target spec after
+each finished unit of durable work.
 
 #### Scenario: A milestone or commit lands
 
@@ -55,8 +53,8 @@ handoff file.
 #### Scenario: An agent needs scratch or handoff notes
 
 - **WHEN** a task creates notes that future agents need
-- **THEN** those notes are written to `openspec/changes/`,
-  `openspec/design/`, or `openspec/design/task-history/`
+- **THEN** those notes are written to `openspec/changes/` while active and then
+  folded into `openspec/specs/` when durable
 - **AND** no repo-root `TASK.md` is created
 
 ### Requirement: Commits shall be small, attributed, and pushed

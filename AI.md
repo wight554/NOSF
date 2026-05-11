@@ -97,13 +97,10 @@ Do not copy `.claude/`, `.codex/`, `.gemini/`, `.agent/`, or `.github/skills`
 into the project. If a project needs custom OpenSpec behavior, encode it in
 `openspec/config.yaml` or committed specs, not tool-local skill folders.
 
-For durable implementation notes, prefer `openspec/design/<area>/` over root
-Markdown files. Root docs should stay operator-facing (`README.md`, `MANUAL.md`,
-`KLIPPER.md`) or agent-facing (`AGENTS.md`, `AI.md`).
-
 For durable behavioral contracts, prefer `openspec/specs/<area>/spec.md`.
 Future substantial changes should begin in `openspec/changes/<change-id>/`
-with proposal/design/tasks artifacts, then archive durable outcomes back into
-`openspec/specs/` and `openspec/design/`.
+with proposal/design/tasks artifacts, then fold durable outcomes back into
+`openspec/specs/`. Do not keep migrated historical phase/task archives in-tree;
+use git history for old prose and implementation prompts.
 
 See `AGENTS.md` for firmware engineering mandates and full session start protocol.

@@ -11,5 +11,5 @@ openspec/changes/<change-id>/
   tasks.md     # implementation and validation checklist
 ```
 
-After the change ships, keep only durable design decisions and validation
-summaries under `openspec/design/`; do not recreate repo-root `TASK.md`.
+After the change ships, update the relevant spec and remove stale planning
+artifacts. Do not recreate repo-root `TASK.md`.

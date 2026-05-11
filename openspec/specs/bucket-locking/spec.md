@@ -3,8 +3,7 @@
 ## Purpose
 
 Capture the OpenSpec-native contract for Phase 2.11 smarter bucket lock/unlock
-behavior. The historical source note remains at
-`openspec/design/sync-refactor/SYNC_REFACTOR_PHASE_2_11.md`.
+behavior. Old planning prose is available through git history when needed.
 
 ## Requirements
 

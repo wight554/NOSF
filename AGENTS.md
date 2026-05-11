@@ -42,20 +42,19 @@ NOSF keeps durable design history and current behavioral contracts in
 `openspec/`.
 
 - Current specs live under `openspec/specs/`.
-- Long-form design history lives under `openspec/design/`.
 - New substantial work should start in `openspec/changes/<change-id>/` with
   `proposal.md`, `design.md`, and `tasks.md` before implementation.
 - Substantial active work belongs in `openspec/changes/<change-id>/`.
-- Durable implementation history belongs in `openspec/design/`.
-- Historical task ledgers live under `openspec/design/task-history/`.
+- Durable behavior belongs in `openspec/specs/`.
+- Historical phase/task prose is not kept in-tree after migration; use git
+  history when archaeology is needed.
 - Do not recreate repo-root `TASK.md`; use OpenSpec artifacts for handoff.
 
 For sync, calibration, tuner, and analyzer work, read
 `openspec/specs/sync-refactor/spec.md` first, then read the relevant
 phase-level spec under `openspec/specs/` (`calibration-workflow`,
-`bucket-locking`, `analyzer-rigor`, etc.). Use
-`openspec/design/sync-refactor/` only for provenance, original rationale, and
-detailed implementation prompts.
+`bucket-locking`, `analyzer-rigor`, etc.). Use git history for old phase prose,
+original rationale, and detailed implementation prompts.
 
 For project workflow and task tracking rules, read
 `openspec/specs/task-workflow/spec.md` alongside this file.
@@ -86,7 +85,6 @@ firmware internals.
 | `BUILD_FLASH.md` | Build and flash instructions |
 | `scripts/nosf_cmd.py` | Single-command serial helper for Klipper shell integration |
 | `openspec/specs/` | Current OpenSpec behavioral contracts |
-| `openspec/design/` | Durable design notes, phase history, ADRs, validation summaries |
 
 ---
 
@@ -171,8 +169,8 @@ everything mid-task. **Write first in OpenSpec artifacts.**
 
 1. **Research phase** — read relevant source, grep symbols, understand current
    state. For substantial work, write findings into
-   `openspec/changes/<change-id>/design.md` or the relevant
-   `openspec/design/` note. Include what read, what learned, and constraints.
+   `openspec/changes/<change-id>/design.md`. Include what read, what learned,
+   and constraints.
 
 2. **Plan phase** — draft the implementation plan in the OpenSpec change or
    design note before opening editor. For every file to modify, write:
@@ -189,8 +187,8 @@ everything mid-task. **Write first in OpenSpec artifacts.**
    ```
 
    If the task changes durable behavior or project workflow, also create or
-   update the relevant OpenSpec artifact (`openspec/specs`, `openspec/changes`,
-   or `openspec/design`) before implementation.
+   update the relevant OpenSpec artifact (`openspec/specs` or
+   `openspec/changes`) before implementation.
 
 3. **Implement** — work through plan file by file. After each durable unit is
    done, update the OpenSpec task list/design note with completed steps,
@@ -210,8 +208,7 @@ The repo no longer uses root `TASK.md`. Use these sources instead:
 
 - `openspec/changes/` for active spec-driven work.
 - `openspec/specs/` for durable behavior contracts.
-- `openspec/design/` for design history, validation summaries, and task archives.
-- `openspec/design/task-history/` for old long-form task ledgers.
+- git history for old long-form task ledgers and migrated phase prose.
 
 If no active change exists, run `git log --oneline -20`, read relevant specs,
 and ask or infer the active task from the user prompt.

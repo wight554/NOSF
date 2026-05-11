@@ -2,10 +2,9 @@
 
 ## Purpose
 
-Capture the OpenSpec-native contract for the original sync refactor foundation
-from `openspec/design/sync-refactor/SYNC_REFACTOR_PLAN.md`. This spec preserves
-the durable behavior expected from Phases 0 through 2.7 without requiring agents
-to start from the historical phase plan.
+Capture the OpenSpec-native contract for the original sync refactor foundation.
+This spec preserves the durable behavior expected from Phases 0 through 2.7
+without requiring agents to start from the historical phase plan.
 
 ## Requirements
 

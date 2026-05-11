@@ -3,8 +3,8 @@
 ## Purpose
 
 Capture the OpenSpec-native contract for Phase 2.13 acceptance-gate parity and
-mature-run consistency. The historical source note remains at
-`openspec/design/sync-refactor/SYNC_REFACTOR_PHASE_2_13.md`.
+mature-run consistency. Old planning prose is available through git history when
+needed.
 
 ## Requirements
 

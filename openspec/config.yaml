@@ -8,9 +8,9 @@ context: |
     RP2040 on FYSETC ERB V2.0.
   Stack: C firmware built with Pico SDK/CMake/Ninja plus Python stdlib host
     tools under scripts/.
-  Workflow: follow AGENTS.md and OpenSpec specs/changes/design notes; one
-    milestone per commit; keep host-only analyzer/tuner phases separate from
-    firmware changes; do not recreate repo-root TASK.md.
+  Workflow: follow AGENTS.md and OpenSpec specs/changes; one milestone per
+    commit; keep host-only analyzer/tuner phases separate from firmware
+    changes; do not recreate repo-root TASK.md.
   Constraints: pure stdlib + pyserial for host tools; no local AI config in
     repo; firmware tunables live in config.ini and generated tune.h.
 

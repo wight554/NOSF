@@ -3,8 +3,8 @@
 ## Purpose
 
 Capture the OpenSpec-native contract for Phase 2.10 Klipper sidecar and UDS
-motion tracking. The historical source note remains at
-`openspec/design/sync-refactor/SYNC_REFACTOR_PHASE_2_10.md`.
+motion tracking. Old planning prose is available through git history when
+needed.
 
 ## Requirements
 
