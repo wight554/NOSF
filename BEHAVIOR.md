@@ -371,16 +371,10 @@ target = extruder_est_sps × RELOAD_LEAN
 ```
 
 - Target is clamped between `TRAILING_RATE` and `JOIN_RATE`.
-- First contact enters a brief settle window at `TRAILING_RATE` instead of
-  jumping straight to `PRESS_RATE`.
-- After that settle window, firmware enforces the post-touch boost floor
-  derived from `PRESS_RATE × RELOAD_TOUCH_FLOOR_PCT` only if the buffer has
-  already relaxed out of `BUF_TRAILING`.
-- RELOAD completion accepts either the debounced buffer state or an
-  instantaneous `BUF_ADVANCE` pulse, so a brief real pickup event is not lost
-  behind normal buffer hysteresis.
-- `BUF_TRAILING` keeps the motor at the low trailing push rate.
-- `BUF_ADVANCE` or `TS:1` means the extruder has taken over, so follow exits.
+- `RELOAD_LEAN` now defaults to `1.15` (over-feeds by 15%).
+- While in `BUF_MID`, `TC_RELOAD_FOLLOW` intentionally **over-feeds** to ensure the new tip pushes faster than the extruder pulls, actively closing the gap to the old tail.
+- This causes the arm to gradually drift toward `BUF_TRAILING`.
+- If it hits `BUF_TRAILING`, it drops to `TRAILING_RATE` (usually 0), allowing the extruder to pull it back to `MID`, creating a solid bang-bang pressure cycle.
 - RELOAD follow also watches geometry-aware trailing-wall time. If the lane is
   still pushing deeper into the trailing wall and the predicted remaining time
   collapses, `FOLLOW_JAM` is raised early instead of waiting only on the static

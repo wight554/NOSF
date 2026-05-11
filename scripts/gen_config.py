@@ -89,7 +89,7 @@ DEFAULTS = {
     "zone_bias_base_rate": "90",
     "zone_bias_ramp_rate": "30",
     "zone_bias_max_rate": "600",
-    "reload_lean_factor": "0.85",
+    "reload_lean_factor": "1.15",
 
     # Cutter / Servo
     "servo_open_us": "500",

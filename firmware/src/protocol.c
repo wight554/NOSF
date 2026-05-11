@@ -494,7 +494,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "ZONE_BIAS_BASE")) ZONE_BIAS_BASE_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 5000);
         else if (!strcmp(base_param, "ZONE_BIAS_RAMP")) ZONE_BIAS_RAMP_SPS_S = clamp_i(mm_per_min_to_sps(fv), 0, 5000);
         else if (!strcmp(base_param, "ZONE_BIAS_MAX")) ZONE_BIAS_MAX_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 5000);
-        else if (!strcmp(base_param, "RELOAD_LEAN")) RELOAD_LEAN_FACTOR = clamp_f(fv, 0.0f, 1.0f);
+        else if (!strcmp(base_param, "RELOAD_LEAN")) RELOAD_LEAN_FACTOR = clamp_f(fv, 0.0f, 5.0f);
         else if (!strcmp(base_param, "RUN_CURRENT_MA")) { SET_LANE({ TMC_RUN_CURRENT_MA[idx] = clamp_i(iv, 0, 2000); }); }
         else if (!strcmp(base_param, "HOLD_CURRENT_MA")) { SET_LANE({ TMC_HOLD_CURRENT_MA[idx] = clamp_i(iv, 0, 2000); }); }
         else if (!strcmp(base_param, "MICROSTEPS")) { SET_LANE({ TMC_MICROSTEPS[idx] = clamp_i(iv, 1, 256); }); }

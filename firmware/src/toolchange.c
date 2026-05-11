@@ -507,7 +507,7 @@ void tc_tick(uint32_t now_ms) {
 
             // We must OVER-feed to close the gap and maintain pressure on the old tail.
             // Under-feeding creates a gap because the MMU pushes slower than the extruder pulls!
-            int target_sps = (int)(extruder_est_sps * 1.15f);
+            int target_sps = (int)(extruder_est_sps * RELOAD_LEAN_FACTOR);
             if (target_sps < PRESS_SPS) {
                 target_sps = PRESS_SPS;
             }

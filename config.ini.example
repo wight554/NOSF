@@ -109,7 +109,7 @@ run_current:
 # zone_bias_base_rate: 90      # Base reserve-recovery correction (mm/min)
 # zone_bias_ramp_rate: 30      # Reserve-recovery ramp (mm/min per second stuck in zone)
 # zone_bias_max_rate: 600      # Max reserve-recovery correction (mm/min)
-# reload_lean_factor: 0.85     # RELOAD follow under-feed factor (0.0 to 1.0)
+# reload_lean_factor: 1.15     # RELOAD follow over-feed factor (0.0 to 5.0)
 
 # ─── Cutter / Servo ──────────────────────────────────────────────────────────
 # servo_open_us: 500
