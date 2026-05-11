@@ -352,3 +352,4 @@ Settings version 46u → 47u.
 ### Completed Steps
 - Phase 2.11 preflight read done; implementation plan committed in `SYNC_REFACTOR_PHASE_2_11.md`. Commit SHA recorded after push.
 - docs: commonized caveman/cavemem protocol in AGENTS.md; committed and pushed ad8eeb7.
+- docs: simplified caveman rule in AGENTS.md; committed and pushed 93fea40.
