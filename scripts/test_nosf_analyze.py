@@ -543,6 +543,109 @@ def test_consistency_matches_standalone_recommendations():
     return "consistency deltas match standalone per-run recommendations"
 
 
+def phase_2_13_state_records():
+    return {
+        f"Locked{letter}_v1000": {
+            "state": "LOCKED",
+            "locked": True,
+            "x": x,
+            "n": 500,
+            "resid_var_ewma": 10000.0,
+            "cumulative_mid_s": 120,
+        }
+        for letter, x in zip("ABCDE", [700, 710, 720, 730, 740])
+    }
+
+
+def phase_2_13_comparable_run(path, bp_delta=-0.756):
+    rows = []
+    for i in range(50):
+        ts = int(i * (601000 / 49))
+        rows.append(row(ts, feature="LockedC", v_fil=1000, est=720, bp=-3.0 + bp_delta, rt=-3.0))
+    return {"path": path, "rows": rows}
+
+
+def test_immature_run_skipped_with_reason():
+    state = analyze.load_state(PHASE_2_13_STATE_FIXTURE)
+    runs, _rows = analyze.read_csv_runs(PHASE_2_13_RUN_FIXTURES)
+    info = analyze.classify_run(runs[0], state, analyze.DEFAULTS.copy(), "safe", False, False)
+    assert not info["comparable"], info
+    assert "rows per contributing bucket" in info["reason"], info
+    return "immature run is skipped with row-count reason"
+
+
+def test_only_one_comparable_run_skips_consistency_check():
+    state = phase_2_13_state_records()
+    comparable = phase_2_13_comparable_run("run-good.csv")
+    immature = {"path": "run-short.csv", "rows": [row(0, feature="LockedC", v_fil=1000, est=720)]}
+    report = analyze.consistency_report_by_run(
+        [comparable, immature],
+        state,
+        analyze.DEFAULTS.copy(),
+        "safe",
+    )
+    assert report["comparable_runs"] == 1, report
+    assert report["consistency_skipped"], report
+    return "single comparable run skips consistency reduction"
+
+
+def test_three_run_field_repro_passes_after_filter():
+    state = phase_2_13_state_records()
+    runs = [
+        phase_2_13_comparable_run("run-a.csv"),
+        phase_2_13_comparable_run("run-b.csv"),
+        phase_2_13_comparable_run("run-c.csv"),
+    ]
+    rows = [r for run in runs for r in run["rows"]]
+    gate = analyze.acceptance_gate(rows, runs, state, analyze.DEFAULTS.copy())
+    assert gate["pass"], gate
+    assert gate["comparable_runs"] == 3, gate
+    assert not gate["consistency_skipped"], gate
+    return "three mature runs pass consistency after filtering"
+
+
+def test_true_disagreement_still_fails():
+    state = phase_2_13_state_records()
+    runs = [
+        phase_2_13_comparable_run("run-a.csv", bp_delta=-0.756),
+        phase_2_13_comparable_run("run-b.csv", bp_delta=0.0),
+        phase_2_13_comparable_run("run-c.csv", bp_delta=1.56),
+    ]
+    rows = [r for run in runs for r in run["rows"]]
+    gate = analyze.acceptance_gate(rows, runs, state, analyze.DEFAULTS.copy())
+    assert not gate["pass"], gate
+    assert gate["max_bias_delta"] > 0.05, gate
+    assert any("bias consistency" in reason for reason in gate["reasons"]), gate
+    return "true per-run recommendation disagreement still fails"
+
+
+def test_rejected_patch_includes_per_run_estimates():
+    with tempfile.TemporaryDirectory() as td:
+        csvs = []
+        for idx, bp_delta in enumerate([-0.756, 0.0, 1.56], 1):
+            path = os.path.join(td, f"run{idx}.csv")
+            write_csv(path, phase_2_13_comparable_run(path, bp_delta=bp_delta)["rows"])
+            csvs.append(path)
+        state = os.path.join(td, "state.json")
+        write_state_records(state, phase_2_13_state_records())
+        config = os.path.join(td, "config.ini")
+        write_config(config)
+        out = os.path.join(td, "patch.ini")
+        args = SimpleNamespace(
+            inputs=csvs, out=out, mode="safe", state=state, config=config,
+            acceptance_gate=True, commit_watermark=False, keys=None, machine_id="test",
+            include_stale=False, force=False,
+        )
+        rc = analyze.run(args)
+        assert rc == 1, rc
+        with open(out) as fh:
+            text = fh.read()
+        assert "Per-run estimates used in consistency check" in text, text
+        assert "Comparable runs: 3 of 3" in text, text
+        assert "bias consistency" in text, text
+        return "rejected patch includes per-run estimate diagnostics"
+
+
 def main():
     tests = [
         ("baseline", test_baseline_from_dominant_cluster),
@@ -565,6 +668,11 @@ def main():
         ("gate-parity", test_phase_2_13_field_repro_gate_should_pass),
         ("gate-shared", test_consistency_uses_recommendation_path),
         ("gate-standalone", test_consistency_matches_standalone_recommendations),
+        ("run-skip", test_immature_run_skipped_with_reason),
+        ("one-run-skip", test_only_one_comparable_run_skips_consistency_check),
+        ("three-run-filter", test_three_run_field_repro_passes_after_filter),
+        ("true-disagree", test_true_disagreement_still_fails),
+        ("gate-diag", test_rejected_patch_includes_per_run_estimates),
     ]
     print(f"{'case':<12} result")
     print(f"{'-' * 12} {'-' * 40}")

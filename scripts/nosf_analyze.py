@@ -25,6 +25,8 @@ SAFETY_K = {}  # Deprecated in Phase 2.12; kept one release for import compatibi
 NOISE_RATIO_THR = 0.25
 V_NOISE_FLOOR = 100.0
 MIN_LEARN_EST_SPS = 100.0
+MIN_COMPARABLE_BUCKETS = 3  # Per-run gate estimates need at least this many contributors.
+MIN_RUN_BUCKET_ROWS = 50  # At least one contributing bucket must have this many rows in the run.
 BIAS_SAFE_MIN = 0.05
 BIAS_SAFE_MAX = 0.65
 DEFAULTS = {
@@ -475,6 +477,94 @@ def raw_consistency_by_run(runs):
 
 
 def consistency_by_run(runs, state_buckets, current, mode="safe", force=False, include_stale=False):
+    report = consistency_report_by_run(
+        runs,
+        state_buckets,
+        current,
+        mode=mode,
+        force=force,
+        include_stale=include_stale,
+    )
+    return report["max_baseline_delta"], report["max_bias_delta"]
+
+
+def classify_run(run, state_buckets, current, mode, force, include_stale):
+    recs = recommend_for_subset(
+        [run],
+        run["rows"],
+        state_buckets,
+        current,
+        mode,
+        force,
+        include_stale,
+    )
+    baseline, baseline_conf, _baseline_detail = recs["baseline_rate"]
+    bias, bias_conf, _bias_detail = recs["sync_trailing_bias_frac"]
+    entries = contributor_entries(state_buckets, force=force, include_stale=include_stale)
+    contributor_labels = {entry["label"] for entry in entries}
+    row_counts = defaultdict(int)
+    for row in mid_rows(run["rows"]):
+        label = bucket_label(row.get("feature", ""), to_float(row.get("v_fil")))
+        if label in contributor_labels:
+            row_counts[label] += 1
+    max_bucket_rows = max(row_counts.values(), default=0)
+
+    confidence_rank = {"DEFAULT": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3}
+    confidence = baseline_conf
+    if confidence_rank.get(bias_conf, 0) < confidence_rank.get(confidence, 0):
+        confidence = bias_conf
+
+    comparable = True
+    reason = "ok"
+    if confidence not in ("HIGH", "MEDIUM"):
+        comparable = False
+        reason = f"{confidence} confidence ({len(entries)} contributing buckets)"
+    elif len(entries) < MIN_COMPARABLE_BUCKETS:
+        comparable = False
+        reason = f"contributors {len(entries)} < {MIN_COMPARABLE_BUCKETS}"
+    elif max_bucket_rows < MIN_RUN_BUCKET_ROWS:
+        comparable = False
+        reason = f"<{MIN_RUN_BUCKET_ROWS} rows per contributing bucket"
+
+    return {
+        "path": run.get("path", ""),
+        "comparable": comparable,
+        "reason": reason,
+        "baseline": baseline,
+        "bias": bias,
+        "contributors": len(entries),
+        "confidence": confidence,
+        "max_bucket_rows": max_bucket_rows,
+    }
+
+
+def consistency_report_by_run(runs, state_buckets, current, mode="safe", force=False, include_stale=False):
+    per_run = [
+        classify_run(run, state_buckets, current, mode, force, include_stale)
+        for run in runs
+    ]
+    comparable = [entry for entry in per_run if entry["comparable"]]
+    baseline_vals = [entry["baseline"] for entry in comparable]
+    bias_vals = [entry["bias"] for entry in comparable]
+    skipped = [entry for entry in per_run if not entry["comparable"]]
+    consistency_skipped = len(comparable) < 2
+    if consistency_skipped:
+        max_baseline_delta = 0.0
+        max_bias_delta = 0.0
+    else:
+        max_baseline_delta = max(baseline_vals) - min(baseline_vals)
+        max_bias_delta = max(bias_vals) - min(bias_vals)
+    return {
+        "per_run": per_run,
+        "comparable_runs": len(comparable),
+        "skipped_runs": skipped,
+        "consistency_skipped": consistency_skipped,
+        "max_baseline_delta": max_baseline_delta,
+        "max_bias_delta": max_bias_delta,
+    }
+
+
+def legacy_consistency_by_run(runs, state_buckets, current, mode="safe", force=False, include_stale=False):
     baseline_vals = []
     bias_vals = []
     for run in runs:
@@ -510,7 +600,7 @@ def acceptance_gate(rows, runs, state_buckets, current, mode="safe", force=False
     if coverage < 0.80:
         reasons.append(f"coverage {coverage * 100:.1f}% < 80.0%")
 
-    base_delta, bias_delta = consistency_by_run(
+    consistency = consistency_report_by_run(
         runs,
         state_buckets,
         current,
@@ -518,6 +608,8 @@ def acceptance_gate(rows, runs, state_buckets, current, mode="safe", force=False
         force=force,
         include_stale=include_stale,
     )
+    base_delta = consistency["max_baseline_delta"]
+    bias_delta = consistency["max_bias_delta"]
     if base_delta > 50.0:
         reasons.append(f"baseline consistency delta {base_delta:.0f} sps > 50")
     if bias_delta > 0.05:
@@ -556,6 +648,10 @@ def acceptance_gate(rows, runs, state_buckets, current, mode="safe", force=False
         "max_bias_delta": bias_delta,
         "sigma_p95": sigma_p95,
         "telemetry": telemetry,
+        "per_run_estimates": consistency["per_run"],
+        "comparable_runs": consistency["comparable_runs"],
+        "skipped_runs": consistency["skipped_runs"],
+        "consistency_skipped": consistency["consistency_skipped"],
     }
 
 
@@ -580,6 +676,29 @@ def write_patch(path, runs, rows, state_buckets, current, recommendations, gate,
                 f"# Consistency: max baseline delta {gate['max_baseline_delta']:.0f} sps, "
                 f"max bias delta {gate['max_bias_delta']:.3f}\n"
             )
+            fh.write("# Per-run estimates used in consistency check:\n")
+            for idx, entry in enumerate(gate.get("per_run_estimates", []), 1):
+                status = "comparable" if entry.get("comparable") else f"skipped: {entry.get('reason', '')}"
+                fh.write(
+                    f"#   run {idx} ({entry.get('path', '')}): "
+                    f"baseline={entry.get('baseline', 0.0):.0f}, "
+                    f"bias={entry.get('bias', 0.0):.3f}, "
+                    f"contributors={entry.get('contributors', 0)}, "
+                    f"conf={entry.get('confidence', 'DEFAULT')}, {status}\n"
+                )
+            fh.write(
+                f"# Comparable runs: {gate.get('comparable_runs', 0)} "
+                f"of {len(gate.get('per_run_estimates', []))}\n"
+            )
+            skipped = gate.get("skipped_runs", [])
+            fh.write("# Skipped runs:\n")
+            if skipped:
+                for entry in skipped:
+                    fh.write(f"#   {entry.get('path', '')}: {entry.get('reason', '')}\n")
+            else:
+                fh.write("#   (none)\n")
+            if gate.get("consistency_skipped"):
+                fh.write("# Consistency: skipped (need >= 2 comparable runs)\n")
             tel = gate["telemetry"]
             fh.write(
                 "# Telemetry: "
