@@ -364,3 +364,10 @@ Settings version 46u → 47u.
 - Verified drift channel: Outer wall_v1375 correctly unlocked on sustained 300+ sps deviation.
 - Observed zero chatter: LOCKED buckets stayed locked through scatter that previously caused unlocks.
 - Logic behaves as intended: patient with noise, decisive on drift.
+
+### Phase 2.11 Pi Validation (May 11 2026)
+- Verified lock dwell counter incrementing (0/20 -> 42).
+- Verified noise gating: buckets with massive sigma2 (10k+) held in STABLE/wait=noise.
+- Verified drift channel: Outer wall_v1375 correctly unlocked mid-print on sustained error.
+- Observed zero chatter: No relock-unlock cycling seen on noisy high-flow segments.
+- Logic confirmed: Patient with scatter, aggressive with drift.
