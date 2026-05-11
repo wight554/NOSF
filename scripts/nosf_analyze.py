@@ -243,6 +243,30 @@ def force_low_confidence(recommendations):
     return lowered
 
 
+def trimmed_labels_by_x(labels, state_buckets):
+    labels = [label for label in labels if label in state_buckets]
+    if len(labels) < 3:
+        return set(labels)
+    xs = [to_float(state_buckets[label].get("x")) for label in labels]
+    lo = percentile(xs, 5)
+    hi = percentile(xs, 95)
+    return {
+        label for label in labels
+        if lo <= to_float(state_buckets[label].get("x")) <= hi
+    }
+
+
+def bucket_weight(raw):
+    return max(0.0, to_float(raw.get("n"))) / max(to_float(raw.get("resid_var_ewma"), V_NOISE_FLOOR), V_NOISE_FLOOR)
+
+
+def weighted_mean(values):
+    total_w = sum(w for _value, w in values)
+    if total_w <= 0.0:
+        return 0.0
+    return sum(value * w for value, w in values) / total_w
+
+
 def compute_recommendations(rows, runs, state_buckets, current, mode, include_stale=False, force=False):
     mids = mid_rows(rows)
     
@@ -267,22 +291,53 @@ def compute_recommendations(rows, runs, state_buckets, current, mode, include_st
             last_seen = state_buckets[label].get("last_seen", now_ts)
             if last_seen < stale_cutoff and not include_stale:
                 continue
-        if locked and label not in qualifying:
+        if qualifying and label not in qualifying:
             continue
         by_bucket[label].append(r)
 
-    dominant = max(by_bucket.values(), key=len) if by_bucket else []
-    est_vals = [to_float(r.get("est_sps")) for r in dominant]
-    est_p50 = median(est_vals)
-    est_sigma = stdev(est_vals)
-    baseline = est_p50 if est_vals else current["baseline_rate"]
-    bucket_conf = confidence_from_buckets(qualifying or set(by_bucket), locked_only)
-    baseline_conf = bucket_conf if est_vals else "DEFAULT"
+    trimmed_qualifying = trimmed_labels_by_x(qualifying, state_buckets) if qualifying else set()
+    weighted_x = [
+        (to_float(state_buckets[label].get("x")), bucket_weight(state_buckets[label]))
+        for label in trimmed_qualifying
+        if bucket_weight(state_buckets[label]) > 0.0
+    ]
+    if weighted_x:
+        baseline = weighted_mean(weighted_x)
+        est_sigma = math.sqrt(1.0 / max(sum(w for _value, w in weighted_x), 1e-9))
+        baseline_conf = confidence_from_buckets(trimmed_qualifying, locked_only)
+        baseline_detail = f"{len(trimmed_qualifying)} buckets"
+    else:
+        dominant = max(by_bucket.values(), key=len) if by_bucket else []
+        est_vals = [to_float(r.get("est_sps")) for r in dominant]
+        est_p50 = median(est_vals)
+        est_sigma = stdev(est_vals)
+        baseline = est_p50 if est_vals else current["baseline_rate"]
+        baseline_conf = confidence_from_buckets(set(by_bucket), locked_only) if est_vals else "DEFAULT"
+        baseline_detail = f"n={len(est_vals)}, sigma={est_sigma:.1f}"
 
     qualifying_rows = [r for rows_for_bucket in by_bucket.values() for r in rows_for_bucket]
-    bp_delta = [to_float(r.get("bp_mm")) - to_float(r.get("rt_mm")) for r in qualifying_rows]
-    bias = clamp(0.4 + (stats.mean(bp_delta) / 7.8 if bp_delta else 0.0), BIAS_SAFE_MIN, BIAS_SAFE_MAX)
-    bias_conf = bucket_conf if bp_delta else "DEFAULT"
+    weighted_bias = []
+    if trimmed_qualifying:
+        for label in trimmed_qualifying:
+            deltas = [
+                to_float(r.get("bp_mm")) - to_float(r.get("rt_mm"))
+                for r in by_bucket.get(label, [])
+            ]
+            if not deltas:
+                continue
+            weighted_bias.append((
+                clamp(0.4 + median(deltas) / 7.8, BIAS_SAFE_MIN, BIAS_SAFE_MAX),
+                bucket_weight(state_buckets[label]),
+            ))
+    if weighted_bias:
+        bias = clamp(weighted_mean(weighted_bias), BIAS_SAFE_MIN, BIAS_SAFE_MAX)
+        bias_conf = confidence_from_buckets(trimmed_qualifying, locked_only)
+        bias_detail = f"{len(weighted_bias)} buckets"
+    else:
+        bp_delta = [to_float(r.get("bp_mm")) - to_float(r.get("rt_mm")) for r in qualifying_rows]
+        bias = clamp(0.4 + (stats.mean(bp_delta) / 7.8 if bp_delta else 0.0), BIAS_SAFE_MIN, BIAS_SAFE_MAX)
+        bias_conf = confidence_from_buckets(set(by_bucket), locked_only) if bp_delta else "DEFAULT"
+        bias_detail = f"n={len(bp_delta)}"
 
     dwell_ms = []
     for run in runs:
@@ -338,8 +393,8 @@ def compute_recommendations(rows, runs, state_buckets, current, mode, include_st
     ref_conf = confidence(len(sigma_vals), 500)
 
     return {
-        "baseline_rate": (baseline, baseline_conf, f"n={len(est_vals)}, sigma={est_sigma:.1f}"),
-        "sync_trailing_bias_frac": (bias, bias_conf, f"n={len(bp_delta)}"),
+        "baseline_rate": (baseline, baseline_conf, baseline_detail),
+        "sync_trailing_bias_frac": (bias, bias_conf, bias_detail),
         "mid_creep_timeout_ms": (mid_timeout, mid_timeout_conf, f"{len(dwell_ms)} dwells"),
         "mid_creep_rate_sps_per_s": (creep_rate, creep_rate_conf, f"{len(creep_slopes)} creep slopes"),
         "mid_creep_cap_frac": (creep_cap, creep_cap_conf, f"{len(creep_caps)} creep ratios"),

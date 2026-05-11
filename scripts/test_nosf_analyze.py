@@ -15,6 +15,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 import nosf_analyze as analyze
 
 
+REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+FIELD_CSV_FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "phase_2_12_field_csv.csv")
+FIELD_STATE_FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "phase_2_12_field_state.json")
+
 FIELDS = [
     "ts_ms", "zone", "bp_mm", "sigma_mm", "est_sps", "rt_mm", "cf",
     "adv_dwell_ms", "tb", "mc", "vb", "bpv_mm", "feature", "v_fil",
@@ -295,6 +299,81 @@ def test_safety_k_removed_no_subtraction():
     return "baseline is centroid; SAFETY_K subtraction is gone"
 
 
+def test_precision_weighted_baseline_across_buckets():
+    state = {
+        "A_v1000": {"state": "LOCKED", "locked": True, "x": 900, "n": 100, "resid_var_ewma": 100},
+        "B_v1000": {"state": "LOCKED", "locked": True, "x": 1000, "n": 400, "resid_var_ewma": 100},
+        "C_v1000": {"state": "LOCKED", "locked": True, "x": 1100, "n": 400, "resid_var_ewma": 400},
+        "D_v1000": {"state": "LOCKED", "locked": True, "x": 1200, "n": 100, "resid_var_ewma": 100},
+        "E_v1000": {"state": "LOCKED", "locked": True, "x": 1300, "n": 100, "resid_var_ewma": 100},
+    }
+    rows = [
+        row(i * 100, feature=label.rsplit("_v", 1)[0], v_fil=1000, est=raw["x"])
+        for i, (label, raw) in enumerate(state.items())
+    ]
+    recs = analyze.compute_recommendations(rows, [{"path": "run.csv", "rows": rows}], state, analyze.DEFAULTS.copy(), "safe")
+    baseline = recs["baseline_rate"][0]
+    assert 1030 <= baseline <= 1070, baseline
+    assert baseline not in (900, 1300), baseline
+    return "baseline uses trimmed precision-weighted bucket centroids"
+
+
+def test_dominant_single_bucket_does_not_dictate_baseline():
+    state = {
+        "Dominant_v1000": {"state": "LOCKED", "locked": True, "x": 1000, "n": 100, "resid_var_ewma": 100},
+        "B_v1000": {"state": "LOCKED", "locked": True, "x": 1010, "n": 100, "resid_var_ewma": 100},
+        "C_v1000": {"state": "LOCKED", "locked": True, "x": 990, "n": 100, "resid_var_ewma": 100},
+        "D_v1000": {"state": "LOCKED", "locked": True, "x": 1005, "n": 100, "resid_var_ewma": 100},
+        "E_v1000": {"state": "LOCKED", "locked": True, "x": 995, "n": 100, "resid_var_ewma": 100},
+    }
+    rows = [row(i * 100, feature="Dominant", v_fil=1000, est=3000) for i in range(200)]
+    rows.extend(row(20000 + i * 100, feature=f, v_fil=1000, est=1000) for i, f in enumerate(["B", "C", "D", "E"]))
+    recs = analyze.compute_recommendations(rows, [{"path": "run.csv", "rows": rows}], state, analyze.DEFAULTS.copy(), "safe")
+    baseline = recs["baseline_rate"][0]
+    assert 980 <= baseline <= 1020, baseline
+    assert baseline < 1200, baseline
+    return "dominant CSV row count no longer dictates baseline"
+
+
+def test_bias_only_from_qualifying_buckets():
+    state = {
+        f"Locked{i}_v1000": {"state": "LOCKED", "locked": True, "x": 1000 + i, "n": 100, "resid_var_ewma": 100}
+        for i in range(5)
+    }
+    rows = []
+    for i in range(5):
+        rows.extend(row(i * 1000 + j * 100, feature=f"Locked{i}", v_fil=1000, est=1000, bp=-3.78, rt=-3.0) for j in range(5))
+    rows.extend(row(10000 + j * 100, feature="Unlocked", v_fil=1000, est=1000, bp=-2.22, rt=-3.0) for j in range(100))
+    recs = analyze.compute_recommendations(rows, [{"path": "run.csv", "rows": rows}], state, analyze.DEFAULTS.copy(), "safe")
+    bias = recs["sync_trailing_bias_frac"][0]
+    assert 0.295 <= bias <= 0.305, bias
+    return "bias ignores non-qualifying bucket rows"
+
+
+def test_field_oscillation_repro():
+    with open(FIELD_STATE_FIXTURE) as fh:
+        state = analyze.load_state(FIELD_STATE_FIXTURE)
+    runs, rows = analyze.read_csv_runs([FIELD_CSV_FIXTURE])
+    baselines = []
+    for extra_count, extra_est in ((0, 0), (80, 1600), (120, 328)):
+        synthetic = list(rows)
+        synthetic.extend(
+            row(2000 + i * 100, feature="Dominant", v_fil=1000, est=extra_est)
+            for i in range(extra_count)
+        )
+        recs = analyze.compute_recommendations(
+            synthetic,
+            [{"path": "synthetic.csv", "rows": synthetic}],
+            state,
+            analyze.DEFAULTS.copy(),
+            "safe",
+            force=True,
+        )
+        baselines.append(recs["baseline_rate"][0])
+    assert max(baselines) - min(baselines) <= 50.0, baselines
+    return "field oscillation repro converges within 50 sps across synthetic runs"
+
+
 def main():
     tests = [
         ("baseline", test_baseline_from_dominant_cluster),
@@ -307,6 +386,10 @@ def main():
         ("force-emit", test_force_emits_when_zero_locked_in_safe_mode),
         ("conf-locked", test_confidence_high_requires_5_locked),
         ("no-safety-k", test_safety_k_removed_no_subtraction),
+        ("weighted", test_precision_weighted_baseline_across_buckets),
+        ("no-dominant", test_dominant_single_bucket_does_not_dictate_baseline),
+        ("bias-qual", test_bias_only_from_qualifying_buckets),
+        ("field-osc", test_field_oscillation_repro),
     ]
     print(f"{'case':<12} result")
     print(f"{'-' * 12} {'-' * 40}")

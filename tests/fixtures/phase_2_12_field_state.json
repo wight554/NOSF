@@ -1,0 +1,55 @@
+{
+  "_schema": 4,
+  "test": {
+    "Inner_wall_v1000": {
+      "x": 980.0,
+      "P": 20.0,
+      "n": 1899,
+      "bias": 0.32,
+      "state": "STABLE",
+      "locked": false,
+      "cumulative_mid_s": 275.9,
+      "resid_var_ewma": 14400.0
+    },
+    "Outer_wall_v1000": {
+      "x": 1010.0,
+      "P": 20.0,
+      "n": 1371,
+      "bias": 0.31,
+      "state": "STABLE",
+      "locked": false,
+      "cumulative_mid_s": 198.2,
+      "resid_var_ewma": 17609.0
+    },
+    "Sparse_infill_v1000": {
+      "x": 1005.0,
+      "P": 20.0,
+      "n": 1460,
+      "bias": 0.30,
+      "state": "STABLE",
+      "locked": false,
+      "cumulative_mid_s": 220.0,
+      "resid_var_ewma": 19653.0
+    },
+    "Internal_solid_infill_v1000": {
+      "x": 990.0,
+      "P": 20.0,
+      "n": 912,
+      "bias": 0.33,
+      "state": "STABLE",
+      "locked": false,
+      "cumulative_mid_s": 366.6,
+      "resid_var_ewma": 12100.0
+    },
+    "Top_surface_v1000": {
+      "x": 1035.0,
+      "P": 20.0,
+      "n": 593,
+      "bias": 0.34,
+      "state": "STABLE",
+      "locked": false,
+      "cumulative_mid_s": 129.4,
+      "resid_var_ewma": 15317.0
+    }
+  }
+}
