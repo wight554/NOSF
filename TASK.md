@@ -327,3 +327,27 @@ Settings version 46u → 47u.
 - 2.10.5 done: updated `MANUAL.md`, `KLIPPER.md`, `README.md`, and `CONTEXT.md` so sidecar + UDS is the primary calibration flow, UDS path discovery is documented, shell markers are the fallback path, and Phase 2.10 appears in phase history. Validation passed (`python3 -m py_compile scripts/gcode_marker.py scripts/test_gcode_marker.py scripts/klipper_motion_tracker.py scripts/test_klipper_motion_tracker.py scripts/nosf_live_tuner.py scripts/test_nosf_live_tuner.py scripts/test_phase_2_10_parity.py`, `python3 scripts/test_gcode_marker.py`, `python3 scripts/test_klipper_motion_tracker.py`, `python3 scripts/test_nosf_live_tuner.py`, `python3 scripts/test_phase_2_10_parity.py`, `python3 -m py_compile scripts/*.py`). Committed and pushed `06304cb`.
 - 2.10.6 done: flipped `gcode_marker.py` default to `--emit sidecar`, added deprecation warnings for `--emit file|mark|both`, added `nosf_marker.py` invocation warning, moved shell-marker setup under `Legacy Shell-Marker Fallback` in `KLIPPER.md`, and preserved `--emit file` fallback behavior. Validation passed (`python3 -m py_compile scripts/gcode_marker.py scripts/test_gcode_marker.py scripts/nosf_marker.py`, `python3 scripts/test_gcode_marker.py`, manual smoke `python3 scripts/gcode_marker.py tests/fixtures/orca_sample.gcode --output <tmp>/orca_legacy.gcode --emit file` with deprecation warning and `RUN_SHELL_COMMAND CMD=nosf_marker`, manual smoke `python3 scripts/nosf_marker.py --file <tmp>/markers.log NT:START` with deprecation warning, `python3 -m py_compile scripts/*.py`, `python3 scripts/test_klipper_motion_tracker.py`, `python3 scripts/test_nosf_live_tuner.py`, `python3 scripts/test_phase_2_10_parity.py`). Committed and pushed `65e0f88`.
 - 2.10.7 hotfix: live Pi probe showed every matched segment had `skip=True` because static `EXCLUDE_OBJECT_START/END` object regions were treated as excluded by default. Corrected sidecar generation to keep object metadata while leaving `skip=False`; runtime extrusion velocity and byte-position guards handle actual excluded-object skips. Validation passed (`python3 -m py_compile scripts/gcode_marker.py scripts/test_gcode_marker.py scripts/klipper_motion_tracker.py scripts/test_klipper_motion_tracker.py`, `python3 scripts/test_gcode_marker.py`, `python3 scripts/test_klipper_motion_tracker.py`, `python3 scripts/test_phase_2_10_parity.py`, `python3 scripts/test_nosf_live_tuner.py`, `python3 -m py_compile scripts/*.py`). Commit pending.
+
+---
+
+## Phase 2.11 — Smarter Bucket Lock/Unlock
+
+### Findings
+- Phase 2.10 sidecar+UDS marker stream is dense and accurate; it exposed a long-standing bug in `scripts/nosf_live_tuner.py:591-602` where a single residual outlier unlocks a healthy bucket because the threshold `radius = sqrt(4*(P + R_BASE))` collapses once `P` settles (≈ 23 sps at `P=35`).
+- Field evidence (May 2026 print): `Outer wall_v1375` cycled LOCKED→TRACKING→LOCKED at least 3 times; `x` walked across `567→419→524→354`. Total result was 1 LOCKED out of 115 buckets after 1475 s MID.
+- Phase 2.9 §17.1.6 chained `_MIGRATIONS` registry pattern must be reused for schema 3→4; non-destructive defaults required.
+- `on_m118` ingress contract and `klipper_motion_tracker.py` are out of scope for Phase 2.11; only the tuner-internal lock/unlock algorithm changes.
+- Existing Phase 2.9 dual-path lock criteria (Path A multi-run, Path B single high-confidence print) remain the lock gates; Phase 2.11 adds a noise gate and rewrites only the unlock branch.
+
+### Plan
+- Durable plan committed in `SYNC_REFACTOR_PHASE_2_11.md` (this commit, milestone 2.11.0).
+- Milestones:
+  - 2.11.1 reproduction fixture + failing chatter test (`tests/fixtures/phase_2_11_chatter.json`, expected-fail assertion).
+  - 2.11.2 residual statistics (`resid_ewma`, `resid_var_ewma`, `outlier_streak`, `locked_sample_count`, `last_unlock_reason`) + schema 3→4 migration via `_migrate_3_to_4`.
+  - 2.11.3 three-channel unlock (catastrophic / streak / drift) + noise-gated lock + `MIN_LOCK_DWELL` + `P_UNLOCK_RESET=400`; flip chatter test to hard assertion.
+  - 2.11.4 `--state-info --verbose` columns, new `wait` reasons (`noise σ²=..`, `dwell N/M`), MANUAL/KLIPPER/README/CONTEXT updates.
+  - 2.11.5 Pi soak: 3 back-to-back calibration prints; success = same bucket stays LOCKED across runs 2 and 3, ≤1 unlock line per bucket per print, schema-4 state file loads.
+- Risk: constants may need tuning on Pi (R-1); `nosf_analyze.py` `load_state` may need a `migrate_state_data` call (R-7).
+
+### Completed Steps
+- Phase 2.11 preflight read done; implementation plan committed in `SYNC_REFACTOR_PHASE_2_11.md`. Commit SHA recorded after push.
