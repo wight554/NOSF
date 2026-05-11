@@ -18,6 +18,7 @@ import gcode_marker
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 ORCA_FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "orca_sample.gcode")
+CHATTER_FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "phase_2_11_chatter.json")
 
 
 class FakeSerial:
@@ -896,6 +897,71 @@ def test_observe_only_no_set_writes_via_klipper_path():
         return "Klipper path remains observe-only by default"
 
 
+def _run_phase_2_11_chatter_repro_fixture():
+    with tempfile.TemporaryDirectory() as td:
+        with open(CHATTER_FIXTURE) as fh:
+            trace = json.load(fh)
+        control = trace[0]
+        samples = trace[1:]
+        clock = Clock()
+        fake = FakeSerial()
+        state_path = os.path.join(td, "state.json")
+        t = tuner_mod.Tuner(fake, state_path, "test", now_fn=clock.now, wall_fn=clock.now)
+        t.on_m118("NT:START")
+        t.on_m118(
+            f"echo: NOSF_TUNE:{control['feature']}:V{control['v_fil']:.1f}:W0.45:H0.20"
+        )
+        b = tuner_mod.Bucket(
+            label=control["label"],
+            x=float(control["x"]),
+            P=float(control["P"]),
+            n=int(control["n"]),
+            bias=float(control["bias"]),
+            bp_ewma=float(control["bp_ewma"]),
+            state="LOCKED",
+            locked=True,
+            runs_seen=int(control["runs_seen"]),
+            layers_seen=int(control["layers_seen"]),
+            cumulative_mid_s=float(control["cumulative_mid_s"]),
+            first_seen=clock.now(),
+            last_seen=clock.now(),
+        )
+        t.buckets[b.label] = b
+        t.active_label = b.label
+        t.total_print_mid_s = max(300.0, b.cumulative_mid_s)
+        t.last_status_t = clock.now()
+        unlock_count = 0
+        locked_throughout = True
+        for sample in samples:
+            was_locked = b.locked or b.state == "LOCKED"
+            clock.step(1.0)
+            t.on_status(
+                status(
+                    est=float(sample["est"]),
+                    bp=float(sample["bp"]),
+                    rt=float(sample["rt"]),
+                    cf=float(sample["cf"]),
+                    apx=int(sample["apx"]),
+                )
+            )
+            is_locked = b.locked or b.state == "LOCKED"
+            if was_locked and not is_locked:
+                unlock_count += 1
+            locked_throughout = locked_throughout and is_locked
+        assert locked_throughout, f"bucket unlocked {unlock_count} times"
+        assert unlock_count <= 1, f"unlock count {unlock_count} > 1"
+        return f"chatter fixture stayed locked with {unlock_count} unlocks"
+
+
+def test_phase_2_11_chatter_repro_fixture():
+    # Hard-asserted in milestone 2.11.3.
+    try:
+        return _run_phase_2_11_chatter_repro_fixture()
+    except AssertionError as exc:
+        print(f"EXPECTED FAIL: phase 2.11 chatter repro ({exc})")
+        return "EXPECTED FAIL: phase 2.11 chatter repro"
+
+
 def main():
     tests = [
         ("warm-up", test_cold_start_no_set),
@@ -935,6 +1001,7 @@ def main():
         ("klipper-auto", test_auto_fallback_when_uds_missing),
         ("klipper-events", test_klipper_events_drive_buckets),
         ("klipper-observe", test_observe_only_no_set_writes_via_klipper_path),
+        ("phase211-chat", test_phase_2_11_chatter_repro_fixture),
     ]
     print(f"{'case':<14} result")
     print(f"{'-' * 14} {'-' * 40}")
