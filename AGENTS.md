@@ -2,13 +2,16 @@ The file isn't in this directory — the AGENTS.md was from the NOSF project ref
 
 # NOSF — Agent Onboarding
 
-For AI agents (Claude, Gemini, Codex, etc.). Read first, then `TASK.md` (gitignored) before touching anything.
+For AI agents (Claude, Gemini, Codex, Opus, Copilot, etc.). Read first, then `TASK.md` (gitignored) before touching anything.
 
 **For AI environment setup (skills, MCPs), see [AI.md](./AI.md).**
 
 ## Session Start Protocol
 
-Before anything else, post in chat:
+Before anything else:
+1. Activate `caveman` skill (intensity: full). Note: also available as a skill in GitHub Copilot.
+2. Proactively use `cavemem` MCP (or similar persistent memory tools) for cross-session context.
+3. Post in chat:
 
 > **AGENTS.md ✓ | TASK.md: [one-line summary of current task, or "no active task"]**
 
