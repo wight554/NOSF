@@ -1,0 +1,24 @@
+schema: spec-driven
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+context: |
+  Project: NOSF standalone dual-lane MMU / RELOAD controller firmware for
+    RP2040 on FYSETC ERB V2.0.
+  Stack: C firmware built with Pico SDK/CMake/Ninja plus Python stdlib host
+    tools under scripts/.
+  Workflow: follow AGENTS.md and TASK.md; one milestone per commit; keep
+    host-only analyzer/tuner phases separate from firmware changes.
+  Constraints: pure stdlib + pyserial for host tools; no local AI config in
+    repo; firmware tunables live in config.ini and generated tune.h.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours

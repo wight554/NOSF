@@ -59,8 +59,41 @@ Add `cavemem` MCP to `~/.claude/settings.json` and `~/.gemini/settings.json`:
 
 ## Workspace Rules
 
-- **No local config commits**: `.agents/`, `.claude/`, `skills-lock.json` must NOT be committed. Relies on global config above.
+- **No local config commits**: `.agent/`, `.agents/`, `.claude/`, `.codex/`, `.gemini/`, `.github/skills/`, `.github/prompts/`, and `skills-lock.json` must NOT be committed. Relies on global config above.
 - **Model Attribution**: Include `Generated-By: <Agent> (<Model>)` in commit messages.
 - **Workflow**: Follow `TASK.md` protocol (Research -> Plan -> Implement) for context management.
+
+## OpenSpec / OpsX Setup
+
+This repo keeps only project OpenSpec data in `openspec/`. Tool-specific
+OpenSpec/OpsX skills and commands are installed globally so every project can
+reuse the same workflow without committing local agent config.
+
+Global OpenSpec skill locations on this machine:
+
+| Tool | Global path |
+|---|---|
+| Codex | `~/.codex/skills/openspec-*` |
+| Claude | `~/.claude/skills/openspec-*`, `~/.claude/commands/opsx/*.md` |
+| Gemini | `~/.gemini/skills/openspec-*`, `~/.gemini/commands/opsx/*.toml` |
+| Generic agents | `~/.agents/skills/openspec-*`, `~/.agents/workflows/opsx-*.md` |
+| GitHub/Copilot | `~/.github/skills/openspec-*`, `~/.github/prompts/opsx-*.prompt.md` |
+
+To initialize OpenSpec in a project, commit the project spec directory only:
+
+```bash
+mkdir -p openspec
+cat > openspec/config.yaml <<'YAML'
+schema: spec-driven
+context: |
+  Tech stack: <project stack>
+  Domain: <project domain>
+  Conventions: <commit/test/doc rules>
+YAML
+```
+
+Do not copy `.claude/`, `.codex/`, `.gemini/`, `.agent/`, or `.github/skills`
+into the project. If a project needs custom OpenSpec behavior, encode it in
+`openspec/config.yaml` or committed specs, not tool-local skill folders.
 
 See `AGENTS.md` for firmware engineering mandates and full session start protocol.

@@ -31,6 +31,16 @@ cmake_install.cmake
 TASK.md
 scratch/
 
+# local AI/agent config lives in home directories; keep repo to project specs
+.agent/
+.agents/
+.claude/
+.codex/
+.gemini/
+.github/skills/
+.github/prompts/
+skills-lock.json
+
 # IDE / LSP
 compile_commands.json
 .cache/

@@ -513,3 +513,19 @@ Audit acceptance-gate logic to differentiate between FAIL (logic invalidity/hard
 
 ### Completed Steps
 - Implemented `--in` glob expansion in `read_csv_runs()` with `~` support and sorted matches. Added analyzer regression coverage for `phase212-run*csv`. Validation passed (`python3 -m py_compile scripts/nosf_analyze.py scripts/test_nosf_analyze.py`, `python3 scripts/test_nosf_analyze.py`, `python3 -m py_compile scripts/*.py`). Commit pending.
+
+## OpenSpec Global Skills Cleanup
+
+### Findings
+- Project-local OpenSpec/OpsX skill bundles were present under `.agent/`, `.claude/`, `.codex/`, `.gemini/`, `.github/skills/`, and `.github/prompts/`.
+- AGENTS/AI policy is global-first AI config: repo should keep project OpenSpec data, not personal tool-local skill folders.
+- `openspec/config.yaml` is project-specific and should be committed as the source of truth for spec-driven context.
+
+### Plan
+- Move/copy OpenSpec/OpsX skills and commands to matching home-directory global config locations.
+- Remove project-local AI config bundles from the repo worktree.
+- Ignore local AI config paths in `.gitignore`.
+- Document OpenSpec project initialization in `AI.md`, and fill `openspec/config.yaml` with NOSF context.
+
+### Completed Steps
+- Global OpenSpec/OpsX skills installed under `~/.agents`, `~/.claude`, `~/.codex`, `~/.gemini`, and `~/.github`; project-local copies removed. Ignore/docs/OpenSpec config updates pending commit.
