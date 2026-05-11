@@ -21,7 +21,10 @@ except ImportError:
     migrate_state_data = None
 
 
-SAFETY_K = {"safe": 1.5, "aggressive": 1.0}
+SAFETY_K = {}  # Deprecated in Phase 2.12; kept one release for import compatibility.
+NOISE_RATIO_THR = 0.25
+V_NOISE_FLOOR = 100.0
+MIN_LEARN_EST_SPS = 100.0
 BIAS_SAFE_MIN = 0.05
 BIAS_SAFE_MAX = 0.65
 DEFAULTS = {
@@ -158,6 +161,32 @@ def locked_bucket_labels(state_buckets):
     }
 
 
+def bucket_noise_ratio(raw):
+    sigma2 = max(to_float(raw.get("resid_var_ewma"), V_NOISE_FLOOR), V_NOISE_FLOOR)
+    x = max(to_float(raw.get("x"), MIN_LEARN_EST_SPS), MIN_LEARN_EST_SPS)
+    return math.sqrt(sigma2) / x
+
+
+def force_qualifying_labels(state_buckets, include_stale=False):
+    import time
+    now_ts = time.time()
+    stale_cutoff = now_ts - 60 * 86400
+    labels = set()
+    for label, raw in state_buckets.items():
+        if label.startswith("_"):
+            continue
+        if not include_stale and to_float(raw.get("last_seen"), now_ts) < stale_cutoff:
+            continue
+        if int(raw.get("n", 0)) < 50:
+            continue
+        if to_float(raw.get("cumulative_mid_s")) < 10.0:
+            continue
+        if bucket_noise_ratio(raw) > NOISE_RATIO_THR:
+            continue
+        labels.add(label)
+    return labels
+
+
 def mid_rows(rows):
     return [
         r for r in rows
@@ -187,13 +216,49 @@ def confidence(n, high, medium=None):
     return "DEFAULT"
 
 
-def compute_recommendations(rows, runs, state_buckets, current, mode, include_stale=False):
+def confidence_from_buckets(qualifying, locked_only):
+    n = len(qualifying)
+    if locked_only and n >= 5:
+        return "HIGH"
+    if locked_only and n >= 2:
+        return "MEDIUM"
+    if not locked_only and n >= 5:
+        return "MEDIUM"
+    if n > 0:
+        return "LOW"
+    return "DEFAULT"
+
+
+def current_recommendations(current, detail="current"):
+    return {
+        key: (current[key], "DEFAULT", detail)
+        for key in DEFAULTS
+    }
+
+
+def force_low_confidence(recommendations):
+    lowered = {}
+    for key, (value, conf, detail) in recommendations.items():
+        lowered[key] = (value, "LOW" if conf != "DEFAULT" else conf, detail)
+    return lowered
+
+
+def compute_recommendations(rows, runs, state_buckets, current, mode, include_stale=False, force=False):
     mids = mid_rows(rows)
-    safety = SAFETY_K[mode]
     
     import time
     now_ts = time.time()
     stale_cutoff = now_ts - 60 * 86400
+    locked = locked_bucket_labels(state_buckets)
+    if locked:
+        qualifying = locked
+        locked_only = True
+    elif force:
+        qualifying = force_qualifying_labels(state_buckets, include_stale=include_stale)
+        locked_only = False
+    else:
+        qualifying = set()
+        locked_only = False
     
     by_bucket = defaultdict(list)
     for r in mids:
@@ -202,18 +267,22 @@ def compute_recommendations(rows, runs, state_buckets, current, mode, include_st
             last_seen = state_buckets[label].get("last_seen", now_ts)
             if last_seen < stale_cutoff and not include_stale:
                 continue
+        if locked and label not in qualifying:
+            continue
         by_bucket[label].append(r)
 
     dominant = max(by_bucket.values(), key=len) if by_bucket else []
     est_vals = [to_float(r.get("est_sps")) for r in dominant]
     est_p50 = median(est_vals)
     est_sigma = stdev(est_vals)
-    baseline = max(0.0, est_p50 - safety * est_sigma) if est_vals else current["baseline_rate"]
-    baseline_conf = "HIGH" if len(est_vals) >= 1000 and est_sigma < 0.15 * max(est_p50, 1.0) else confidence(len(est_vals), 1000)
+    baseline = est_p50 if est_vals else current["baseline_rate"]
+    bucket_conf = confidence_from_buckets(qualifying or set(by_bucket), locked_only)
+    baseline_conf = bucket_conf if est_vals else "DEFAULT"
 
-    bp_delta = [to_float(r.get("bp_mm")) - to_float(r.get("rt_mm")) for r in mids]
+    qualifying_rows = [r for rows_for_bucket in by_bucket.values() for r in rows_for_bucket]
+    bp_delta = [to_float(r.get("bp_mm")) - to_float(r.get("rt_mm")) for r in qualifying_rows]
     bias = clamp(0.4 + (stats.mean(bp_delta) / 7.8 if bp_delta else 0.0), BIAS_SAFE_MIN, BIAS_SAFE_MAX)
-    bias_conf = confidence(len(bp_delta), 1000)
+    bias_conf = bucket_conf if bp_delta else "DEFAULT"
 
     dwell_ms = []
     for run in runs:
@@ -358,10 +427,12 @@ def format_value(key, value):
     return f"{int(round(value))}"
 
 
-def write_patch(path, runs, rows, state_buckets, current, recommendations, gate):
+def write_patch(path, runs, rows, state_buckets, current, recommendations, gate, banner=""):
     locked = locked_bucket_labels(state_buckets)
     rejected = gate and not gate["pass"]
     with open(path, "w") as fh:
+        if banner:
+            fh.write(f"{banner}\n")
         fh.write("# nosf_analyze.py emitted patch\n")
         fh.write(f"# Source: {len(runs)} runs, {len(rows)} samples, {len(locked)} LOCKED buckets\n")
         if gate:
@@ -416,9 +487,36 @@ def run(args):
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"Error: could not read state file: {exc}", file=sys.stderr)
         return 1
-    recommendations = compute_recommendations(rows, runs, state_buckets, current, args.mode)
+    force = bool(getattr(args, "force", False))
+    zero_locked_state = bool(args.state) and not locked_bucket_labels(state_buckets)
+    banner = ""
+    if zero_locked_state and args.mode == "safe" and not force:
+        banner = "# REFUSED: no LOCKED buckets in state file"
+        recommendations = current_recommendations(current, "current; no LOCKED buckets")
+    else:
+        recommendations = compute_recommendations(
+            rows,
+            runs,
+            state_buckets,
+            current,
+            args.mode,
+            include_stale=getattr(args, "include_stale", False),
+            force=force,
+        )
+        if zero_locked_state:
+            if force:
+                banner = "# WARNING: zero LOCKED buckets; --force bypassed locked-bucket floor"
+            else:
+                banner = "# WARNING: zero LOCKED buckets; suggestions are pre-lock estimates"
+            recommendations = force_low_confidence(recommendations)
     gate = acceptance_gate(rows, runs, state_buckets, current) if args.acceptance_gate else None
-    write_patch(args.out, runs, rows, state_buckets, current, recommendations, gate)
+    write_patch(args.out, runs, rows, state_buckets, current, recommendations, gate, banner=banner)
+    if zero_locked_state and args.mode == "safe" and not force:
+        print("refused: no LOCKED buckets in state file", file=sys.stderr)
+        print(f"[*] Wrote refused review patch to {args.out}", file=sys.stderr)
+        return 2
+    if zero_locked_state:
+        print("warning: zero LOCKED buckets; suggestions are pre-lock estimates", file=sys.stderr)
     if gate and not gate["pass"]:
         for reason in gate["reasons"]:
             print(f"acceptance gate failed: {reason}", file=sys.stderr)
@@ -470,6 +568,7 @@ def main():
     ap.add_argument("--commit-watermark", action="store_true", help="Write analysis values to _meta watermark in state JSON")
     ap.add_argument("--keys", help="Comma-separated list of keys to update in watermark (defaults to all)")
     ap.add_argument("--include-stale", action="store_true", help="Include buckets not seen in >60 days")
+    ap.add_argument("--force", action="store_true", help="Bypass the locked-bucket floor and emit low-confidence estimates")
     ap.add_argument("--feedforward", action="store_true", help=argparse.SUPPRESS)
     return run(ap.parse_args())
 
