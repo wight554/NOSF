@@ -8,6 +8,7 @@ Phase 2.10 replaces per-marker `gcode_shell_command` calibration markers with si
 Phase 2.11 adds residual-aware live-tuner lock hysteresis: schema 4 stores per-bucket residual EWMA diagnostics, noisy buckets remain STABLE, and LOCKED buckets unlock only on catastrophic mismatch, sustained outlier streak, or sustained drift.
 Phase 2.12 makes the tuner noise gate relative (`sigma/x`) and hardens `nosf_analyze.py` with LOCKED-bucket floors, precision-weighted bucket contributors, BP-derived variance reference, and safer mode semantics.
 Phase 2.13 makes the analyzer acceptance gate use the same recommendation path as patch emission, skips immature runs from consistency checks, gates coverage by contributor mass, and labels telemetry counters as pending parser work.
+Phase 2.14 differentiates acceptance-gate semantics into FAIL and WARN tiers, implements a 50-row bucket floor for mass calculations, and adds a hardware sigma ceiling (5.0 mm).
 
 ---
 

@@ -311,19 +311,22 @@ cp ~/nosf-state/buckets-<id>.json ~/nosf-state/buckets-<id>.json.schema2.bak
    python3 scripts/nosf_analyze.py --commit-watermark --state ~/nosf-state/buckets-myprinter.json
    ```
 
-The acceptance gate compares the same state-aware recommendation path used for
-normal patch output, once per mature run. Runs with too few contributor buckets
-or too few rows in any contributing bucket are listed as skipped instead of
-poisoning the consistency check. The gate still requires enough print duration,
-at least three locked buckets, consistent per-run baseline/bias estimates, and
-enough contributor mass in qualifying buckets. Raw MID-row coverage is reported
-as a warning only; it no longer fails the gate by itself. Telemetry counters in
-the patch are placeholders until log/event parsing is wired in a later phase.
-On failure, the analyzer still writes a patch with `Acceptance gate: FAIL` and
-prints explicit reasons to stderr.
-Patches may include `[nosf_contributors]`, listing the top weighted buckets for
-each learned tunable. `sigma/x` is the bucket residual-noise ratio and `w` is
-the normalized precision weight used by the analyzer.
+The acceptance gate differentiates between hardware/math failures (**FAIL**) and
+stale-configuration warnings (**WARN**). It compares the state-aware 
+recommendation path once per "comparable" run. A run is comparable only if it 
+contains at least 50 MID rows for at least three contributing buckets. 
+
+- **FAIL (Recommendation Unreliable)**: Triggered by high scatter 
+  (sigma_p95 >= 5.0 mm), inconsistent recommendations between runs, 
+  low contributor mass (< 50% after ignoring sparse buckets), or having
+  fewer than 2 comparable runs.
+- **WARN (Config Stale / Immature)**: Triggered by actual scatter exceeding 
+  the current config reference, low run counts (< 3), short print durations 
+  (< 30 min total or any run < 10 min), or having fewer than 3 LOCKED buckets.
+
+Raw MID-row coverage is reported as a diagnostic warning only. On FAIL, the 
+analyzer still writes a patch with `Acceptance gate: FAIL` and prints explicit 
+reasons to stderr.
 
 ### Live Tuner Modes
 `scripts/nosf_live_tuner.py` now defaults to observe-only. It reads status and

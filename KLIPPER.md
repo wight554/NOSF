@@ -331,14 +331,20 @@ ratio gate.
 
 ### Why the Acceptance Gate Skipped a Run
 
-The acceptance gate now compares per-run analyzer recommendations, not raw
-per-bucket medians. A run is skipped from the consistency check when it has too
-few contributing buckets or fewer than 50 MID rows in every contributing bucket;
-the patch lists the exact reason under `Skipped runs`. A skipped run is not a
-failure by itself, but two comparable runs are needed before baseline/bias
-consistency can be judged. The coverage line reports contributor mass as the
-hard gate and raw MID coverage as a warning so short, diverse prints are not
-rejected just because many unlocked feature bins appeared.
+The acceptance gate differentiates between hardware/math failures (**FAIL**) and
+stale-configuration warnings (**WARN**). It compares the state-aware 
+recommendation path once per "comparable" run. A run is comparable only if it 
+contains at least 50 MID rows for at least three contributing buckets. 
+
+- **FAIL (Recommendation Unreliable)**: Triggered by high scatter 
+  (sigma_p95 >= 5.0 mm), inconsistent recommendations between runs, 
+  low contributor mass (< 50% after ignoring sparse buckets), or having
+  fewer than 2 comparable runs.
+- **WARN (Config Stale / Immature)**: Triggered by actual scatter exceeding 
+  the current config reference, low run counts (< 3), short print durations 
+  (< 30 min total or any run < 10 min), or having fewer than 3 LOCKED buckets.
+
+A skipped run is not a failure by itself, but two comparable runs are required before baseline/bias consistency can be judged.
 
 ### Legacy Shell-Marker Fallback
 

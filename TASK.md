@@ -457,3 +457,27 @@ Settings version 46u → 47u.
   ```
 - Capture from `/tmp/nosf-gate.ini`: the `Acceptance gate` line, `Coverage: contributor mass ..., raw MID coverage ...`, `Consistency: max baseline delta ..., max bias delta ...`, and the full `Per-run estimates used in consistency check` block.
 - Expected on the operator evidence from Phase 2.12: consistency should pass with baseline delta near 33 sps and bias delta near 0.003. Raw MID coverage may warn around 74-75%, but should not fail. If contributor mass is below 50%, record it as a LOCKED-bucket coverage issue requiring more calibration data, not a Phase 2.13 gate-parity failure.
+
+## Phase 2.14 — Gate Question Semantics [DONE]
+
+Audit acceptance-gate logic to differentiate between FAIL (logic invalidity/hardware) and WARN (stale config). Implement contributor mass floor and hardware noise ceilings.
+
+### Findings
+- Contributor mass denominator needs `n >= 50` floor to exclude noise-prone sparse buckets.
+- Acceptance gate currently treats all issues as FAIL; needs a WARN tier for fixable/stale config (e.g. sigma > current_ref).
+- Hard ceilings like `SIGMA_HARDWARE_CEILING_MM = 5.0` are needed to surface mechanical failure clearly.
+- Consistency logic (comparable runs) is more robust than simple run-count/duration checks; demote the latter to WARN.
+
+### Plan
+- [x] 2.14.1: Add repro fixtures for diluted mass, high sigma, and 2-run skip.
+- [x] 2.14.2: Implement `DENOMINATOR_MIN_BUCKET_N = 50` floor in `contributor_mass()`.
+- [x] 2.14.3: Implement `SIGMA_HARDWARE_CEILING_MM = 5.0` (FAIL) and σ_p95 WARN logic.
+- [x] 2.14.4: Refactor run-count, duration, and locked-count to WARN; defer FAIL to comparable-runs.
+- [x] 2.14.5: Update docs and perform final validation.
+
+### Unit tests (Phase 2.14)
+- [x] `2.14-mass`: diluted mass passes after floor implementation
+- [x] `2.14-sigma`: high sigma warns and passes after split implementation
+- [x] `2.14-runs`: two runs pass with warning after demotion
+- [x] `gate-bp-sigma`: updated to expect WARN
+- [x] `gate-parity`: updated to expect FAIL (due to immature field data)
