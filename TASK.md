@@ -372,3 +372,4 @@ Settings version 46u → 47u.
 - Observed zero chatter: No relock-unlock cycling seen on noisy high-flow segments.
 - Logic confirmed: Patient with scatter, aggressive with drift.
 - bugfix: added CsvEmitter header mapping to nosf_analyze.py; committed and pushed 3805e55.
+- bugfix: mapped zone to BUF instead of TC in nosf_analyze.py; committed and pushed ab1830e.
