@@ -307,6 +307,17 @@ prints a loud warning.
 In observe mode the tuner persists its tracking state but sends no `SET:`
 commands and no `SV:`.
 
+### Interpreting Noisy Buckets
+
+Phase 2.11 keeps noisy buckets in `STABLE` instead of letting them lock and
+unlock repeatedly. In `--state-info`, `wait=noise sigma2=...` means the bucket
+has enough samples but the residual scatter is still too high for a durable
+LOCKED value. Use `--state-info --verbose` to see `sigma2`, outlier `streak`,
+lock `dwell`, and `last_unlock` reason. If an entire feature family sits at
+`wait=noise`, check filament path load, buffer motion, and whether the model is
+mixing very different geometry into the same speed bin before relaxing
+thresholds.
+
 ### Legacy Shell-Marker Fallback
 
 Shell-marker mode is deprecated, but still available for debugging older

@@ -1003,7 +1003,13 @@ def bucket_wait_reason(b: Bucket, total_print_mid_s: float = 0.0) -> str:
     return reasons_A[0] if len(reasons_A) <= len(reasons_B) else reasons_B[0]
 
 
-def print_state_info(state_path: str, machine_id: str, csv_mode: bool = False, include_stale: bool = False) -> None:
+def print_state_info(
+    state_path: str,
+    machine_id: str,
+    csv_mode: bool = False,
+    include_stale: bool = False,
+    verbose: bool = False,
+) -> None:
     if not os.path.exists(state_path):
         print(f"[tuner] no state file: {state_path}", file=sys.stderr)
         sys.exit(1)
@@ -1025,12 +1031,18 @@ def print_state_info(state_path: str, machine_id: str, csv_mode: bool = False, i
     now = time.time()
     cutoff = now - STALE_AGE_DAYS * 86400
     if csv_mode:
-        print("feature_v_fil,x,P,n,bias,state,runs,layers,mid_s,last_seen_age_s,wait")
+        header = "feature_v_fil,x,P,n,bias,state,runs,layers,mid_s,last_seen_age_s,wait"
+        if verbose:
+            header += ",resid_var_ewma,outlier_streak,locked_sample_count,last_unlock_reason"
+        print(header)
     else:
-        print(
+        header = (
             f"{'feature_v_fil':<24} {'x':>7} {'P':>8} {'n':>6} {'bias':>7} "
             f"{'state':>11} {'runs':>5} {'layers':>6} {'mid_s':>7} {'age_s':>7} wait"
         )
+        if verbose:
+            header += f" {'sigma2':>8} {'streak':>6} {'dwell':>6} last_unlock"
+        print(header)
     locked = 0
     total_n = 0
     total_mid_s = 0.0
@@ -1052,17 +1064,29 @@ def print_state_info(state_path: str, machine_id: str, csv_mode: bool = False, i
         total_mid_s += b.cumulative_mid_s
         wait = bucket_wait_reason(b)
         if csv_mode:
-            print(
+            row = (
                 f"{label},{b.x:.0f},{b.P:.1f},{b.n},{b.bias:.3f},{st},"
                 f"{b.runs_seen},{b.layers_seen},{b.cumulative_mid_s:.1f},{age_s:.1f},{wait}"
             )
+            if verbose:
+                row += (
+                    f",{b.resid_var_ewma:.1f},{b.outlier_streak},"
+                    f"{b.locked_sample_count},{b.last_unlock_reason}"
+                )
+            print(row)
         else:
-            print(
+            row = (
                 f"{label:<24} {b.x:>7.0f} {b.P:>8.1f} {n:>6d} "
                 f"{b.bias:>7.3f} {st:>11} {b.runs_seen:>5d} "
                 f"{b.layers_seen:>6d} {b.cumulative_mid_s:>7.1f} "
                 f"{age_s:>7.0f} {wait}"
             )
+            if verbose:
+                row += (
+                    f" {b.resid_var_ewma:>8.1f} {b.outlier_streak:>6d} "
+                    f"{b.locked_sample_count:>6d} {b.last_unlock_reason}"
+                )
+            print(row)
     if not csv_mode:
         print(f"TOTAL: {len(buckets)} buckets, {locked} locked, {total_n} samples, {total_mid_s:.1f}s MID")
 
@@ -1484,6 +1508,7 @@ def main() -> None:
     ap.add_argument("--unlock", metavar="FEATURE", help="Unlock matching bucket label or feature prefix and exit")
     ap.add_argument("--state-info", action="store_true", help="Print state summary table and exit")
     ap.add_argument("--csv", action="store_true", help="With --state-info, emit machine-readable CSV rows")
+    ap.add_argument("--verbose", action="store_true", help="With --state-info, append residual lock diagnostics")
     ap.add_argument("--include-stale", action="store_true", help="Include buckets not seen in >60 days in --state-info")
     ap.add_argument("--csv-out", metavar="PATH", help="Append per-status-row CSV alongside JSON state")
     ap.add_argument("--recommend-recheck", action="store_true", help="Evaluate watermark drift and suggest if analyzer should be run")
@@ -1532,7 +1557,13 @@ def main() -> None:
         emit_patch(args.state, args.machine_id, args.emit_config_patch)
         return
     if args.state_info:
-        print_state_info(args.state, args.machine_id, csv_mode=args.csv, include_stale=args.include_stale)
+        print_state_info(
+            args.state,
+            args.machine_id,
+            csv_mode=args.csv,
+            include_stale=args.include_stale,
+            verbose=args.verbose,
+        )
         return
     if args.recommend_recheck:
         do_recommend_recheck(args.state, args.machine_id)

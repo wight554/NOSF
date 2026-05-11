@@ -337,12 +337,27 @@ Inspect state with:
 ```bash
 python3 scripts/nosf_live_tuner.py --machine-id myprinter --state-info --include-stale
 python3 scripts/nosf_live_tuner.py --machine-id myprinter --state-info --csv
+python3 scripts/nosf_live_tuner.py --machine-id myprinter --state-info --verbose
 ```
 
 Bucket lock is cumulative across calibration runs: samples, run count, layer
 count, and time spent in `MID` must all pass before a bucket becomes `LOCKED`.
 Very low `EST` samples below 100 steps/s and rail-clamped bias buckets are
 tracked as diagnostics but excluded from lock/write eligibility.
+
+Phase 2.11 adds residual-aware lock hysteresis. A locked bucket is no longer
+unlocked by one moderate sample; the tuner waits for catastrophic mismatch,
+sustained outlier streak, or sustained mean drift. Buckets with high residual
+scatter remain `STABLE` with `wait=noise sigma2=...` instead of locking and
+chattering. Freshly locked buckets may briefly show `wait=dwell N/20` while the
+new unlock detector gathers post-lock evidence.
+
+`--state-info --verbose` appends residual diagnostics to the table:
+`sigma2` is the residual-variance EWMA, `streak` is the current moderate
+outlier streak, `dwell` is the number of samples observed since the last lock,
+and `last_unlock` records `catastrophic`, `streak`, or `drift` when an unlock
+actually occurs. With `--csv --verbose`, the same data is appended as
+`resid_var_ewma,outlier_streak,locked_sample_count,last_unlock_reason`.
 
 If a serial write fails in an explicit live-write mode, the tuner waits 1 s and
 attempts to reopen the same port up to five times. If reconnect fails, it exits
