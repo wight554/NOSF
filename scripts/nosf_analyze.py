@@ -113,7 +113,7 @@ def read_csv_runs(paths):
                 "v_fil": row.get("v_fil") or row.get("v_fil"),
                 "bp_mm": row.get("BP") or row.get("bp_mm"),
                 "rt_mm": row.get("RT") or row.get("rt_mm"),
-                "zone": row.get("TC") or row.get("zone"),
+                "zone": row.get("BUF") or row.get("zone"),
                 "feature": row.get("feature") or row.get("feature", ""),
                 "sigma_mm": row.get("BL") or row.get("sigma_mm"),
                 "mc": row.get("mc") or row.get("mc", "0"),
