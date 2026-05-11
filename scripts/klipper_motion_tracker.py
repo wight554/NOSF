@@ -29,6 +29,57 @@ SUBSCRIBE_OBJECTS = {
 }
 
 
+def klipper_status_payload(message: dict) -> dict:
+    """Return the Klipper payload that may contain a status delta."""
+    result = message.get("result")
+    if isinstance(result, dict) and "status" in result:
+        return result
+    params = message.get("params")
+    if isinstance(params, dict) and "status" in params:
+        return params
+    return {}
+
+
+def merge_status_update(cache: dict, message: dict) -> Optional[dict]:
+    payload = klipper_status_payload(message)
+    status = payload.get("status")
+    if not isinstance(status, dict):
+        return None
+    for obj, fields in status.items():
+        if isinstance(fields, dict):
+            cache.setdefault(obj, {}).update(fields)
+    if "eventtime" in payload:
+        cache["_eventtime"] = payload.get("eventtime")
+    return cache
+
+
+def matcher_state_from_status(cache: dict) -> dict:
+    motion = cache.get("motion_report", {})
+    gcode = cache.get("gcode_move", {})
+    print_stats = cache.get("print_stats", {})
+    virtual_sdcard = cache.get("virtual_sdcard", {})
+    webhooks = cache.get("webhooks", {})
+    position = motion.get("live_position") or gcode.get("position") or []
+    z_mm = position[2] if len(position) >= 3 else None
+    e_mm = position[3] if len(position) >= 4 else None
+    return {
+        "eventtime": cache.get("_eventtime"),
+        "file_position": virtual_sdcard.get("file_position"),
+        "file_size": virtual_sdcard.get("file_size"),
+        "is_active": virtual_sdcard.get("is_active"),
+        "filename": print_stats.get("filename"),
+        "print_state": print_stats.get("state"),
+        "current_layer": print_stats.get("current_layer"),
+        "printer_state": webhooks.get("state"),
+        "z_mm": z_mm,
+        "e_mm": e_mm,
+        "v_extrude": motion.get("live_extruder_velocity", 0.0),
+        "live_velocity": motion.get("live_velocity"),
+        "speed_factor": gcode.get("speed_factor", 1.0),
+        "extrude_factor": gcode.get("extrude_factor", 1.0),
+    }
+
+
 class KlipperApiClient:
     def __init__(self, uds_path: str = DEFAULT_UDS_PATH):
         self.uds_path = uds_path
@@ -194,8 +245,19 @@ class SegmentMatcher:
         if not filename:
             return None
         base, _ext = os.path.splitext(filename)
-        path = base + ".nosf.json"
-        return path if os.path.exists(path) else None
+        candidates = [base + ".nosf.json"]
+        if not os.path.isabs(filename):
+            candidates.extend(
+                os.path.join(root, base + ".nosf.json")
+                for root in (
+                    "/home/pi/printer_data/gcodes",
+                    os.path.expanduser("~/printer_data/gcodes"),
+                )
+            )
+        for path in candidates:
+            if os.path.exists(path):
+                return path
+        return None
 
     def _ensure_sidecar_for_filename(self, filename: str) -> None:
         if not filename or filename == self.last_filename:

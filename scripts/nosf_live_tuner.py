@@ -60,6 +60,23 @@ except ImportError:
 else:
     PY_SERIAL_AVAILABLE = True
 
+try:
+    from klipper_motion_tracker import (
+        DEFAULT_UDS_PATH,
+        SUBSCRIBE_OBJECTS,
+        KlipperApiClient,
+        SegmentMatcher,
+        matcher_state_from_status,
+        merge_status_update,
+    )
+except ImportError:
+    DEFAULT_UDS_PATH = "/tmp/klippy_uds"
+    SUBSCRIBE_OBJECTS = {}
+    KlipperApiClient = None
+    SegmentMatcher = None
+    matcher_state_from_status = None
+    merge_status_update = None
+
 
 CF_GATE = 0.6
 APX_THR = 4
@@ -1034,10 +1051,72 @@ def open_serial(port: str, baud: int):
         sys.exit(1)
 
 
+def setup_klipper_motion(args):
+    if getattr(args, "klipper_mode", "auto") == "off":
+        return None, None, {}, False
+    if KlipperApiClient is None or SegmentMatcher is None:
+        msg = "Klipper motion tracker module is unavailable"
+        if args.klipper_mode == "on":
+            print(f"nosf_live_tuner: {msg}", file=sys.stderr)
+            sys.exit(1)
+        print(f"[tuner] warning: {msg}; falling back to marker input", file=sys.stderr)
+        return None, None, {}, False
+
+    try:
+        matcher = SegmentMatcher(getattr(args, "sidecar", None))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        if args.klipper_mode == "on":
+            print(f"nosf_live_tuner: sidecar refused: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(f"[tuner] warning: sidecar refused: {exc}; falling back to marker input", file=sys.stderr)
+        return None, None, {}, False
+    client = KlipperApiClient(args.klipper_uds)
+    try:
+        client.connect()
+        client.subscribe(SUBSCRIBE_OBJECTS)
+    except Exception as exc:
+        client.close()
+        if args.klipper_mode == "on":
+            print(f"nosf_live_tuner: Klipper API required but unavailable at {args.klipper_uds}: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(f"[tuner] warning: Klipper API unavailable at {args.klipper_uds}: {exc}; falling back to marker input", file=sys.stderr)
+        return None, None, {}, False
+
+    print(f"[tuner] Klipper API connected: {args.klipper_uds}", file=sys.stderr)
+    return client, matcher, {}, matcher.attached
+
+
+def process_klipper_motion_message(tuner: Tuner, matcher: SegmentMatcher, status_cache: dict, message: dict) -> int:
+    if merge_status_update(status_cache, message) is None:
+        return 0
+    state = matcher_state_from_status(status_cache)
+    count = 0
+    for raw in matcher.update(state):
+        tuner.on_m118(raw)
+        count += 1
+    return count
+
+
+def pump_klipper_motion(tuner: Tuner, client: KlipperApiClient, matcher: SegmentMatcher, status_cache: dict) -> int:
+    count = 0
+    first = True
+    while True:
+        msg = client.poll(0.05 if first else 0.0)
+        first = False
+        if msg is None:
+            return count
+        count += process_klipper_motion_message(tuner, matcher, status_cache, msg)
+
+
 def run_loop(args) -> None:
     lock_path = acquire_state_lock(args.state)
     klipper_log = None
+    klipper_client = None
+    klipper_matcher = None
+    klipper_status = {}
+    marker_file_suppressed_by_uds = False
     marker_file = None
+    tuner = None
     try:
         if args.klipper_log:
             try:
@@ -1067,6 +1146,7 @@ def run_loop(args) -> None:
         tuner.progress_interval = max(0.0, args.progress_interval)
         if hasattr(args, "csv_out") and args.csv_out:
             tuner.csv_emitter = CsvEmitter(args.csv_out)
+        klipper_client, klipper_matcher, klipper_status, marker_file_suppressed_by_uds = setup_klipper_motion(args)
         poll_interval = 1.0 / args.poll_hz
         next_poll = time.monotonic()
         while True:
@@ -1074,11 +1154,22 @@ def run_loop(args) -> None:
             if now >= next_poll:
                 tuner._send("?:", count_rate=False)
                 next_poll = now + poll_interval
+            if klipper_client and klipper_matcher:
+                try:
+                    pump_klipper_motion(tuner, klipper_client, klipper_matcher, klipper_status)
+                    marker_file_suppressed_by_uds = marker_file_suppressed_by_uds or klipper_matcher.attached
+                except (BrokenPipeError, ConnectionResetError, ConnectionError, OSError, ValueError) as exc:
+                    klipper_client.close()
+                    klipper_client = None
+                    if args.klipper_mode == "on":
+                        print(f"nosf_live_tuner: Klipper API lost: {exc}", file=sys.stderr)
+                        sys.exit(2)
+                    print(f"[tuner] warning: Klipper API lost: {exc}; continuing with marker fallback", file=sys.stderr)
             if klipper_log:
                 for log_line in klipper_log.readlines():
                     if "NOSF_TUNE:" in log_line:
                         tuner.on_m118(log_line)
-            if marker_file:
+            if marker_file and not marker_file_suppressed_by_uds:
                 for marker_line in marker_file.readlines():
                     parts = marker_line.strip().split(" ", 1)
                     if len(parts) == 2:
@@ -1125,11 +1216,14 @@ def run_loop(args) -> None:
                         finish_commit(tuner, args)
                         return
     except KeyboardInterrupt:
-        tuner._persist()
+        if tuner:
+            tuner._persist()
         print("[tuner] persisted state on exit", file=sys.stderr)
     finally:
-        if tuner.csv_emitter:
+        if tuner and tuner.csv_emitter:
             tuner.csv_emitter.close()
+        if klipper_client:
+            klipper_client.close()
         if klipper_log:
             klipper_log.close()
         if marker_file:
@@ -1270,6 +1364,14 @@ def main() -> None:
     ap.add_argument("--commit-on-idle", action="store_true", help="On print idle, emit /tmp/nosf-patch.ini and exit")
     ap.add_argument("--commit-on-finish", action="store_true", help="Exit immediately on FINISH marker (no idle wait); implies commit if locked buckets exist")
     ap.add_argument("--klipper-log", help="Tail klippy.log for NOSF_TUNE marker echoes while tuning")
+    ap.add_argument("--klipper-uds", default=DEFAULT_UDS_PATH, help="Klipper API Unix socket path")
+    ap.add_argument(
+        "--klipper-mode",
+        choices=("auto", "on", "off"),
+        default="auto",
+        help="auto tries Klipper API then falls back; on requires it; off forces marker fallback",
+    )
+    ap.add_argument("--sidecar", metavar="PATH", help="Sidecar JSON generated by gcode_marker.py --emit sidecar")
     ap.add_argument("--marker-file", help="Tail local marker file written by scripts/nosf_marker.py")
     ap.add_argument(
         "--keep-marker-file",

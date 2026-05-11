@@ -116,6 +116,51 @@ def test_garbage_disconnect():
         client.close()
 
 
+def test_status_merge_accepts_initial_and_async_shapes():
+    cache = {}
+    first = {
+        "id": 1,
+        "result": {
+            "eventtime": 10.0,
+            "status": {
+                "motion_report": {
+                    "live_position": [10.0, 20.0, 0.3, 5.0],
+                    "live_velocity": 0.0,
+                    "live_extruder_velocity": 0.0,
+                },
+                "gcode_move": {"speed_factor": 1.0, "extrude_factor": 1.0},
+                "print_stats": {"state": "printing", "filename": "cube.gcode"},
+                "virtual_sdcard": {"is_active": True, "file_position": 100, "file_size": 1000},
+                "webhooks": {"state": "ready"},
+            },
+        },
+    }
+    delta = {
+        "method": "process_status_update",
+        "params": {
+            "eventtime": 11.0,
+            "status": {
+                "motion_report": {
+                    "live_position": [11.0, 20.0, 0.3, 5.2],
+                    "live_extruder_velocity": 0.4,
+                },
+                "virtual_sdcard": {"file_position": 150},
+            },
+        },
+    }
+    assert tracker.merge_status_update(cache, first) is cache
+    assert tracker.merge_status_update(cache, delta) is cache
+    state = tracker.matcher_state_from_status(cache)
+    assert state["eventtime"] == 11.0, state
+    assert state["filename"] == "cube.gcode", state
+    assert state["print_state"] == "printing", state
+    assert state["file_position"] == 150, state
+    assert state["z_mm"] == 0.3, state
+    assert state["v_extrude"] == 0.4, state
+    assert state["speed_factor"] == 1.0, state
+    return "initial result.status and async params.status merge into matcher state"
+
+
 def build_fixture_sidecar():
     td = tempfile.TemporaryDirectory()
     gcode_path = os.path.join(td.name, "orca_sample.gcode")
@@ -226,6 +271,7 @@ def main():
         ("two-msg", test_two_messages_one_chunk),
         ("subscribe", test_subscribe_request_shape),
         ("disconnect", test_garbage_disconnect),
+        ("status-merge", test_status_merge_accepts_initial_and_async_shapes),
         ("layer-event", test_layer_transition_emits_event),
         ("feature", test_feature_change_emits_nosf_tune),
         ("dedupe", test_v_fil_bin_unchanged_no_event),

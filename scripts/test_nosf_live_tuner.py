@@ -3,6 +3,7 @@
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 from contextlib import redirect_stderr, redirect_stdout
@@ -12,6 +13,11 @@ from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(__file__))
 
 import nosf_live_tuner as tuner_mod
+import gcode_marker
+
+
+REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+ORCA_FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "orca_sample.gcode")
 
 
 class FakeSerial:
@@ -796,6 +802,100 @@ def test_either_path_no_double_count():
         return "bucket locks safely when both paths satisfied"
 
 
+def _sidecar_fixture(td):
+    gcode_path = os.path.join(td, "orca_sample.gcode")
+    sidecar_path = os.path.join(td, "orca_sample.nosf.json")
+    shutil.copyfile(ORCA_FIXTURE, gcode_path)
+    data = gcode_marker.build_sidecar(gcode_path, sidecar_path, 1.75)
+    return gcode_path, sidecar_path, data
+
+
+def _klipper_segment_message(seg, filename, eventtime=1.0):
+    fp = int((seg["byte_start"] + seg["byte_end"]) // 2)
+    return {
+        "params": {
+            "eventtime": eventtime,
+            "status": {
+                "print_stats": {"state": "printing", "filename": filename},
+                "virtual_sdcard": {"is_active": True, "file_position": fp, "file_size": seg["byte_end"] + 100},
+                "motion_report": {
+                    "live_position": [float(seg["x_end"]), float(seg["y_end"]), float(seg["z_mm"]), 0.0],
+                    "live_velocity": 10.0,
+                    "live_extruder_velocity": 1.0,
+                },
+                "gcode_move": {"speed_factor": 1.0, "extrude_factor": 1.0},
+                "webhooks": {"state": "ready"},
+            },
+        }
+    }
+
+
+def test_auto_fallback_when_uds_missing():
+    with tempfile.TemporaryDirectory() as td:
+        args = SimpleNamespace(
+            klipper_mode="auto",
+            klipper_uds=os.path.join(td, "missing.sock"),
+            sidecar=None,
+        )
+        err = StringIO()
+        with redirect_stderr(err):
+            client, matcher, status_cache, suppress = tuner_mod.setup_klipper_motion(args)
+        assert client is None, client
+        assert matcher is None, matcher
+        assert status_cache == {}, status_cache
+        assert not suppress
+        assert "falling back to marker input" in err.getvalue(), err.getvalue()
+        return "auto mode falls back when UDS is missing"
+
+
+def test_klipper_events_drive_buckets():
+    with tempfile.TemporaryDirectory() as td:
+        gcode_path, sidecar_path, data = _sidecar_fixture(td)
+        seg = next(s for s in data["segments"] if not s.get("skip") and float(s["v_fil_mm3_per_s"]) >= 1.0)
+        clock = Clock()
+        fake = FakeSerial()
+        t = tuner_mod.Tuner(fake, os.path.join(td, "state.json"), "test", now_fn=clock.now, wall_fn=clock.now)
+        matcher = tuner_mod.SegmentMatcher(sidecar_path)
+        status_cache = {}
+        count = tuner_mod.process_klipper_motion_message(
+            t,
+            matcher,
+            status_cache,
+            _klipper_segment_message(seg, os.path.basename(gcode_path)),
+        )
+        assert count >= 2, count
+        clock.step(0.25)
+        t.on_status(status(est=600))
+        assert t.active_label == tuner_mod.bucket_label(seg["feature"], float(seg["v_fil_mm3_per_s"])), t.active_label
+        assert t.active_label in t.buckets, t.buckets
+        clock.step(0.25)
+        t.on_status(status(est=610))
+        assert t.buckets[t.active_label].n == 1, t.buckets[t.active_label]
+        return "Klipper motion event path feeds existing bucket learner"
+
+
+def test_observe_only_no_set_writes_via_klipper_path():
+    with tempfile.TemporaryDirectory() as td:
+        gcode_path, sidecar_path, data = _sidecar_fixture(td)
+        seg = next(s for s in data["segments"] if not s.get("skip") and float(s["v_fil_mm3_per_s"]) >= 1.0)
+        clock = Clock()
+        fake = FakeSerial()
+        t = tuner_mod.Tuner(fake, os.path.join(td, "state.json"), "test", now_fn=clock.now, wall_fn=clock.now)
+        matcher = tuner_mod.SegmentMatcher(sidecar_path)
+        status_cache = {}
+        tuner_mod.process_klipper_motion_message(
+            t,
+            matcher,
+            status_cache,
+            _klipper_segment_message(seg, os.path.basename(gcode_path)),
+        )
+        for _ in range(260):
+            clock.step(0.25)
+            t.on_status(status(est=700))
+        assert not fake.writes, fake.writes
+        return "Klipper path remains observe-only by default"
+
+
 def main():
     tests = [
         ("warm-up", test_cold_start_no_set),
@@ -832,6 +932,9 @@ def main():
         ("path-b-lock", test_single_print_path_locks),
         ("no-path-lock", test_neither_path_no_lock),
         ("dual-path-safe", test_either_path_no_double_count),
+        ("klipper-auto", test_auto_fallback_when_uds_missing),
+        ("klipper-events", test_klipper_events_drive_buckets),
+        ("klipper-observe", test_observe_only_no_set_writes_via_klipper_path),
     ]
     print(f"{'case':<14} result")
     print(f"{'-' * 14} {'-' * 40}")
