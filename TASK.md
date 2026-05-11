@@ -374,3 +374,4 @@ Settings version 46u → 47u.
 - bugfix: added CsvEmitter header mapping to nosf_analyze.py; committed and pushed 3805e55.
 - bugfix: mapped zone to BUF instead of TC in nosf_analyze.py; committed and pushed ab1830e.
 - feat: added RL: manual reload trigger command; committed and pushed deda75d.
+- bugfix: enforced PRESS_SPS floor in RELOAD_FOLLOW; committed and pushed 6be1a84.
