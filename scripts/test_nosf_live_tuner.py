@@ -537,13 +537,13 @@ def test_locked_bucket_unlocks_on_drift():
         return "sustained EWMA drift unlocks after dwell"
 
 
-def test_noisy_bucket_never_locks():
+def test_noise_gate_relative_passes_low_ratio():
     with tempfile.TemporaryDirectory() as td:
         clock = Clock()
         t = _blank_tuner(td, clock)
         b = tuner_mod.Bucket(
             label="PERIMETER_v40",
-            x=1600.0,
+            x=1000.0,
             P=20.0,
             n=600,
             bias=0.400,
@@ -551,15 +551,106 @@ def test_noisy_bucket_never_locks():
             layers_seen=5,
             cumulative_mid_s=90.0,
             state="STABLE",
-            resid_var_ewma=tuner_mod.V_NOISE_LOCK_THR + 1.0,
+            resid_var_ewma=14400.0,
         )
         t.buckets[b.label] = b
         t.total_print_mid_s = 400.0
+        assert abs(tuner_mod.noise_ratio(b) - 0.12) < 0.001, tuner_mod.noise_ratio(b)
+        assert tuner_mod.noise_ok(b), tuner_mod.noise_ratio(b)
+        t._maybe_lock(b, clock.now())
+        assert b.state == "LOCKED", b.state
+        assert b.locked
+        return "relative noise gate allows high-flow low-ratio bucket to lock"
+
+
+def test_noise_gate_relative_blocks_high_ratio():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t = _blank_tuner(td, clock)
+        b = tuner_mod.Bucket(
+            label="PERIMETER_v40",
+            x=200.0,
+            P=20.0,
+            n=600,
+            bias=0.400,
+            runs_seen=2,
+            layers_seen=5,
+            cumulative_mid_s=90.0,
+            state="STABLE",
+            resid_var_ewma=14400.0,
+        )
+        t.buckets[b.label] = b
+        t.total_print_mid_s = 400.0
+        assert abs(tuner_mod.noise_ratio(b) - 0.60) < 0.001, tuner_mod.noise_ratio(b)
+        assert not tuner_mod.noise_ok(b), tuner_mod.noise_ratio(b)
         t._maybe_lock(b, clock.now())
         assert b.state == "STABLE", b.state
         assert not b.locked
-        assert "noise" in t._bucket_wait_reason(b, clock.now())
-        return "noisy ready bucket remains STABLE instead of locking"
+        assert t._bucket_wait_reason(b, clock.now()) == "noise sigma/x=0.60"
+        return "relative noise gate blocks low-flow high-ratio bucket"
+
+
+def test_noise_gate_below_warmup_passes():
+    b = tuner_mod.Bucket(
+        label="PERIMETER_v40",
+        x=200.0,
+        P=20.0,
+        n=tuner_mod.N_WARMUP_FOR_NOISE - 1,
+        resid_var_ewma=1000000.0,
+    )
+    assert tuner_mod.noise_ok(b), tuner_mod.noise_ratio(b)
+    return "noise gate is inactive below warmup sample count"
+
+
+def test_noise_gate_below_min_x_uses_floor():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t = _blank_tuner(td, clock)
+        b = tuner_mod.Bucket(
+            label="PERIMETER_v40",
+            x=50.0,
+            P=20.0,
+            n=600,
+            bias=0.400,
+            runs_seen=2,
+            layers_seen=5,
+            cumulative_mid_s=90.0,
+            state="STABLE",
+            resid_var_ewma=625.0,
+        )
+        t.buckets[b.label] = b
+        t.total_print_mid_s = 400.0
+        assert abs(tuner_mod.noise_ratio(b) - 0.25) < 0.001, tuner_mod.noise_ratio(b)
+        assert tuner_mod.noise_ok(b), tuner_mod.noise_ratio(b)
+        t._maybe_lock(b, clock.now())
+        assert b.state == "LOCKED", b.state
+        assert b.locked
+        return "noise ratio uses minimum x floor near low-flow edge"
+
+
+def test_phase_2_12_field_repro_inner_wall_v1400():
+    with tempfile.TemporaryDirectory() as td:
+        clock = Clock()
+        t = _blank_tuner(td, clock)
+        b = tuner_mod.Bucket(
+            label="Inner wall_v1400",
+            x=1014.0,
+            P=20.0,
+            n=1899,
+            bias=0.358,
+            runs_seen=1,
+            layers_seen=98,
+            cumulative_mid_s=275.9,
+            state="STABLE",
+            resid_var_ewma=14620.0,
+        )
+        t.buckets[b.label] = b
+        t.total_print_mid_s = 400.0
+        assert tuner_mod.noise_ratio(b) < tuner_mod.NOISE_RATIO_THR, tuner_mod.noise_ratio(b)
+        t._maybe_lock(b, clock.now())
+        assert b.state == "LOCKED", b.state
+        assert b.locked
+        return "field-repro high-evidence Inner wall_v1400 reaches LOCKED"
 
 
 def test_lock_dwell_blocks_immediate_unlock():
@@ -585,7 +676,7 @@ def test_unlock_then_relock_does_not_chatter():
         b.P = 20.0
         b.state = "STABLE"
         b.locked = False
-        b.resid_var_ewma = tuner_mod.V_NOISE_LOCK_THR + 100.0
+        b.resid_var_ewma = 90000.0
         t.total_print_mid_s = 400.0
         t._maybe_lock(b, clock.now())
         assert b.state == "STABLE", b.state
@@ -1205,7 +1296,11 @@ def main():
         ("outlier-streak", test_locked_bucket_unlocks_on_streak),
         ("outlier-cata", test_locked_bucket_unlocks_on_catastrophic),
         ("outlier-drift", test_locked_bucket_unlocks_on_drift),
-        ("noise-lock", test_noisy_bucket_never_locks),
+        ("noise-ratio-ok", test_noise_gate_relative_passes_low_ratio),
+        ("noise-ratio-block", test_noise_gate_relative_blocks_high_ratio),
+        ("noise-warmup", test_noise_gate_below_warmup_passes),
+        ("noise-min-x", test_noise_gate_below_min_x_uses_floor),
+        ("phase212-field", test_phase_2_12_field_repro_inner_wall_v1400),
         ("lock-dwell", test_lock_dwell_blocks_immediate_unlock),
         ("relock-noise", test_unlock_then_relock_does_not_chatter),
         ("warm-resid", test_resid_var_ewma_warm_start_does_not_unlock),

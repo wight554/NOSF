@@ -377,3 +377,28 @@ Settings version 46u → 47u.
 - bugfix: enforced PRESS_SPS floor in RELOAD_FOLLOW; committed and pushed 6be1a84.
 - bugfix: replaced RELOAD_LEAN under-feed with 1.15x over-feed to prevent gap at high speeds; committed and pushed f08a46a.
 - feat: restored tunable RELOAD_LEAN_FACTOR with 1.15 over-feed default; committed and pushed 11bc9a2.
+
+---
+
+## Phase 2.12 — Analyzer Rigor and Noise Gate
+
+### Findings
+- Read `AGENTS.md`: caveman/cavemem startup, TASK-first workflow, script validation before commits, commit/push every milestone, no local AI config.
+- Read `TASK.md`: Phase 2.11 implementation and Pi validation are present; Phase 2.12.0 exists as committed plan `SYNC_REFACTOR_PHASE_2_12.md` at `20f7b45`.
+- Read `SYNC_REFACTOR_PHASE_2_12.md`: source of truth. Phase 2.12 is host-only, keeps state schema 4, replaces the tuner's absolute `V_NOISE_LOCK_THR` lock gate with a relative `sigma/x` gate, then hardens `nosf_analyze.py`.
+- Read `SYNC_REFACTOR_PHASE_2_11.md`: preserve residual EWMA fields and catastrophic/streak/drift unlock detector; only lock-side noise decision changes in 2.12.1.
+- Read `SYNC_REFACTOR_PHASE_2_10.md` sections 6-9: sidecar+UDS still feeds byte-identical synthetic marker strings through `tuner.on_m118`; no new ingress.
+- Read `SYNC_REFACTOR_PHASE_2_9.md` sections 15-17: observe-only default, dual-path lock criteria, and chained `_MIGRATIONS` pattern remain constraints.
+- Read current scripts/docs: `nosf_live_tuner.py` still uses absolute `V_NOISE_LOCK_THR=400`; `test_nosf_live_tuner.py` has Phase 2.11 noise tests that must be updated to ratio semantics; `nosf_analyze.py` still has dominant-bucket baseline, `SAFETY_K`, BL-as-sigma, and row-count confidence bugs for later milestones.
+
+### Plan
+- 2.12.1: update `scripts/nosf_live_tuner.py` constants/helpers, `_maybe_lock`, and `bucket_wait_reason` to use `sigma/x <= NOISE_RATIO_THR`; add five tuner tests.
+- 2.12.2: rewrite analyzer LOCKED floor, mode semantics, `--force`, confidence helper, and initial analyzer tests.
+- 2.12.3: replace dominant-bucket baseline/bias with precision-weighted qualifying-bucket aggregation plus field oscillation fixtures.
+- 2.12.4: derive `buf_variance_blend_ref_mm` from BP scatter, clamp to `[0.1, 5.0]`, and keep `mid_creep_timeout_ms` at current/default confidence.
+- 2.12.5: append `[nosf_contributors]` block and update MANUAL/KLIPPER/README/CONTEXT.
+- 2.12.6: run Pi soak or record maintainer-provided results and tune constants only if evidence requires.
+
+### Completed Steps
+- Phase 2.12 preflight read done; implementation begins at 2.12.1.
+- 2.12.1 done: replaced absolute tuner noise gate with relative `sigma/x` gate, added five tuner tests, and preserved Phase 2.10/2.11 regressions. Validation passed (`python3 -m py_compile scripts/nosf_live_tuner.py`, `python3 -m py_compile scripts/test_nosf_live_tuner.py`, `python3 scripts/test_nosf_live_tuner.py`, `python3 scripts/test_phase_2_10_parity.py`, `python3 scripts/test_klipper_motion_tracker.py`, `python3 -m py_compile scripts/*.py`). Commit SHA reported after push.

@@ -104,7 +104,9 @@ R_BASE = 100.0
 A_R = 0.05  # residual EWMA alpha
 A_V = 0.05  # residual variance EWMA alpha
 N_WARMUP_FOR_NOISE = 50  # samples before noise gate can affect locking
-V_NOISE_LOCK_THR = 400.0  # sps^2; sigma ~= 20 sps
+NOISE_RATIO_THR = 0.25  # lock only when residual sigma is <= 25% of learned x
+V_NOISE_FLOOR = 100.0  # sps^2 floor; sigma never evaluates below 10 sps
+NOISE_GATE_MIN_X = MIN_LEARN_EST_SPS  # avoid ratio blow-up near zero-flow buckets
 K_CATA = 8.0  # catastrophic residual threshold in sigma
 K_STREAK_SIGMA = 3.0  # moderate outlier threshold in sigma
 N_STREAK = 5  # moderate outliers before streak unlock
@@ -211,6 +213,18 @@ def update_residual_stats(bucket: Bucket, z: float) -> None:
 
 def resid_sigma(bucket: Bucket) -> float:
     return math.sqrt(max(bucket.resid_var_ewma, R_BASE))
+
+
+def noise_ratio(bucket: Bucket) -> float:
+    sigma = math.sqrt(max(bucket.resid_var_ewma, V_NOISE_FLOOR))
+    x = max(bucket.x, NOISE_GATE_MIN_X)
+    return sigma / x
+
+
+def noise_ok(bucket: Bucket) -> bool:
+    if bucket.n < N_WARMUP_FOR_NOISE:
+        return True
+    return noise_ratio(bucket) <= NOISE_RATIO_THR
 
 
 class CsvEmitter:
@@ -782,9 +796,7 @@ class Tuner:
             b.stable_since = now
 
     def _noise_ok_for_lock(self, b: Bucket) -> bool:
-        if b.n < N_WARMUP_FOR_NOISE:
-            return True
-        return b.resid_var_ewma <= V_NOISE_LOCK_THR
+        return noise_ok(b)
 
     def _resid_sigma(self, b: Bucket) -> float:
         return resid_sigma(b)
@@ -982,8 +994,10 @@ def bucket_wait_reason(b: Bucket, total_print_mid_s: float = 0.0) -> str:
         return f"variance P>={P_STABLE_THR:.0f}"
     if not (BIAS_SAFE_MIN <= b.bias <= BIAS_SAFE_MAX):
         return "bias rail guard"
-    if b.n >= N_WARMUP_FOR_NOISE and b.resid_var_ewma > V_NOISE_LOCK_THR:
-        return f"noise sigma2={b.resid_var_ewma:.0f}>{int(V_NOISE_LOCK_THR)}"
+    if b.n >= N_WARMUP_FOR_NOISE:
+        ratio = noise_ratio(b)
+        if ratio > NOISE_RATIO_THR:
+            return f"noise sigma/x={ratio:.2f}"
     
     reasons_A = []
     if b.n < N_MIN_SAMPLES_CUMULATIVE: reasons_A.append(f"samples {b.n}/{N_MIN_SAMPLES_CUMULATIVE}")
