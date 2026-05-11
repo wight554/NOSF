@@ -373,3 +373,4 @@ Settings version 46u → 47u.
 - Logic confirmed: Patient with scatter, aggressive with drift.
 - bugfix: added CsvEmitter header mapping to nosf_analyze.py; committed and pushed 3805e55.
 - bugfix: mapped zone to BUF instead of TC in nosf_analyze.py; committed and pushed ab1830e.
+- feat: added RL: manual reload trigger command; committed and pushed deda75d.
