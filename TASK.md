@@ -375,3 +375,4 @@ Settings version 46u → 47u.
 - bugfix: mapped zone to BUF instead of TC in nosf_analyze.py; committed and pushed ab1830e.
 - feat: added RL: manual reload trigger command; committed and pushed deda75d.
 - bugfix: enforced PRESS_SPS floor in RELOAD_FOLLOW; committed and pushed 6be1a84.
+- bugfix: replaced RELOAD_LEAN under-feed with 1.15x over-feed to prevent gap at high speeds; committed and pushed f08a46a.
