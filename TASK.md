@@ -371,3 +371,4 @@ Settings version 46u → 47u.
 - Verified drift channel: Outer wall_v1375 correctly unlocked mid-print on sustained error.
 - Observed zero chatter: No relock-unlock cycling seen on noisy high-flow segments.
 - Logic confirmed: Patient with scatter, aggressive with drift.
+- bugfix: added CsvEmitter header mapping to nosf_analyze.py; committed and pushed 3805e55.
