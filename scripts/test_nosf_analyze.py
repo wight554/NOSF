@@ -453,6 +453,44 @@ def test_mid_creep_timeout_default_when_insufficient_data():
     return "mid_creep_timeout_ms stays current/default until a valid signal exists"
 
 
+def test_contributors_block_emitted():
+    with tempfile.TemporaryDirectory() as td:
+        csv_path = os.path.join(td, "run.csv")
+        rows = []
+        records = {}
+        for i in range(5):
+            feature = f"Locked{i}"
+            label = f"{feature}_v1000"
+            records[label] = {
+                "state": "LOCKED",
+                "locked": True,
+                "x": 1000 + i * 5,
+                "n": 100 + i,
+                "resid_var_ewma": 100 + i * 10,
+                "cumulative_mid_s": 20,
+            }
+            rows.extend(row(i * 1000 + j * 100, feature=feature, v_fil=1000, est=1000 + i * 5) for j in range(10))
+        write_csv(csv_path, rows)
+        state = os.path.join(td, "state.json")
+        write_state_records(state, records)
+        config = os.path.join(td, "config.ini")
+        write_config(config)
+        out = os.path.join(td, "patch.ini")
+        args = SimpleNamespace(
+            inputs=[csv_path], out=out, mode="safe", state=state, config=config,
+            acceptance_gate=False, commit_watermark=False, keys=None, machine_id="test",
+            include_stale=False, force=False,
+        )
+        rc = analyze.run(args)
+        assert rc == 0, rc
+        with open(out) as fh:
+            text = fh.read()
+        assert "[nosf_contributors]" in text, text
+        assert "# baseline_rate" in text and "total n=" in text, text
+        assert "sigma/x=" in text and "w=" in text, text
+        return "patch includes contributors block with bucket weights"
+
+
 def main():
     tests = [
         ("baseline", test_baseline_from_dominant_cluster),
@@ -471,6 +509,7 @@ def main():
         ("field-osc", test_field_oscillation_repro),
         ("bp-sigma", test_buf_variance_blend_ref_mm_from_bp_not_bl),
         ("mid-timeout", test_mid_creep_timeout_default_when_insufficient_data),
+        ("contributors", test_contributors_block_emitted),
     ]
     print(f"{'case':<12} result")
     print(f"{'-' * 12} {'-' * 40}")

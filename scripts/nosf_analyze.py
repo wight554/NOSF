@@ -276,6 +276,30 @@ def weighted_mean(values):
     return sum(value * w for value, w in values) / total_w
 
 
+def contributor_entries(state_buckets, force=False, include_stale=False):
+    locked = locked_bucket_labels(state_buckets)
+    labels = locked if locked else (force_qualifying_labels(state_buckets, include_stale=include_stale) if force else set())
+    labels = trimmed_labels_by_x(labels, state_buckets)
+    raw_entries = []
+    for label in labels:
+        raw = state_buckets.get(label, {})
+        w = bucket_weight(raw)
+        if w <= 0.0:
+            continue
+        raw_entries.append({
+            "label": label,
+            "n": int(raw.get("n", 0)),
+            "x": to_float(raw.get("x")),
+            "ratio": bucket_noise_ratio(raw),
+            "weight": w,
+        })
+    total_w = sum(entry["weight"] for entry in raw_entries)
+    if total_w > 0.0:
+        for entry in raw_entries:
+            entry["norm_weight"] = entry["weight"] / total_w
+    return sorted(raw_entries, key=lambda e: e["weight"], reverse=True)
+
+
 def compute_recommendations(rows, runs, state_buckets, current, mode, include_stale=False, force=False):
     mids = mid_rows(rows)
     
@@ -504,7 +528,7 @@ def format_value(key, value):
     return f"{int(round(value))}"
 
 
-def write_patch(path, runs, rows, state_buckets, current, recommendations, gate, banner=""):
+def write_patch(path, runs, rows, state_buckets, current, recommendations, gate, banner="", contributors=None):
     locked = locked_bucket_labels(state_buckets)
     rejected = gate and not gate["pass"]
     with open(path, "w") as fh:
@@ -542,6 +566,24 @@ def write_patch(path, runs, rows, state_buckets, current, recommendations, gate,
                 f"# {key:<28} {format_value(key, current[key]):>7} -> "
                 f"{format_value(key, suggested):<7} ({line_conf}, {detail})\n"
             )
+        if contributors:
+            fh.write("\n[nosf_contributors]\n")
+            for key in DEFAULTS:
+                _suggested, conf, _detail = recommendations[key]
+                if conf == "DEFAULT":
+                    continue
+                entries = contributors.get(key, [])
+                if not entries:
+                    continue
+                total_n = sum(entry["n"] for entry in entries)
+                fh.write(f"# {key:<28} {len(entries)} buckets, total n={total_n}\n")
+                for entry in entries[:5]:
+                    suffix = " [marginal]" if entry["ratio"] > NOISE_RATIO_THR else ""
+                    fh.write(
+                        f"#   {entry['label']:<24} n={entry['n']} "
+                        f"x={entry['x']:.0f} sigma/x={entry['ratio']:.2f} "
+                        f"w={entry.get('norm_weight', 0.0):.2f}{suffix}\n"
+                    )
         fh.write("\n")
         fh.write("# To apply, copy reviewed values into config.ini, then run:\n")
         fh.write("#   python3 scripts/gen_config.py\n")
@@ -587,7 +629,13 @@ def run(args):
                 banner = "# WARNING: zero LOCKED buckets; suggestions are pre-lock estimates"
             recommendations = force_low_confidence(recommendations)
     gate = acceptance_gate(rows, runs, state_buckets, current) if args.acceptance_gate else None
-    write_patch(args.out, runs, rows, state_buckets, current, recommendations, gate, banner=banner)
+    entries = contributor_entries(state_buckets, force=force, include_stale=getattr(args, "include_stale", False))
+    contributors = {
+        key: entries
+        for key, (_value, conf, _detail) in recommendations.items()
+        if conf != "DEFAULT" and entries
+    }
+    write_patch(args.out, runs, rows, state_buckets, current, recommendations, gate, banner=banner, contributors=contributors)
     if zero_locked_state and args.mode == "safe" and not force:
         print("refused: no LOCKED buckets in state file", file=sys.stderr)
         print(f"[*] Wrote refused review patch to {args.out}", file=sys.stderr)

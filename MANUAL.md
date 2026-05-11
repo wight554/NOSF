@@ -294,6 +294,10 @@ cp ~/nosf-state/buckets-<id>.json ~/nosf-state/buckets-<id>.json.schema2.bak
        --out config.patch.ini \
        --acceptance-gate
    ```
+   `--mode safe` refuses to emit learned values when the state file has zero
+   `LOCKED` buckets. `--mode aggressive` writes a loud pre-lock warning and
+   low-confidence estimates. Use `--force` only for explicit bootstrap/debug
+   work where you accept pre-lock estimates.
 5. Review `config.patch.ini`. It is commented review text only; copy chosen
    values into `config.ini` by hand.
 6. Regenerate and flash:
@@ -311,6 +315,9 @@ The acceptance gate requires broad locked-bucket coverage, consistent baseline
 and bias estimates across runs, clean estimator telemetry, at least three
 locked buckets, and enough print duration. On failure, the analyzer still writes
 a patch with `Acceptance gate: FAIL` and prints explicit reasons to stderr.
+Patches may include `[nosf_contributors]`, listing the top weighted buckets for
+each learned tunable. `sigma/x` is the bucket residual-noise ratio and `w` is
+the normalized precision weight used by the analyzer.
 
 ### Live Tuner Modes
 `scripts/nosf_live_tuner.py` now defaults to observe-only. It reads status and
@@ -349,7 +356,7 @@ tracked as diagnostics but excluded from lock/write eligibility.
 Phase 2.11 adds residual-aware lock hysteresis. A locked bucket is no longer
 unlocked by one moderate sample; the tuner waits for catastrophic mismatch,
 sustained outlier streak, or sustained mean drift. Buckets with high residual
-scatter remain `STABLE` with `wait=noise sigma2=...` instead of locking and
+scatter remain `STABLE` with `wait=noise sigma/x=...` instead of locking and
 chattering. Freshly locked buckets may briefly show `wait=dwell N/20` while the
 new unlock detector gathers post-lock evidence.
 

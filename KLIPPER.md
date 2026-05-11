@@ -309,14 +309,25 @@ commands and no `SV:`.
 
 ### Interpreting Noisy Buckets
 
-Phase 2.11 keeps noisy buckets in `STABLE` instead of letting them lock and
-unlock repeatedly. In `--state-info`, `wait=noise sigma2=...` means the bucket
-has enough samples but the residual scatter is still too high for a durable
-LOCKED value. Use `--state-info --verbose` to see `sigma2`, outlier `streak`,
-lock `dwell`, and `last_unlock` reason. If an entire feature family sits at
-`wait=noise`, check filament path load, buffer motion, and whether the model is
-mixing very different geometry into the same speed bin before relaxing
+Phase 2.12 keeps noisy buckets in `STABLE` based on relative noise, not an
+absolute scatter limit. In `--state-info`, `wait=noise sigma/x=...` means the
+bucket has enough samples but the residual scatter is still too high relative to
+its learned flow. Use `--state-info --verbose` to see `sigma2`, outlier
+`streak`, lock `dwell`, and `last_unlock` reason. If an entire feature family
+sits at `wait=noise`, check filament path load, buffer motion, and whether the
+model is mixing very different geometry into the same speed bin before relaxing
 thresholds.
+
+### Why Analyzer Refuses To Emit
+
+`nosf_analyze.py --mode safe` refuses learned values when the state file has
+zero `LOCKED` buckets because pre-lock bucket centroids can move hundreds of
+steps/s between runs. `--mode aggressive` writes a warning banner and LOW
+confidence estimates for bootstrap review. `--force` bypasses the floor only
+when you explicitly accept pre-lock estimates. Read `[nosf_contributors]` in
+the patch to see which buckets carried each tunable: high `w` means high
+precision weight, and `[marginal]` means the bucket is noisier than the normal
+ratio gate.
 
 ### Legacy Shell-Marker Fallback
 
