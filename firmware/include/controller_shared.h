@@ -70,30 +70,6 @@ typedef struct lane_s {
 } lane_t;
 
 typedef enum {
-    CUT_IDLE,
-    CUT_OPENING,
-    CUT_OPEN_WAIT,
-    CUT_FEEDING,
-    CUT_FEED_WAIT,
-    CUT_CLOSING,
-    CUT_CLOSE_WAIT,
-    CUT_REOPENING,
-    CUT_REOPEN_WAIT,
-    CUT_REPEAT_CHECK,
-    CUT_DONE
-} cutter_state_t;
-
-typedef struct {
-    cutter_state_t state;
-    lane_t *lane;
-    uint32_t phase_start_ms;
-    uint32_t feed_initial_ms;
-    uint32_t feed_repeat_ms;
-    uint32_t feed_active_ms;
-    int repeats_done;
-} cutter_ctx_t;
-
-typedef enum {
     TC_IDLE,
     TC_UNLOAD_CUT,
     TC_UNLOAD_WAIT_CUT,
@@ -272,7 +248,6 @@ extern din_t g_buf_adv_din;
 extern din_t g_buf_trl_din;
 extern tmc_t g_tmc_l1;
 extern tmc_t g_tmc_l2;
-extern cutter_ctx_t g_cut;
 extern tc_ctx_t g_tc_ctx;
 extern volatile uint32_t g_now_ms;
 extern int active_lane;
@@ -308,5 +283,3 @@ void set_toolhead_filament(bool present);
 void set_active_lane(int lane);
 lane_t *lane_ptr(int lane);
 int other_lane(int lane);
-
-void cutter_start(lane_t *L, bool enable_feed, uint32_t now_ms);

@@ -27,6 +27,7 @@ add_executable(nosf_controller
   src/motion.c
   src/sync.c
   src/toolchange.c
+  src/cutter.c
   src/protocol.c
   src/settings_store.c
   src/tmc2209.c

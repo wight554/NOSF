@@ -26,6 +26,7 @@
 #include "settings_store.h"
 #include "sync.h"
 #include "toolchange.h"
+#include "cutter.h"
 #include <math.h>
 
 
@@ -230,7 +231,6 @@ din_t g_buf_trl_din;
 tmc_t g_tmc_l1;
 tmc_t g_tmc_l2;
 
-cutter_ctx_t g_cut = {0};
 tc_ctx_t g_tc_ctx = { .state = TC_IDLE };
 
 volatile uint32_t g_now_ms = 0;
@@ -345,7 +345,7 @@ typedef enum {
 
 static led_state_t led_state_from_system(void) {
     if (g_lane_l1.fault || g_lane_l2.fault || g_tc_ctx.state == TC_ERROR) return LED_ERROR;
-    if (g_cut.state != CUT_IDLE) return LED_CUTTING;
+    if (cutter_busy()) return LED_CUTTING;
     if (g_tc_ctx.state != TC_IDLE) return LED_TC;
     if (g_lane_l1.task == TASK_AUTOLOAD || g_lane_l2.task == TASK_AUTOLOAD) return LED_LOADING;
     if (sync_enabled && sync_current_sps > 0) return LED_ACTIVE;
@@ -401,7 +401,7 @@ int main(void) {
     din_init(&g_buf_adv_din, PIN_BUF_ADVANCE);
     din_init(&g_buf_trl_din, PIN_BUF_TRAILING);
 
-    toolchange_init();
+    cutter_init();
 
     adc_init();
     adc_gpio_init(PIN_BUF_ANALOG);
