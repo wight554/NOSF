@@ -13,6 +13,15 @@ The system SHALL orchestrate an automated sequence to swap active lanes without 
 - **THEN** the system executes `UNLOAD_CUT` (if enabled), `UNLOAD_REVERSE`, waits for `OUT` to clear, waits for Y-splitter clear, updates `active_lane`, and starts `LOAD_FULL`
 - **AND** emits phase events (`TC:CUTTING`, `TC:UNLOADING`, `TC:SWAPPING`, `TC:LOADING`, `TC:DONE`) at boundaries
 
+### Requirement: Manual Cutter Execution
+The host SHALL be able to trigger the exact cutter sequence independently of a full toolchange.
+
+#### Scenario: Manual Cut
+- **WHEN** `CU:` is commanded
+- **THEN** the system executes the cutter state machine (Open -> Feed -> Close -> Open -> Repeat -> Block)
+- **AND** emits `EV:CUT:DONE` upon successful parking
+- **AND** emits `EV:CUT:ERROR` upon failure or timeout
+
 ### Requirement: RELOAD Buffer-Driven Contact
 During runout RELOAD, the new lane SHALL approach until physical buffer contact is detected.
 
