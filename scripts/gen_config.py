@@ -92,6 +92,7 @@ DEFAULTS = {
     "reload_lean_factor": "1.15",
 
     # Cutter / Servo
+    "enable_cutter": "False",
     "servo_open_us": "500",
     "servo_close_us": "1400",
     "servo_block_us": "950",
@@ -374,6 +375,7 @@ def main():
         f"#define CONF_RELOAD_LEAN_FACTOR   {get_float('reload_lean_factor')}f",
         "",
         "// --- Cutter / Servo ---",
+        f"#define CONF_ENABLE_CUTTER      {1 if get_bool('enable_cutter') else 0}",
         f"#define CONF_SERVO_OPEN_US      {get('servo_open_us')}",
         f"#define CONF_SERVO_CLOSE_US     {get('servo_close_us')}",
         f"#define CONF_SERVO_BLOCK_US     {get('servo_block_us')}",

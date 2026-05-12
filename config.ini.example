@@ -112,6 +112,7 @@ run_current:
 # reload_lean_factor: 1.15     # RELOAD follow over-feed factor (0.0 to 5.0)
 
 # ─── Cutter / Servo ──────────────────────────────────────────────────────────
+# enable_cutter: False
 # servo_open_us: 500
 # servo_close_us: 1400
 # servo_block_us: 950
