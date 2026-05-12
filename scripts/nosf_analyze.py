@@ -418,7 +418,8 @@ def recommend_for_subset(runs_subset, rows_subset, state_buckets, current, mode,
         bias_detail = f"{len(weighted_bias)} buckets"
     else:
         bp_delta = [to_float(r.get("bp_mm")) - to_float(r.get("rt_mm")) for r in qualifying_rows]
-        bias = clamp(0.4 + (stats.mean(bp_delta) / 7.8 if bp_delta else 0.0), BIAS_SAFE_MIN, BIAS_SAFE_MAX)
+        current_bias = current["sync_trailing_bias_frac"]
+        bias = clamp(current_bias + (stats.mean(bp_delta) / 7.8 if bp_delta else 0.0), BIAS_SAFE_MIN, BIAS_SAFE_MAX)
         bias_conf = confidence_from_buckets(set(by_bucket), locked_only) if bp_delta else "DEFAULT"
         bias_detail = f"n={len(bp_delta)}"
 

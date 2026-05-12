@@ -641,8 +641,8 @@ static void buf_update(buf_state_t new_state, uint32_t now_ms) {
     }
 
     /* Phase 2.6: residual observer — measure pre-snap virtual/physical mismatch.
-     * Only record on MID→ADVANCE: TRAILING residuals have opposite sign and dilute the EWMA. */
-    if (BUF_SENSOR_TYPE == 0 && old == BUF_MID && new_state == BUF_ADVANCE) {
+     * Record on both endstops to capture both positive and negative drift correctly. */
+    if (BUF_SENSOR_TYPE == 0 && old == BUF_MID && (new_state == BUF_ADVANCE || new_state == BUF_TRAILING)) {
         float switch_pos_mm = (new_state == BUF_ADVANCE) ? threshold : -threshold;
         float residual = g_buf_pos - switch_pos_mm;
         g_bp_residual_last_mm = residual;
@@ -1081,10 +1081,6 @@ void sync_tick(uint32_t now_ms) {
                 extruder_est_sps += 0.05f * (target_rate - extruder_est_sps);
                 extruder_est_last_update_ms = now_ms;
             }
-        } else if (buf_near_target) {
-            /* Normal proportional tracking bleed */
-            extruder_est_sps += 0.05f * ((float)lane_motion_sps(A) - extruder_est_sps);
-            extruder_est_last_update_ms = now_ms;
         }
     } else if (s == BUF_TRAILING && (now_ms - g_buf.entered_ms) > SYNC_TRAILING_COLLAPSE_DELAY_MS) {
         // If pinned against the physical wall, the MMU is definitively out-pacing the extruder.

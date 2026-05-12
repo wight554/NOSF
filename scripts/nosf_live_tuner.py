@@ -682,7 +682,7 @@ class Tuner:
 
         kf_predict_update(b, est, cf, apx, dt_s)
         b.bp_ewma = 0.95 * b.bp_ewma + 0.05 * bp if b.n > 1 else bp
-        bias_target = 0.4 + (b.bp_ewma - rt) / 7.8
+        bias_target = b.bias + (b.bp_ewma - rt) / 7.8
         b.bias = max(BIAS_SAFE_MIN, min(BIAS_SAFE_MAX, 0.95 * b.bias + 0.05 * bias_target))
         self._maybe_emit_set(b, now)
         self._maybe_lock(b, now)
