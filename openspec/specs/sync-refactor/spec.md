@@ -130,6 +130,31 @@ The gate SHALL FAIL only on unreliable recommendations or pathological scatter.
 - **WHEN** BP sigma p95 > ceiling
 - **THEN** gate fails and reports hardware failure
 
+### Requirement: Bidirectional Drift Observation
+The residual drift observer SHALL measure errors on both `ADVANCE` and `TRAILING` boundaries to prevent directional blindness.
+
+#### Scenario: Flow Overestimation
+- **WHEN** the model overestimates extruder flow
+- **THEN** virtual position drifts to the right
+- **AND** the physical arm hits `TRAILING`
+- **AND** the observer records the positive residual to apply a corrective offset
+
+### Requirement: Double-Integrator Avoidance
+The feedforward velocity estimator SHALL NOT bleed towards the PI controller output in the safe zone.
+
+#### Scenario: Buffer Mid-Range
+- **WHEN** the physical arm is floating safely in `BUF_MID`
+- **THEN** the feedforward estimator holds its last known measurement
+- **AND** normal P/I terms handle local position errors without corrupting the feedforward baseline
+
+### Requirement: Bias Accumulation
+The analyzer and tuner SHALL accumulate position error offsets onto the current configuration value, avoiding fixed setpoint anchors.
+
+#### Scenario: Steady-State Offset
+- **WHEN** physical forces cause a steady-state offset `bp > rt`
+- **THEN** the tooling incrementally updates the current configuration bias
+- **AND** subsequent runs accumulate further corrections until the physical arm tracks the target
+
 ## Historical Design Decisions (Traceability)
 - **D1 (PSF)**: Generic adapter until hardware land.
 - **D2 (Advance Dwell)**: Default 6000 ms (400 ms start).
