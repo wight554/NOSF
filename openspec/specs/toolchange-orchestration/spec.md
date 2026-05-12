@@ -16,9 +16,15 @@ The system SHALL orchestrate an automated sequence to swap active lanes without 
 ### Requirement: Manual Cutter Execution
 The host SHALL be able to trigger the exact cutter sequence independently of a full toolchange.
 
-#### Scenario: Manual Cut
+#### Scenario: Manual Cut with Feed
 - **WHEN** `CU:` is commanded
-- **THEN** the system executes the cutter state machine (Open -> Feed -> Close -> Open -> Repeat -> Block)
+- **THEN** the system executes the full cutter state machine (Open -> Feed -> Close -> Open -> Repeat -> Block)
+- **AND** emits `EV:CUT:DONE` upon successful parking
+- **AND** emits `EV:CUT:ERROR` upon failure or timeout
+
+#### Scenario: Manual Cut without Feed (Bare)
+- **WHEN** `CX:` is commanded
+- **THEN** the system executes the cutter state machine but skips the filament feed logic (Open -> Close -> Open -> Repeat -> Block)
 - **AND** emits `EV:CUT:DONE` upon successful parking
 - **AND** emits `EV:CUT:ERROR` upon failure or timeout
 

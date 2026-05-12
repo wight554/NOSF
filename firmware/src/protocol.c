@@ -276,7 +276,14 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         }
         lane_t *A = get_active_lane_and_clear_error();
         if (!A) return;
-        cutter_start(A, now_ms);
+        cutter_start(A, true, now_ms);
+        cmd_reply("OK", NULL);
+    } else if (!strcmp(cmd, "CX")) {
+        if (!ENABLE_CUTTER) {
+            cmd_reply("ER", "CUTTER_DISABLED");
+            return;
+        }
+        cutter_start(NULL, false, now_ms);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "MV")) {
         lane_t *A = get_active_lane_and_clear_error();

@@ -65,19 +65,30 @@ void toolchange_init(void) {
     servo_set_us(PIN_SERVO, SERVO_BLOCK_US);
 }
 
-void cutter_start(lane_t *L, uint32_t now_ms) {
+void cutter_start(lane_t *L, bool enable_feed, uint32_t now_ms) {
     if (g_cut.state != CUT_IDLE) return;
 
-    int idx = L->lane_id - 1;
     g_cut.lane = L;
     g_cut.repeats_done = 0;
-    g_cut.feed_initial_ms = cut_feed_ms_for_mm(CUT_FEED_MM, idx);
-    g_cut.feed_repeat_ms = cut_feed_ms_for_mm(CUT_LENGTH_MM, idx);
+
+    if (L && enable_feed) {
+        int idx = L->lane_id - 1;
+        g_cut.feed_initial_ms = cut_feed_ms_for_mm(CUT_FEED_MM, idx);
+        g_cut.feed_repeat_ms = cut_feed_ms_for_mm(CUT_LENGTH_MM, idx);
+    } else {
+        g_cut.feed_initial_ms = 0;
+        g_cut.feed_repeat_ms = 0;
+    }
+
     g_cut.phase_start_ms = now_ms;
     g_cut.state = CUT_OPENING;
 
-    char lane_s[2] = { (char)('0' + L->lane_id), 0 };
-    cmd_event("TC:CUTTING", lane_s);
+    if (L) {
+        char lane_s[2] = { (char)('0' + L->lane_id), 0 };
+        cmd_event("TC:CUTTING", lane_s);
+    } else {
+        cmd_event("TC:CUTTING", "BARE");
+    }
 }
 
 void cutter_abort(void) {
@@ -303,7 +314,7 @@ void tc_tick(uint32_t now_ms) {
             return;
 
         case TC_UNLOAD_CUT:
-            cutter_start(A, now_ms);
+            cutter_start(A, true, now_ms);
             g_tc_ctx.phase_start_ms = now_ms;
             g_tc_ctx.state = TC_UNLOAD_WAIT_CUT;
             break;

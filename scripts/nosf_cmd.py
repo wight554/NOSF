@@ -40,6 +40,7 @@ COMPLETION_EVENTS = {
     'TC': (['EV:TC:DONE'], ['EV:TC:ERROR']),
     'RL': (['EV:RELOAD:LOADED'], ['EV:TC:ERROR']),
     'CU': (['EV:CUT:DONE'], ['EV:CUT:ERROR']),
+    'CX': (['EV:CUT:DONE'], ['EV:CUT:ERROR']),
 }
 
 # ---------------------------------------------------------------------------

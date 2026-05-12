@@ -308,3 +308,5 @@ void set_toolhead_filament(bool present);
 void set_active_lane(int lane);
 lane_t *lane_ptr(int lane);
 int other_lane(int lane);
+
+void cutter_start(lane_t *L, bool enable_feed, uint32_t now_ms);
