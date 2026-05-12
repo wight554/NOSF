@@ -82,13 +82,10 @@ void cutter_start(lane_t *L, uint32_t now_ms) {
 
 void cutter_abort(void) {
     if (g_cut.state == CUT_IDLE) return;
-    if (g_cut.lane) {
-        motor_stop(&g_cut.lane->m);
-    }
-    servo_set_us(PIN_SERVO, SERVO_OPEN_US);
-    g_cut.phase_start_ms = to_ms_since_boot(get_absolute_time());
-    g_cut.state = CUT_OPEN_WAIT;
-    g_cut.repeats_done = 0;
+    servo_set_us(PIN_SERVO, SERVO_BLOCK_US);
+    if (g_cut.lane) motor_stop(&g_cut.lane->m);
+    g_cut.state = CUT_IDLE;
+    cmd_event("CUT:ERROR", "ABORTED");
 }
 
 void cutter_tick(uint32_t now_ms) {
@@ -173,6 +170,7 @@ void cutter_tick(uint32_t now_ms) {
             if (age >= (uint32_t)SERVO_SETTLE_MS) {
                 servo_idle(PIN_SERVO);
                 g_cut.state = CUT_IDLE;
+                cmd_event("CUT:DONE", NULL);
             }
             break;
     }
