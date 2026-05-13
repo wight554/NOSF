@@ -14,7 +14,7 @@
 
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4e4f5346u
-#define SETTINGS_VERSION 46u
+#define SETTINGS_VERSION 47u
 
 typedef struct {
     uint32_t magic;
@@ -74,6 +74,7 @@ typedef struct {
     bool buf_invert;
     bool auto_preload;
     bool enable_cutter;
+    bool tc_auto_cut;
     bool reload_mode;
 
     float tmc_rotation_distance[NUM_LANES];
@@ -166,7 +167,8 @@ void settings_defaults(void) {
     BUF_INVERT = false;
     AUTO_PRELOAD = true;
     AUTOLOAD_RETRACT_MM = 10;
-    ENABLE_CUTTER = false;
+    ENABLE_CUTTER = CONF_ENABLE_CUTTER;
+    TC_AUTO_CUT = CONF_TC_AUTO_CUT;
 
     MOTION_STARTUP_MS = CONF_MOTION_STARTUP_MS;
     for (int i = 0; i < NUM_LANES; i++) {
@@ -299,6 +301,7 @@ void settings_save(void) {
     s.auto_preload = AUTO_PRELOAD;
     s.autoload_retract_mm = AUTOLOAD_RETRACT_MM;
     s.enable_cutter = ENABLE_CUTTER;
+    s.tc_auto_cut = TC_AUTO_CUT;
     s.est_alpha_min = EST_ALPHA_MIN;
     s.est_alpha_max = EST_ALPHA_MAX;
     s.zone_bias_base_sps = ZONE_BIAS_BASE_SPS;
@@ -478,6 +481,7 @@ void settings_load(void) {
     AUTO_PRELOAD = s->auto_preload;
     AUTOLOAD_RETRACT_MM = s->autoload_retract_mm;
     ENABLE_CUTTER = s->enable_cutter;
+    TC_AUTO_CUT = s->tc_auto_cut;
     EST_ALPHA_MIN = s->est_alpha_min;
     EST_ALPHA_MAX = s->est_alpha_max;
     ZONE_BIAS_BASE_SPS = s->zone_bias_base_sps;
