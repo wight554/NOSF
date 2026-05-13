@@ -11,6 +11,7 @@
 
 typedef enum {
     CUT_IDLE,
+    CUT_BOOT_PARK,
     CUT_OPENING,
     CUT_OPEN_WAIT,
     CUT_FEEDING,
@@ -86,10 +87,12 @@ static void cut_begin_feed(uint32_t now_ms, uint32_t window_ms) {
 void cutter_init(void) {
     servo_init(PIN_SERVO);
     servo_set_us(PIN_SERVO, SERVO_BLOCK_US);
+    g_cut.state = CUT_BOOT_PARK;
+    g_cut.phase_start_ms = to_ms_since_boot(get_absolute_time());
 }
 
 void cutter_start(lane_t *L, bool enable_feed, uint32_t now_ms) {
-    if (g_cut.state != CUT_IDLE) return;
+    if (g_cut.state != CUT_IDLE && g_cut.state != CUT_BOOT_PARK) return;
 
     g_cut.lane = L;
     g_cut.repeats_done = 0;
@@ -136,6 +139,13 @@ void cutter_tick(uint32_t now_ms) {
     switch (g_cut.state) {
         case CUT_IDLE:
             return;
+            
+        case CUT_BOOT_PARK:
+            if (age >= (uint32_t)SERVO_SETTLE_MS) {
+                servo_idle(PIN_SERVO);
+                g_cut.state = CUT_IDLE;
+            }
+            break;
 
         case CUT_OPENING:
             servo_set_us(PIN_SERVO, SERVO_OPEN_US);
