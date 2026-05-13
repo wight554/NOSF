@@ -113,6 +113,7 @@ run_current:
 
 # ─── Cutter / Servo ──────────────────────────────────────────────────────────
 # enable_cutter: False
+# tc_auto_cut: False
 # servo_open_us: 500
 # servo_close_us: 1400
 # servo_block_us: 950

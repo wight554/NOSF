@@ -10,7 +10,7 @@ The system SHALL orchestrate an automated sequence to swap active lanes without 
 
 #### Scenario: Normal Toolchange
 - **WHEN** `TC:<lane>` is commanded
-- **THEN** the system executes `UNLOAD_CUT` (if enabled), `UNLOAD_REVERSE`, waits for `OUT` to clear, waits for Y-splitter clear, updates `active_lane`, and starts `LOAD_FULL`
+- **THEN** the system executes `UNLOAD_CUT` (if `TC_AUTO_CUT` is enabled), `UNLOAD_REVERSE`, waits for `OUT` to clear, waits for Y-splitter clear, updates `active_lane`, and starts `LOAD_FULL`
 - **AND** emits phase events (`TC:CUTTING`, `TC:UNLOADING`, `TC:SWAPPING`, `TC:LOADING`, `TC:DONE`) at boundaries
 
 ### Requirement: Manual Cutter Execution

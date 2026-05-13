@@ -41,7 +41,7 @@ void tc_start(int target_lane, uint32_t now_ms) {
     set_toolhead_filament(false);
     if (target_lane == active_lane) {
         g_tc_ctx.state = TC_LOAD_START;
-    } else if (ENABLE_CUTTER) {
+    } else if (ENABLE_CUTTER && TC_AUTO_CUT) {
         g_tc_ctx.state = TC_UNLOAD_CUT;
     } else {
         g_tc_ctx.state = TC_UNLOAD_REVERSE;

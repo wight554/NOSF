@@ -574,6 +574,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "SERVO_CLOSE")) SERVO_CLOSE_US = clamp_i(iv, 400, 2600);
         else if (!strcmp(base_param, "SERVO_BLOCK")) SERVO_BLOCK_US = clamp_i(iv, 400, 2600);
         else if (!strcmp(base_param, "SERVO_SETTLE")) SERVO_SETTLE_MS = clamp_i(iv, 100, 2000);
+        else if (!strcmp(base_param, "TC_AUTO_CUT")) TC_AUTO_CUT = (iv == 1);
         else if (!strcmp(base_param, "CUT_FEED")) CUT_FEED_MM = clamp_i(iv, 1, 200);
         else if (!strcmp(base_param, "CUT_LEN")) CUT_LENGTH_MM = clamp_i(iv, 1, 50);
         else if (!strcmp(base_param, "CUT_AMT")) CUT_AMOUNT = clamp_i(iv, 1, 5);
@@ -706,6 +707,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "SERVO_CLOSE")) snprintf(out, sizeof(out), "SERVO_CLOSE:%d", SERVO_CLOSE_US);
         else if (!strcmp(param, "SERVO_BLOCK")) snprintf(out, sizeof(out), "SERVO_BLOCK:%d", SERVO_BLOCK_US);
         else if (!strcmp(param, "SERVO_SETTLE")) snprintf(out, sizeof(out), "SERVO_SETTLE:%d", SERVO_SETTLE_MS);
+        else if (!strcmp(param, "TC_AUTO_CUT")) snprintf(out, sizeof(out), "TC_AUTO_CUT:%d", TC_AUTO_CUT ? 1 : 0);
         else if (!strcmp(param, "CUT_FEED")) snprintf(out, sizeof(out), "CUT_FEED:%d", CUT_FEED_MM);
         else if (!strcmp(param, "CUT_LEN")) snprintf(out, sizeof(out), "CUT_LEN:%d", CUT_LENGTH_MM);
         else if (!strcmp(param, "CUT_AMT")) snprintf(out, sizeof(out), "CUT_AMT:%d", CUT_AMOUNT);

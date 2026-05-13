@@ -232,6 +232,7 @@ extern int AUTO_MODE;
 extern bool AUTO_PRELOAD;
 extern int AUTOLOAD_RETRACT_MM;
 extern bool ENABLE_CUTTER;
+extern bool TC_AUTO_CUT;
 extern int DIST_IN_OUT;
 extern int DIST_OUT_Y;
 extern int DIST_Y_BUF;

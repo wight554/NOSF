@@ -151,6 +151,7 @@ DUMP_PARAMS = [
     ("TC_Y_MS",           "tc_timeout_y_ms",         False),
     # --- Cutter ---
     ("CUTTER",            "enable_cutter",           False),
+    ("TC_AUTO_CUT",       "tc_auto_cut",             False),
     ("SERVO_OPEN",        "servo_open_us",           False),
     ("SERVO_CLOSE",       "servo_close_us",          False),
     ("SERVO_BLOCK",       "servo_block_us",          False),
@@ -183,6 +184,7 @@ BOOL_KEYS = {
     "auto_mode",
     "auto_preload",
     "enable_cutter",
+    "tc_auto_cut",
     "sync_overshoot_mid_extend",
 }
 

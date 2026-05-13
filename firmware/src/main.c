@@ -140,6 +140,7 @@ int AUTO_MODE = 1; // 1=Automated flow, 0=Host-controlled flow
 bool AUTO_PRELOAD = true;
 int AUTOLOAD_RETRACT_MM = 10;
 bool ENABLE_CUTTER = CONF_ENABLE_CUTTER;
+bool TC_AUTO_CUT = CONF_TC_AUTO_CUT;
 
 int DIST_IN_OUT = CONF_DIST_IN_OUT;
 int DIST_OUT_Y  = CONF_DIST_OUT_Y;
