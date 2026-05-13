@@ -59,7 +59,9 @@ Controls whether the MMU automatically swaps lanes on filament runout.
 | `FD:` | Both  | **Continuous Feed** — runs forward until `ST:`. |
 | `BS:` | Both  | **Buffer Stabilize** — if the controller is idle, run the buffer neutralization move immediately to bring a dual-endstop buffer back toward `MID`. |
 | `ST:` | Both  | **Stop** — aborts all motion and resets toolchange state. |
-| `CU:` | Both  | **Cut** — performs the cutter sequence on the active lane. |
+| `CU:` | Both  | **Cut** — performs the full cutter sequence (Open -> Feed -> Close -> Open -> Repeat -> Block) on the active lane. |
+| `CX:` | Both  | **Bare Cut** — performs the cutter sequence without filament movement (Open -> Close -> Open -> Repeat -> Block). |
+| `CP:us` | Both  | **Cutter Position** — moves the cutter servo to the specified pulse width (400-2600 us) and stays there. Useful for mechanical tuning. |
 
 ### Status & Configuration
 | Command | Response | Description |

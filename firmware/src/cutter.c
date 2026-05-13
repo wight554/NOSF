@@ -122,6 +122,14 @@ void cutter_abort(void) {
     cmd_event("CUT:ERROR", "ABORTED");
 }
 
+void cutter_test_us(uint32_t us) {
+    if (g_cut.state != CUT_IDLE) {
+        if (g_cut.lane) motor_stop(&g_cut.lane->m);
+        g_cut.state = CUT_IDLE;
+    }
+    servo_set_us(PIN_SERVO, us);
+}
+
 void cutter_tick(uint32_t now_ms) {
     uint32_t age = now_ms - g_cut.phase_start_ms;
 

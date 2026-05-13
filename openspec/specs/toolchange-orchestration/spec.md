@@ -28,6 +28,11 @@ The host SHALL be able to trigger the exact cutter sequence independently of a f
 - **AND** emits `EV:CUT:DONE` upon successful parking
 - **AND** emits `EV:CUT:ERROR` upon failure or timeout
 
+#### Scenario: Static Servo Position Tuning
+- **WHEN** `CP:<us>` is commanded
+- **THEN** the system immediately sets the servo PWM pulse width to `<us>` microseconds and leaves it there
+- **AND** interrupts any active cutter state machine sequence
+
 ### Requirement: RELOAD Buffer-Driven Contact
 During runout RELOAD, the new lane SHALL approach until physical buffer contact is detected.
 

@@ -163,6 +163,22 @@ gcode:
 description: Pre-load active lane to parked position (OUT sensor)
 gcode:
     RUN_SHELL_COMMAND CMD=nosf PARAMS="LO:"
+
+[gcode_macro NOSF_CUT]
+description: Perform full filament cut cycle
+gcode:
+    RUN_SHELL_COMMAND CMD=nosf PARAMS="CU:"
+
+[gcode_macro NOSF_CUT_BARE]
+description: Perform cutter servo cycle without filament movement
+gcode:
+    RUN_SHELL_COMMAND CMD=nosf PARAMS="CX:"
+
+[gcode_macro NOSF_CUT_TEST]
+description: Set cutter servo to a static pulse width (tuning)
+gcode:
+    {% set US = params.US|default(950)|int %}
+    RUN_SHELL_COMMAND CMD=nosf PARAMS="CP:{US}"
 ```
 
 ---
