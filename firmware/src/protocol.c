@@ -13,6 +13,7 @@
 #include "settings_store.h"
 #include "sync.h"
 #include "toolchange.h"
+#include "cutter.h"
 
 #define CMD_POLL_BYTE_BUDGET 128
 #define CMD_POLL_COMMAND_BUDGET 4
@@ -46,7 +47,7 @@ static bool live_tune_locked_param(const char *param) {
 }
 
 static bool controller_activity_in_progress(void) {
-    if (g_tc_ctx.state != TC_IDLE || g_cut.state != CUT_IDLE || g_boot_stabilizing) return true;
+    if (g_tc_ctx.state != TC_IDLE || cutter_busy() || g_boot_stabilizing) return true;
     if (g_lane_l1.task != TASK_IDLE || g_lane_l2.task != TASK_IDLE) return true;
     return false;
 }
