@@ -402,14 +402,13 @@ int main(void) {
     din_init(&g_buf_adv_din, PIN_BUF_ADVANCE);
     din_init(&g_buf_trl_din, PIN_BUF_TRAILING);
 
-    cutter_init();
-
     adc_init();
     adc_gpio_init(PIN_BUF_ANALOG);
 
     neopixel_init(PIN_NEOPIXEL);
 
     settings_load();
+    cutter_init();
     g_buf.entered_ms = to_ms_since_boot(get_absolute_time());
 
     // din_init reads GPIOs once without debounce; sensors may not have settled.
@@ -439,7 +438,9 @@ int main(void) {
 
     // Start any needed dual-endstop buffer neutralization in the background so
     // commands and state machines are responsive immediately after boot.
-    boot_stabilize_start(to_ms_since_boot(get_absolute_time()));
+    if (active_lane != 0) {
+        boot_stabilize_start(to_ms_since_boot(get_absolute_time()));
+    }
 
     while (true) {
         g_now_ms = to_ms_since_boot(get_absolute_time());
