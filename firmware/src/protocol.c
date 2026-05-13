@@ -292,7 +292,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
             return;
         }
         int us = atoi(p);
-        if (us < 400 || us > 2600) {
+        if (us < 400 || us > 2700) {
             cmd_reply("ER", "ARG");
             return;
         }

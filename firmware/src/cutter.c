@@ -52,8 +52,8 @@ static void servo_init(uint pin) {
 
 static void servo_set_us(uint pin, uint pulse_us) {
     (void)pin;
-    if (pulse_us < 500) pulse_us = 500;
-    if (pulse_us > 2500) pulse_us = 2500;
+    if (pulse_us < 400) pulse_us = 400;
+    if (pulse_us > 2700) pulse_us = 2700;
     pwm_set_chan_level(g_servo_slice, g_servo_chan, (uint16_t)pulse_us);
     pwm_set_enabled(g_servo_slice, true);
 }
