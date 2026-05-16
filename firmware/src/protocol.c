@@ -231,6 +231,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         sync_disable(false);
         set_toolhead_filament(false);
         A->unload_to_in = false;
+        A->unload_buf_recover_done = true;
         lane_start(A, TASK_UNLOAD, REV_SPS, false, now_ms, (float)UNLOAD_MAX_MM);
         cmd_reply("OK", NULL);
     } else if (!strcmp(cmd, "UM")) {
