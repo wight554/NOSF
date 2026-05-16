@@ -309,9 +309,8 @@ void lane_tick(lane_t *L, uint32_t now_ms) {
                 if (L->unload_to_in) {
                     L->retract_deadline_ms = now_ms + 500;
                 } else {
-                    float secs = (float)AUTOLOAD_RETRACT_MM / ((float)REV_SPS * MM_PER_STEP[L->lane_id - 1]);
-                    if (secs < 0.2f) secs = 0.2f;
-                    L->retract_deadline_ms = now_ms + (uint32_t)(secs * 1000.0f);
+                    L->dist_at_out_mm = L->task_dist_mm;
+                    L->retract_deadline_ms = now_ms + 30000;
                 }
             }
 
@@ -332,7 +331,15 @@ void lane_tick(lane_t *L, uint32_t now_ms) {
                 }
             }
         } else {
-            if ((int32_t)(now_ms - L->retract_deadline_ms) >= 0) {
+            bool done;
+            if (!L->unload_to_in) {
+                float retracted = L->task_dist_mm - L->dist_at_out_mm;
+                done = retracted >= (float)AUTOLOAD_RETRACT_MM ||
+                       (int32_t)(now_ms - L->retract_deadline_ms) >= 0;
+            } else {
+                done = (int32_t)(now_ms - L->retract_deadline_ms) >= 0;
+            }
+            if (done) {
                 lane_stop(L);
                 cmd_event("UNLOADED", lane_s);
             }
