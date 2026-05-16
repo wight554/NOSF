@@ -47,8 +47,7 @@
 #define PIN_L2_UART_RX   19
 #define PIN_L2_DIAG      19  // same as UART_RX on ERB
 
-#define PIN_SERVO        24
-#define PIN_FAN          23  // Reserved: original SERVO header signal, for 5 V fan MOSFET control
+#define PIN_SERVO        23
 #define PIN_NEOPIXEL     21
 
 // ----- Static Timeouts -----

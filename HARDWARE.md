@@ -41,8 +41,8 @@ Known working motor and TMC profiles are collected in [MOTOR_PARAMS.md](MOTOR_PA
 | 20   | —              | Status LED via R24 1 kΩ → 3.3 V |
 | 21   | NEO_PIXEL      | WS2812 NeoPixel data            |
 | 22   | ENCODER        | Encoder signal                  |
-| 23   | SERVO          | Reserved for 5 V fan MOSFET control |
-| 24   | SELECTOR_STOP  | Servo PWM (cutter signal, relocated from SERVO header) |
+| 23   | SERVO          | Servo PWM (cutter)              |
+| 24   | SELECTOR_STOP  | Selector stop endstop           |
 | 25   | HALL_SENSOR    | Hall sensor input               |
 | 26   | GPIO_26_ADC0   | ADC channel 0                   |
 | 27   | GPIO_27_ADC1   | ADC channel 1                   |
@@ -214,8 +214,7 @@ PIN_L2_UART_RX = 19
 PIN_L2_DIAG    = 19   // board wiring alias; current firmware does not use DIAG IRQs
 
 // Peripherals
-PIN_SERVO    = 24   // GPIO24: SELECTOR_STOP header, cutter servo signal
-PIN_FAN      = 23   // GPIO23: original SERVO header signal, reserved for 5 V fan MOSFET
+PIN_SERVO    = 23
 PIN_NEOPIXEL = 21
 ```
 
