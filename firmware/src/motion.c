@@ -307,7 +307,8 @@ void lane_tick(lane_t *L, uint32_t now_ms) {
                 }
             } else {
                 if (L->unload_to_in) {
-                    L->retract_deadline_ms = now_ms + 500;
+                    lane_stop(L);
+                    cmd_event("UNLOADED", lane_s);
                 } else {
                     L->dist_at_out_mm = L->task_dist_mm;
                     L->retract_deadline_ms = now_ms + 30000;
