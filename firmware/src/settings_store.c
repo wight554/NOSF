@@ -14,7 +14,7 @@
 
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4e4f5346u
-#define SETTINGS_VERSION 47u
+#define SETTINGS_VERSION 48u
 
 typedef struct {
     uint32_t magic;
@@ -28,6 +28,7 @@ typedef struct {
     int post_print_stab_delay_ms;
     int load_max_mm;
     int unload_max_mm;
+    int unload_adv_block_ms;
     int reload_y_timeout_ms;
     int reload_join_delay_ms;
     int autoload_max_mm;
@@ -143,6 +144,7 @@ void settings_defaults(void) {
     AUTOLOAD_MAX_MM = CONF_AUTOLOAD_MAX_MM;
     LOAD_MAX_MM = CONF_LOAD_MAX_MM;
     UNLOAD_MAX_MM = CONF_UNLOAD_MAX_MM;
+    UNLOAD_ADV_BLOCK_MS = CONF_UNLOAD_ADV_BLOCK_MS;
     RELOAD_Y_TIMEOUT_MS = CONF_RELOAD_Y_TIMEOUT_MS;
     RELOAD_JOIN_DELAY_MS = CONF_RELOAD_JOIN_DELAY_MS;
     AUTO_MODE = 1;
@@ -283,6 +285,7 @@ void settings_save(void) {
     s.autoload_max_mm = AUTOLOAD_MAX_MM;
     s.load_max_mm = LOAD_MAX_MM;
     s.unload_max_mm = UNLOAD_MAX_MM;
+    s.unload_adv_block_ms = UNLOAD_ADV_BLOCK_MS;
     s.reload_y_timeout_ms = RELOAD_Y_TIMEOUT_MS;
     s.reload_join_delay_ms = RELOAD_JOIN_DELAY_MS;
     s.auto_mode = AUTO_MODE;
@@ -460,6 +463,7 @@ void settings_load(void) {
     AUTOLOAD_MAX_MM = s->autoload_max_mm;
     LOAD_MAX_MM = s->load_max_mm;
     UNLOAD_MAX_MM = s->unload_max_mm;
+    UNLOAD_ADV_BLOCK_MS = s->unload_adv_block_ms;
     RELOAD_Y_TIMEOUT_MS = s->reload_y_timeout_ms;
     RELOAD_JOIN_DELAY_MS = s->reload_join_delay_ms;
     AUTO_MODE = s->auto_mode;

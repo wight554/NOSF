@@ -130,6 +130,7 @@ run_current:
 # ─── Safety / Limits ─────────────────────────────────────────────────────────
 # load_max_mm: 3000           # Max distance for toolhead load
 # unload_max_mm: 3000         # Max distance for unloads
+# unload_adv_block_ms: 5000   # Stop UL if buffer stays ADVANCE this long (printer blocking); 0 = disabled
 # autoload_max_mm: 600        # Max distance for preload to OUT
 # runout_cooldown_ms: 12000
 

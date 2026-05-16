@@ -555,6 +555,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(base_param, "AUTOLOAD_MAX")) AUTOLOAD_MAX_MM = clamp_i(iv, 10, 10000);
         else if (!strcmp(base_param, "LOAD_MAX")) LOAD_MAX_MM = clamp_i(iv, 100, 10000);
         else if (!strcmp(base_param, "UNLOAD_MAX")) UNLOAD_MAX_MM = clamp_i(iv, 100, 10000);
+        else if (!strcmp(base_param, "UNLOAD_ADV_BLOCK_MS")) UNLOAD_ADV_BLOCK_MS = clamp_i(iv, 0, 60000);
         else if (!strcmp(base_param, "SYNC_KP_RATE")) SYNC_KP_SPS = clamp_i(mm_per_min_to_sps(fv), 0, 50000);
         else if (!strcmp(base_param, "SYNC_OVERSHOOT_PCT")) SYNC_OVERSHOOT_PCT = clamp_i(iv, 0, 200);
         else if (!strcmp(base_param, "SYNC_RESERVE_PCT")) SYNC_RESERVE_PCT = clamp_i(iv, 0, 150);
@@ -665,6 +666,7 @@ static void cmd_execute(const char *cmd, const char *p, uint32_t now_ms) {
         else if (!strcmp(param, "AUTOLOAD_MAX")) snprintf(out, sizeof(out), "AUTOLOAD_MAX:%d", AUTOLOAD_MAX_MM);
         else if (!strcmp(param, "LOAD_MAX")) snprintf(out, sizeof(out), "LOAD_MAX:%d", LOAD_MAX_MM);
         else if (!strcmp(param, "UNLOAD_MAX")) snprintf(out, sizeof(out), "UNLOAD_MAX:%d", UNLOAD_MAX_MM);
+        else if (!strcmp(param, "UNLOAD_ADV_BLOCK_MS")) snprintf(out, sizeof(out), "UNLOAD_ADV_BLOCK_MS:%d", UNLOAD_ADV_BLOCK_MS);
         else if (!strcmp(param, "TC_LOAD_MS")) snprintf(out, sizeof(out), "TC_LOAD_MS:%d", LOAD_MAX_MM);
         else if (!strcmp(param, "TC_UNLOAD_MS")) snprintf(out, sizeof(out), "TC_UNLOAD_MS:%d", UNLOAD_MAX_MM);
         else if (!strcmp(param, "TC_CUT_MS")) snprintf(out, sizeof(out), "TC_CUT_MS:%d", TC_TIMEOUT_CUT_MS);

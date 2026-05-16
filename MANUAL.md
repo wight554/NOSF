@@ -144,6 +144,7 @@ These commands are intended for low-level diagnostics and board bring-up. Prefer
 | `RAMP_TICK_MS` | `ramp_tick_ms` | Period between lane acceleration ramp steps | 5 |
 | `LOAD_MAX` | `load_max_mm` | Max distance for `FL:` or **Auto-Load** | 3000 |
 | `UNLOAD_MAX` | `unload_max_mm` | Max distance for `UL:`, `UM:` | 3000 |
+| `UNLOAD_ADV_BLOCK_MS` | `unload_adv_block_ms` | Stop `UL:` if buffer stays in `ADVANCE` for this long (printer blocking retraction). 0 = disabled. | 5000 |
 | `AUTO_MODE` | `auto_mode` | Enable autonomous Flow (Auto-Sync, Toolhead load) | 1 |
 | `AUTO_PRELOAD`| `auto_preload` | Enable parking preload on insertion | 1 |
 | `RELOAD_MODE`| `reload_mode` | Enable autonomous RELOAD behavior (Auto-Swap) | 1 |

@@ -319,6 +319,18 @@ void lane_tick(lane_t *L, uint32_t now_ms) {
                 lane_stop(L);
                 cmd_event("UNLOAD_TIMEOUT", NULL);
             }
+
+            if (UNLOAD_ADV_BLOCK_MS > 0 && !L->unload_to_in) {
+                if (g_buf.state == BUF_ADVANCE) {
+                    if (L->buf_advance_since_ms == 0) L->buf_advance_since_ms = now_ms;
+                    else if ((int32_t)(now_ms - L->buf_advance_since_ms) >= UNLOAD_ADV_BLOCK_MS) {
+                        lane_stop(L);
+                        cmd_event("UNLOAD_BLOCKED", NULL);
+                    }
+                } else {
+                    L->buf_advance_since_ms = 0;
+                }
+            }
         } else {
             if ((int32_t)(now_ms - L->retract_deadline_ms) >= 0) {
                 lane_stop(L);
