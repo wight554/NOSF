@@ -14,7 +14,7 @@
 
 #define SETTINGS_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 #define SETTINGS_MAGIC 0x4e4f5346u
-#define SETTINGS_VERSION 48u
+#define SETTINGS_VERSION 49u
 
 typedef struct {
     uint32_t magic;
@@ -45,6 +45,7 @@ typedef struct {
 
     int servo_open_us, servo_close_us, servo_block_us;
     int servo_settle_ms;
+    int cut_feed_sps;
     int cut_feed_mm, cut_length_mm, cut_amount;
 
     int tc_timeout_cut_ms;
@@ -185,6 +186,7 @@ void settings_defaults(void) {
     SERVO_CLOSE_US = CONF_SERVO_CLOSE_US;
     SERVO_BLOCK_US = CONF_SERVO_BLOCK_US;
     SERVO_SETTLE_MS = CONF_SERVO_SETTLE_MS;
+    CUT_FEED_SPS = CONF_CUT_FEED_SPS;
     CUT_FEED_MM = CONF_CUT_FEED_MM;
     CUT_LENGTH_MM = CONF_CUT_LENGTH_MM;
     CUT_AMOUNT = CONF_CUT_AMOUNT;
@@ -316,6 +318,7 @@ void settings_save(void) {
     s.servo_close_us = SERVO_CLOSE_US;
     s.servo_block_us = SERVO_BLOCK_US;
     s.servo_settle_ms = SERVO_SETTLE_MS;
+    s.cut_feed_sps = CUT_FEED_SPS;
     s.cut_feed_mm = CUT_FEED_MM;
     s.cut_length_mm = CUT_LENGTH_MM;
     s.cut_amount = CUT_AMOUNT;
@@ -514,6 +517,7 @@ void settings_load(void) {
     SERVO_CLOSE_US = s->servo_close_us;
     SERVO_BLOCK_US = s->servo_block_us;
     SERVO_SETTLE_MS = s->servo_settle_ms;
+    CUT_FEED_SPS = s->cut_feed_sps;
     CUT_FEED_MM = s->cut_feed_mm;
     CUT_LENGTH_MM = s->cut_length_mm;
     CUT_AMOUNT = s->cut_amount;

@@ -33,6 +33,8 @@ typedef struct {
     uint32_t feed_repeat_ms;
     uint32_t feed_active_ms;
     int repeats_done;
+    int current_sps;
+    uint32_t ramp_last_ms;
 } cutter_ctx_t;
 
 cutter_ctx_t g_cut;
@@ -69,7 +71,7 @@ bool cutter_busy(void) {
 }
 
 static uint32_t cut_feed_ms_for_mm(int mm, int idx) {
-    float secs = (float)mm / ((float)REV_SPS * MM_PER_STEP[idx]);
+    float secs = (float)mm / ((float)CUT_FEED_SPS * MM_PER_STEP[idx]);
     if (secs < 0.0f) secs = 0.0f;
     return (uint32_t)(secs * 1000.0f);
 }
@@ -79,7 +81,11 @@ static void cut_begin_feed(uint32_t now_ms, uint32_t window_ms) {
     if (g_cut.lane && window_ms > 0) {
         motor_enable(&g_cut.lane->m, true);
         motor_set_dir(&g_cut.lane->m, true);
-        motor_set_rate_sps(&g_cut.lane->m, REV_SPS);
+        g_cut.current_sps = RAMP_STEP_SPS;
+        motor_set_rate_sps(&g_cut.lane->m, g_cut.current_sps);
+        g_cut.ramp_last_ms = now_ms;
+    } else {
+        g_cut.current_sps = 0;
     }
     g_cut.phase_start_ms = now_ms;
     g_cut.state = CUT_FEED_WAIT;
@@ -169,6 +175,14 @@ void cutter_tick(uint32_t now_ms) {
             break;
 
         case CUT_FEED_WAIT:
+            if (g_cut.lane && g_cut.current_sps < CUT_FEED_SPS) {
+                if ((int32_t)(now_ms - g_cut.ramp_last_ms) >= RAMP_TICK_MS) {
+                    g_cut.current_sps += RAMP_STEP_SPS;
+                    if (g_cut.current_sps > CUT_FEED_SPS) g_cut.current_sps = CUT_FEED_SPS;
+                    motor_set_rate_sps(&g_cut.lane->m, g_cut.current_sps);
+                    g_cut.ramp_last_ms = now_ms;
+                }
+            }
             if (age >= g_cut.feed_active_ms) {
                 if (g_cut.lane && g_cut.feed_active_ms > 0) {
                     motor_stop(&g_cut.lane->m);

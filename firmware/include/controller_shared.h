@@ -181,6 +181,7 @@ extern int SERVO_OPEN_US;
 extern int SERVO_CLOSE_US;
 extern int SERVO_BLOCK_US;
 extern int SERVO_SETTLE_MS;
+extern int CUT_FEED_SPS;
 extern int CUT_FEED_MM;
 extern int CUT_LENGTH_MM;
 extern int CUT_AMOUNT;
